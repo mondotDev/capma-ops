@@ -47,5 +47,65 @@ export const initialActionItems: ActionItem[] = [
     waitingOn: "",
     lastUpdated: "2026-03-10",
     notes: ""
+  },
+  {
+    id: "confirm-luncheon-signage",
+    title: "Confirm luncheon signage",
+    type: "Task",
+    workstream: "Legislative Day",
+    dueDate: "2026-03-29",
+    status: "Waiting",
+    owner: "Melissa",
+    waitingOn: "Sponsor",
+    lastUpdated: "2026-03-24",
+    notes: ""
+  },
+  {
+    id: "secure-printer-vendor",
+    title: "Secure printer vendor",
+    type: "Production",
+    workstream: "Summer Voice",
+    dueDate: "2026-03-30",
+    status: "Waiting",
+    owner: "Melissa",
+    waitingOn: "Vendor",
+    lastUpdated: "2026-03-22",
+    notes: "Missing printer confirmation."
+  },
+  {
+    id: "collect-final-ad-assets",
+    title: "Collect final ad assets",
+    type: "Task",
+    workstream: "Summer Voice",
+    dueDate: "2026-03-28",
+    status: "Waiting",
+    owner: "Melissa",
+    waitingOn: "Assets",
+    lastUpdated: "2026-03-23",
+    notes: "Missing file package for production handoff."
+  },
+  {
+    id: "production-proof-approval",
+    title: "Production proof not ready",
+    type: "Production",
+    workstream: "April News Brief",
+    dueDate: "2026-03-27",
+    status: "In Progress",
+    owner: "Melissa",
+    waitingOn: "Internal",
+    lastUpdated: "2026-03-26",
+    notes: "Press proof is not ready for release."
+  },
+  {
+    id: "sponsor-thank-you-email",
+    title: "Sponsor thank-you email",
+    type: "Deliverable",
+    workstream: "Legislative Day",
+    dueDate: "2026-03-26",
+    status: "Complete",
+    owner: "Melissa",
+    waitingOn: "",
+    lastUpdated: "2026-03-26",
+    notes: ""
   }
 ];
