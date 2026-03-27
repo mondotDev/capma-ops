@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { getPublicationTemplateTitles } from "@/lib/publication-templates";
 import { initialActionItems, type ActionItem } from "@/lib/sample-data";
 import {
@@ -27,15 +27,45 @@ type AppStateContextValue = {
   generateMissingDeliverablesForIssue: (issue: string) => GenerateDeliverablesResult;
   generateIssueDeliverables: (issue: string) => GenerateDeliverablesResult;
   openIssue: (issue: string) => GenerateDeliverablesResult;
+  resetAppState: () => void;
   setIssueStatus: (issue: string, status: IssueStatus) => void;
   updateItem: (id: string, updates: Partial<ActionItem>) => void;
 };
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
+const APP_STATE_STORAGE_KEY = "capma-ops-state";
+
+type PersistedAppState = {
+  items: ActionItem[];
+  issueStatuses: Partial<Record<string, IssueStatus>>;
+};
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<ActionItem[]>(initialActionItems);
+  const [items, setItems] = useState<ActionItem[]>(getDefaultItems);
   const [issueStatuses, setIssueStatuses] = useState<Partial<Record<string, IssueStatus>>>({});
+  const [hasHydrated, setHasHydrated] = useState(false);
+
+  useEffect(() => {
+    const savedState = loadPersistedAppState();
+
+    if (savedState) {
+      setItems(savedState.items);
+      setIssueStatuses(savedState.issueStatuses);
+    }
+
+    setHasHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    savePersistedAppState({
+      items,
+      issueStatuses
+    });
+  }, [hasHydrated, issueStatuses, items]);
 
   function addItem(item: NewActionItem) {
     setItems((current) => [createActionItem(item), ...current]);
@@ -118,7 +148,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }));
   }
 
-  const value = {
+  function resetAppState() {
+    clearPersistedAppState();
+    setItems(getDefaultItems());
+    setIssueStatuses({});
+  }
+
+  const value = useMemo(
+    () => ({
     items,
     issues: getGeneratedIssues(issueStatuses),
     addItem,
@@ -127,6 +164,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     generateMissingDeliverablesForIssue,
     generateIssueDeliverables,
     openIssue,
+    resetAppState,
     setIssueStatus,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       setItems((current) =>
@@ -141,7 +179,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         )
       );
     }
-  };
+    }),
+    [issueStatuses, items]
+  );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
@@ -169,4 +209,90 @@ function createActionItem(item: NewActionItem): ActionItem {
     id: `${slug || "item"}-${timestamp}`,
     lastUpdated: new Date().toISOString().slice(0, 10)
   };
+}
+
+function getDefaultItems() {
+  return initialActionItems.map((item) => ({ ...item }));
+}
+
+function loadPersistedAppState(): PersistedAppState | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawState = window.localStorage.getItem(APP_STATE_STORAGE_KEY);
+
+    if (!rawState) {
+      return null;
+    }
+
+    const parsedState = JSON.parse(rawState) as Partial<PersistedAppState>;
+
+    if (!Array.isArray(parsedState.items) || !isIssueStatusMap(parsedState.issueStatuses)) {
+      return null;
+    }
+
+    const items = parsedState.items.filter(isActionItemRecord);
+
+    if (items.length !== parsedState.items.length) {
+      return null;
+    }
+
+    return {
+      items,
+      issueStatuses: parsedState.issueStatuses
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedAppState(state: PersistedAppState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify(state));
+}
+
+export function clearPersistedAppState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(APP_STATE_STORAGE_KEY);
+}
+
+function isActionItemRecord(value: unknown): value is ActionItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const item = value as Partial<ActionItem>;
+
+  return [
+    item.id,
+    item.title,
+    item.type,
+    item.workstream,
+    item.dueDate,
+    item.status,
+    item.owner,
+    item.waitingOn,
+    item.lastUpdated,
+    item.notes
+  ].every((field) => typeof field === "string") && (item.issue === undefined || typeof item.issue === "string");
+}
+
+function isIssueStatusMap(
+  value: Partial<Record<string, IssueStatus>> | undefined
+): value is Partial<Record<string, IssueStatus>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).every(
+    (status) => status === "Planned" || status === "Open" || status === "Complete"
+  );
 }

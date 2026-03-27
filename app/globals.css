@@ -74,10 +74,31 @@ textarea {
   gap: 8px;
 }
 
+.sidebar__footer {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .sidebar__link {
   padding: 12px 14px;
   border-radius: 10px;
   color: #d1d5db;
+}
+
+.sidebar__settings {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__settings:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .sidebar__link.active {
@@ -182,6 +203,26 @@ textarea {
   border-radius: 18px;
   box-shadow: 0 24px 48px rgba(15, 23, 42, 0.16);
   padding: 22px;
+}
+
+.settings-modal {
+  position: relative;
+  width: min(460px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.16);
+  padding: 22px;
+}
+
+.settings-section {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-section__header {
+  display: grid;
+  gap: 6px;
 }
 
 .quick-add-modal__header {

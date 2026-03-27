@@ -33,8 +33,10 @@ type QuickAddFormState = {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { addItem, generateIssueDeliverables, issues } = useAppState();
+  const { addItem, generateIssueDeliverables, issues, resetAppState } = useAppState();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isResetPending, setIsResetPending] = useState(false);
   const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
   const [generationFeedback, setGenerationFeedback] = useState<string>("");
   const validation = useMemo(() => getValidation(formState), [formState]);
@@ -47,19 +49,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     formState.issue.length > 0 && (formState.workstream === "Newsbrief" || formState.workstream === "The Voice");
 
   useEffect(() => {
-    if (!isQuickAddOpen) {
+    if (!isQuickAddOpen && !isSettingsOpen) {
       return;
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsQuickAddOpen(false);
+        closeSettings();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isQuickAddOpen]);
+  }, [isQuickAddOpen, isSettingsOpen]);
 
   function openQuickAdd() {
     setFormState(createInitialFormState());
@@ -70,6 +73,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   function closeQuickAdd() {
     setIsQuickAddOpen(false);
     setGenerationFeedback("");
+  }
+
+  function openSettings() {
+    setIsResetPending(false);
+    setIsSettingsOpen(true);
+  }
+
+  function closeSettings() {
+    setIsSettingsOpen(false);
+    setIsResetPending(false);
+  }
+
+  function handleResetLocalData() {
+    resetAppState();
+    closeSettings();
   }
 
   function updateField<Key extends keyof QuickAddFormState>(field: Key, value: QuickAddFormState[Key]) {
@@ -163,6 +181,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Action View
           </Link>
         </nav>
+        <div className="sidebar__footer">
+          <button className="sidebar__settings" onClick={openSettings} type="button">
+            Settings
+          </button>
+        </div>
       </aside>
       <div className="content">
         <header className="topbar">
@@ -375,6 +398,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {isSettingsOpen ? (
+        <div className="modal-layer" role="presentation">
+          <button aria-label="Close settings" className="modal-backdrop" onClick={closeSettings} type="button" />
+          <section aria-labelledby="settings-title" aria-modal="true" className="settings-modal" role="dialog">
+            <div className="quick-add-modal__header">
+              <div>
+                <h2 className="quick-add-modal__title" id="settings-title">
+                  Settings
+                </h2>
+                <p className="quick-add-modal__subtitle">Local app controls for testing and cleanup.</p>
+              </div>
+              <button className="button-link" onClick={closeSettings} type="button">
+                Close
+              </button>
+            </div>
+
+            <div className="settings-section">
+              <div className="settings-section__header">
+                <h3 className="drawer-section__title">Local Data</h3>
+                <p className="field-hint">Reset saved app changes and return to the default seeded state.</p>
+              </div>
+
+              {isResetPending ? (
+                <div className="confirm-delete">
+                  <div className="confirm-delete__title">Reset local data?</div>
+                  <div className="confirm-delete__copy">
+                    This will clear saved changes and restore the default sample state.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => setIsResetPending(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button className="button-danger" onClick={handleResetLocalData} type="button">
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button className="button-danger" onClick={() => setIsResetPending(true)} type="button">
+                  Reset Local Data
+                </button>
+              )}
+            </div>
           </section>
         </div>
       ) : null}
