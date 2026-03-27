@@ -123,6 +123,11 @@ textarea {
   cursor: pointer;
 }
 
+.topbar__button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .button-link--inline {
   padding: 0;
   border: none;
@@ -131,8 +136,110 @@ textarea {
   border-radius: 0;
 }
 
+.button-link--inline-secondary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
 .page {
   padding: 24px;
+}
+
+.modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.quick-add-modal {
+  position: relative;
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.16);
+  padding: 22px;
+}
+
+.quick-add-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.quick-add-modal__title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.quick-add-modal__subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.quick-add-form {
+  display: grid;
+  gap: 16px;
+}
+
+.quick-add-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.field-control {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.field-control--muted {
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.field-control--invalid {
+  border-color: var(--required);
+  background: #fff5f5;
+}
+
+.quick-add-validation {
+  min-height: 20px;
+  font-size: 13px;
+}
+
+.quick-add-validation__message {
+  color: var(--required);
+  font-weight: 600;
+}
+
+.quick-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .dashboard-grid {
@@ -617,6 +724,19 @@ tr.waiting-row {
 
   .page {
     padding: 16px;
+  }
+
+  .modal-layer {
+    padding: 12px;
+  }
+
+  .quick-add-modal {
+    max-height: calc(100vh - 24px);
+    padding: 18px;
+  }
+
+  .quick-add-grid {
+    grid-template-columns: 1fr;
   }
 
   .action-toolbar {

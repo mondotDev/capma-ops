@@ -3,8 +3,11 @@
 import { createContext, useContext, useState } from "react";
 import { initialActionItems, type ActionItem } from "@/lib/sample-data";
 
+export type NewActionItem = Omit<ActionItem, "id" | "lastUpdated">;
+
 type AppStateContextValue = {
   items: ActionItem[];
+  addItem: (item: NewActionItem) => void;
   updateItem: (id: string, updates: Partial<ActionItem>) => void;
 };
 
@@ -15,6 +18,23 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     items,
+    addItem: (item: NewActionItem) => {
+      const slug = item.title
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
+      const timestamp = Date.now().toString(36);
+
+      setItems((current) => [
+        {
+          ...item,
+          id: `${slug || "item"}-${timestamp}`,
+          lastUpdated: new Date().toISOString().slice(0, 10)
+        },
+        ...current
+      ]);
+    },
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       setItems((current) =>
         current.map((item) =>

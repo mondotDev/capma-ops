@@ -2,6 +2,19 @@ import type { ActionItem } from "@/lib/sample-data";
 
 export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle"] as const;
+export const WORKSTREAM_OPTIONS = [
+  "Legislative Day",
+  "Best Pest Expo",
+  "Pest Ed",
+  "Termite Academy",
+  "First Fridays",
+  "Hands-On Workshops",
+  "Development Summit",
+  "News Brief",
+  "The Voice",
+  "Membership Campaigns",
+  "General Operations"
+] as const;
 export const TODAY = new Date("2026-03-27T00:00:00");
 export const DEFAULT_OWNER = "Melissa";
 

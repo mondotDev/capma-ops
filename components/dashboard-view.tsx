@@ -8,8 +8,8 @@ import {
 } from "@/lib/ops-utils";
 
 const PUBLICATION_PROGRESS = [
-  { title: "April News Brief", percentComplete: 60 },
-  { title: "Summer Voice", percentComplete: 25 }
+  { title: "April News Brief", workstream: "News Brief", percentComplete: 60 },
+  { title: "Summer Voice", workstream: "The Voice", percentComplete: 25 }
 ];
 
 export function DashboardView() {
@@ -85,7 +85,7 @@ export function DashboardView() {
           {PUBLICATION_PROGRESS.map((publication) => (
             <div className="simple-row simple-row--stacked" key={publication.title}>
               {publication.title} — {publication.percentComplete}% complete —{" "}
-              {dashboardMetrics.workstreamOpenCounts[publication.title] ?? 0} open
+              {dashboardMetrics.workstreamOpenCounts[publication.workstream] ?? 0} open
             </div>
           ))}
         </div>

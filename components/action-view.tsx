@@ -18,7 +18,8 @@ import {
   matchesActionFocus,
   sortByPriority,
   STATUS_OPTIONS,
-  WAITING_ON_SUGGESTIONS
+  WAITING_ON_SUGGESTIONS,
+  WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
 
 const FILTER_OPTIONS: { label: string; value: ActionFilter }[] = [
@@ -371,11 +372,17 @@ export function ActionView({
                 <div className="drawer__grid">
                   <div className="field">
                     <label htmlFor="drawer-workstream">Workstream</label>
-                    <input
+                    <select
                       id="drawer-workstream"
                       onChange={(event) => updateItem(selectedItem.id, { workstream: event.target.value })}
                       value={selectedItem.workstream}
-                    />
+                    >
+                      {WORKSTREAM_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="field">
                     <label htmlFor="drawer-type">Type</label>
