@@ -1,6 +1,6 @@
 import type { ActionItem } from "@/lib/sample-data";
 
-export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Complete"] as const;
+export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle"] as const;
 export const WORKSTREAM_OPTIONS = [
   "Legislative Day",
@@ -10,15 +10,14 @@ export const WORKSTREAM_OPTIONS = [
   "First Fridays",
   "Hands-On Workshops",
   "Development Summit",
-  "News Brief",
+  "Newsbrief",
   "The Voice",
   "Membership Campaigns",
   "General Operations"
 ] as const;
-export const TODAY = new Date("2026-03-27T00:00:00");
 export const DEFAULT_OWNER = "Melissa";
 
-const NEWS_BRIEF_MONTHS = [
+const NEWSBRIEF_MONTHS = [
   "January",
   "February",
   "March",
@@ -50,10 +49,15 @@ const VOICE_ISSUE_CONFIG = {
 
 export type ActionFilter = "all" | "overdue" | "dueSoon" | "waiting" | "mine";
 export type ActionFocus = "all" | "sponsor" | "production";
+export type IssueStatus = "Planned" | "Open" | "Complete";
 export type IssueDefinition = {
   label: string;
-  workstream: "News Brief" | "The Voice";
+  workstream: "Newsbrief" | "The Voice";
+  year: number;
   dueDate?: string;
+};
+export type IssueRecord = IssueDefinition & {
+  status: IssueStatus;
 };
 
 export type ActionSummaryCounts = {
@@ -62,11 +66,21 @@ export type ActionSummaryCounts = {
   waiting: number;
   totalActive: number;
 };
+export type IssueProgress = {
+  complete: number;
+  total: number;
+};
 
-const NEWS_BRIEF_ISSUES = buildNewsBriefIssues([2026, 2027]);
+const NEWSBRIEF_ISSUES = buildNewsbriefIssues([2026, 2027]);
 const VOICE_ISSUES = buildVoiceIssues();
-export const ISSUE_DEFINITIONS = [...NEWS_BRIEF_ISSUES, ...VOICE_ISSUES];
+export const ISSUE_DEFINITIONS = [...NEWSBRIEF_ISSUES, ...VOICE_ISSUES];
 export const ISSUE_OPTIONS = ISSUE_DEFINITIONS.map((issue) => issue.label);
+
+export function getCurrentDate() {
+  const currentDate = new Date();
+  currentDate.setHours(0, 0, 0, 0);
+  return currentDate;
+}
 
 export function parseDate(dateValue: string) {
   if (!dateValue) {
@@ -96,12 +110,12 @@ export function daysUntil(dateValue: string) {
     return Number.POSITIVE_INFINITY;
   }
 
-  return Math.ceil((parsedDate.getTime() - TODAY.getTime()) / (24 * 60 * 60 * 1000));
+  return Math.ceil((parsedDate.getTime() - getCurrentDate().getTime()) / (24 * 60 * 60 * 1000));
 }
 
 export function isOverdue(dueDate: string) {
   const parsedDate = parseDate(dueDate);
-  return Boolean(parsedDate && parsedDate.getTime() < TODAY.getTime());
+  return Boolean(parsedDate && parsedDate.getTime() < getCurrentDate().getTime());
 }
 
 export function isDueSoon(dueDate: string) {
@@ -122,11 +136,18 @@ export function isWaitingMissingReason(item: ActionItem) {
 }
 
 export function isPublicationWorkstream(workstream: string) {
-  return workstream === "News Brief" || workstream === "The Voice";
+  return workstream === "Newsbrief" || workstream === "The Voice";
 }
 
 export function getIssueDefinition(issue: string) {
   return ISSUE_DEFINITIONS.find((definition) => definition.label === issue);
+}
+
+export function getGeneratedIssues(issueStatuses: Partial<Record<string, IssueStatus>> = {}) {
+  return ISSUE_DEFINITIONS.map((issue) => ({
+    ...issue,
+    status: getIssueStatus(issue.label, issueStatuses)
+  }));
 }
 
 export function getIssuesForWorkstream(workstream: string) {
@@ -143,6 +164,62 @@ export function getIssueDueDate(issue?: string) {
 
 export function getWorkstreamForIssue(issue: string) {
   return getIssueDefinition(issue)?.workstream;
+}
+
+export function getIssueStatus(issue: string, issueStatuses: Partial<Record<string, IssueStatus>> = {}) {
+  return issueStatuses[issue] ?? "Planned";
+}
+
+export function getOpenIssuesForWorkstream(issues: IssueRecord[], workstream: IssueRecord["workstream"]) {
+  return issues
+    .filter((issue) => issue.workstream === workstream && issue.status === "Open")
+    .sort(compareIssuesByUpcomingOrder);
+}
+
+export function getNextPlannedIssueForWorkstream(
+  issues: IssueRecord[],
+  workstream: IssueRecord["workstream"],
+  currentDate = getCurrentDate()
+) {
+  const plannedIssues = issues.filter((issue) => issue.workstream === workstream && issue.status === "Planned");
+  const currentDateKey = currentDate.toISOString().slice(0, 10);
+
+  const upcomingDatedIssues = plannedIssues
+    .filter((issue) => issue.dueDate && issue.dueDate >= currentDateKey)
+    .sort(compareIssuesByUpcomingOrder);
+
+  if (upcomingDatedIssues.length > 0) {
+    return upcomingDatedIssues[0];
+  }
+
+  const placeholderIssues = plannedIssues.filter((issue) => !issue.dueDate).sort(compareIssuesByUpcomingOrder);
+
+  if (workstream === "The Voice" && placeholderIssues.length > 0) {
+    return placeholderIssues[0];
+  }
+
+  return undefined;
+}
+
+export function getVisiblePublicationIssues(issues: IssueRecord[], currentDate = getCurrentDate()) {
+  const workstreams: IssueRecord["workstream"][] = ["Newsbrief", "The Voice"];
+  const visibleIssues: IssueRecord[] = [];
+
+  for (const workstream of workstreams) {
+    const openIssues = getOpenIssuesForWorkstream(issues, workstream);
+    if (openIssues.length > 0) {
+      visibleIssues.push(...openIssues);
+      continue;
+    }
+
+    const nextPlannedIssue = getNextPlannedIssueForWorkstream(issues, workstream, currentDate);
+
+    if (nextPlannedIssue) {
+      visibleIssues.push(nextPlannedIssue);
+    }
+  }
+
+  return visibleIssues;
 }
 
 export function isIssueMissingDueDate(issue?: string) {
@@ -163,6 +240,24 @@ export function shouldRequireIssue(itemType: string, workstream: string) {
 
 export function getOpenCountForIssue(items: ActionItem[], issue: string) {
   return getActiveItems(items).filter((item) => item.issue === issue).length;
+}
+
+export function getOpenDeliverableCountForIssue(items: ActionItem[], issue: string) {
+  return getActiveItems(items).filter((item) => item.issue === issue && item.type === "Deliverable").length;
+}
+
+export function getIssueCompletionCount(items: ActionItem[], issue: string) {
+  return items.filter((item) => item.issue === issue && item.type === "Deliverable" && item.status === "Complete")
+    .length;
+}
+
+export function getIssueProgress(items: ActionItem[], issue: string): IssueProgress {
+  const deliverables = items.filter((item) => item.issue === issue && item.type === "Deliverable");
+
+  return {
+    complete: deliverables.filter((item) => item.status === "Complete").length,
+    total: deliverables.length
+  };
 }
 
 export function formatShortDate(dateValue: string) {
@@ -359,6 +454,16 @@ export function getDashboardMetrics(items: ActionItem[]) {
     return counts;
   }, {});
 
+  const issueDeliverableCounts = ISSUE_OPTIONS.reduce<Record<string, number>>((counts, issue) => {
+    counts[issue] = getOpenDeliverableCountForIssue(items, issue);
+    return counts;
+  }, {});
+
+  const issueProgress = ISSUE_OPTIONS.reduce<Record<string, IssueProgress>>((progress, issue) => {
+    progress[issue] = getIssueProgress(items, issue);
+    return progress;
+  }, {});
+
   const issueSetupRisks = ISSUE_OPTIONS.map((issue) => ({
     issue,
     count: activeItems.filter((item) => item.issue === issue && isItemMissingDueDate(item)).length
@@ -372,16 +477,19 @@ export function getDashboardMetrics(items: ActionItem[]) {
     productionRiskItems,
     workstreamOpenCounts,
     issueOpenCounts,
+    issueDeliverableCounts,
+    issueProgress,
     issueSetupRisks
   };
 }
 
-function buildNewsBriefIssues(years: number[]) {
+function buildNewsbriefIssues(years: number[]) {
   return years.flatMap((year) =>
-    NEWS_BRIEF_MONTHS.map((month, monthIndex) => ({
-      label: `${month} ${year} News Brief`,
-      workstream: "News Brief" as const,
-      dueDate: getNewsBriefDueDate(year, monthIndex)
+    NEWSBRIEF_MONTHS.map((month, monthIndex) => ({
+      label: `${month} ${year} Newsbrief`,
+      workstream: "Newsbrief" as const,
+      year,
+      dueDate: getNewsbriefDueDate(year, monthIndex)
     }))
   );
 }
@@ -391,12 +499,13 @@ function buildVoiceIssues() {
     Object.entries(seasons).map(([season, dueDate]) => ({
       label: `${season} ${year} The Voice`,
       workstream: "The Voice" as const,
+      year: Number(year),
       dueDate
     }))
   );
 }
 
-function getNewsBriefDueDate(year: number, monthIndex: number) {
+function getNewsbriefDueDate(year: number, monthIndex: number) {
   const candidate = new Date(Date.UTC(year, monthIndex, 20));
   const day = candidate.getUTCDay();
 
@@ -407,4 +516,23 @@ function getNewsBriefDueDate(year: number, monthIndex: number) {
   }
 
   return candidate.toISOString().slice(0, 10);
+}
+
+function compareIssuesByUpcomingOrder(a: IssueRecord, b: IssueRecord) {
+  const aHasDueDate = Boolean(a.dueDate);
+  const bHasDueDate = Boolean(b.dueDate);
+
+  if (aHasDueDate !== bHasDueDate) {
+    return aHasDueDate ? -1 : 1;
+  }
+
+  if (a.dueDate && b.dueDate) {
+    return a.dueDate.localeCompare(b.dueDate);
+  }
+
+  if (a.year !== b.year) {
+    return a.year - b.year;
+  }
+
+  return a.label.localeCompare(b.label);
 }

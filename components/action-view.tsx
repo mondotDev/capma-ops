@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppState } from "@/components/app-state";
 import type { ActionItem } from "@/lib/sample-data";
@@ -40,19 +39,23 @@ const FOCUS_LABELS: Record<Exclude<ActionFocus, "all">, string> = {
 
 export function ActionView({
   initialFilter,
-  initialFocus
+  initialFocus,
+  initialIssue
 }: {
   initialFilter?: string;
   initialFocus?: string;
+  initialIssue?: string;
 }) {
-  const { items, updateItem } = useAppState();
+  const { deleteItem, items, issues, updateItem } = useAppState();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const activeFilter = getFilterValue(initialFilter);
   const activeFocus = getFocusValue(initialFocus);
   const summaryCounts = useMemo(() => getActionSummaryCounts(items), [items]);
+  const activeIssue = initialIssue?.trim() || "";
 
   const visibleItems = useMemo(() => {
     return items.filter((item) => {
@@ -60,12 +63,19 @@ export function ActionView({
         return false;
       }
 
+      if (activeIssue && item.issue !== activeIssue) {
+        return false;
+      }
+
       return matchesActionFilter(item, activeFilter) && matchesActionFocus(item, activeFocus);
     });
-  }, [activeFilter, activeFocus, items, showCompleted]);
+  }, [activeFilter, activeFocus, activeIssue, items, showCompleted]);
 
   const sortedItems = useMemo(() => [...visibleItems].sort(sortByPriority), [visibleItems]);
   const selectedItem = sortedItems.find((item) => item.id === selectedId) ?? null;
+  const selectedIssueRecord = selectedItem?.issue
+    ? issues.find((issue) => issue.label === selectedItem.issue) ?? null
+    : null;
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
 
   useEffect(() => {
@@ -77,6 +87,10 @@ export function ActionView({
       setSelectedId(null);
     }
   }, [selectedId, sortedItems]);
+
+  useEffect(() => {
+    setIsDeleteConfirmOpen(false);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -120,9 +134,30 @@ export function ActionView({
     updateQuery(activeFilter, "all");
   }
 
+  function clearIssueFilter() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("issue");
+    const query = params.toString();
+    router.replace(query ? `/action?${query}` : "/action");
+  }
+
   return (
     <section className="action-view">
       <div className="action-controls">
+        {activeIssue ? (
+          <div className="issue-context">
+            <div>
+              <div className="issue-context__title">{activeIssue}</div>
+              <div className="issue-context__meta">
+                {visibleItems.length} {visibleItems.length === 1 ? "item" : "items"}
+              </div>
+            </div>
+            <button className="button-link button-link--inline-secondary" onClick={clearIssueFilter} type="button">
+              Back to all active items
+            </button>
+          </div>
+        ) : null}
+
         <div className="filter-bar" aria-label="Action filters">
           {FILTER_OPTIONS.map((option) => (
             <button
@@ -173,7 +208,10 @@ export function ActionView({
             ) : null}
             {activeFilter !== "all" ? (
               <p className="muted action-toolbar__filter">
-                Showing {getFilterLabel(activeFilter).toLowerCase()} items. <Link href="/action">Reset</Link>
+                Showing {getFilterLabel(activeFilter).toLowerCase()} items.{" "}
+                <button className="button-link button-link--inline" onClick={() => handleFilterChange("all")} type="button">
+                  Reset
+                </button>
               </p>
             ) : null}
             {activeFilter === "mine" ? (
@@ -215,7 +253,9 @@ export function ActionView({
                   {sortedItems.map((item) => (
                     <tr
                       className={
-                        isItemMissingDueDate(item)
+                        item.status === "Cut"
+                          ? "cut-row"
+                          : isItemMissingDueDate(item)
                           ? "risk-row"
                           : isWaitingIssue(item)
                           ? "waiting-row"
@@ -230,7 +270,9 @@ export function ActionView({
                       onClick={() => setSelectedId(item.id)}
                     >
                       <td>
-                        <div>{item.title}</div>
+                        <div className={item.status === "Cut" ? "cell-title cell-title--cut" : "cell-title"}>
+                          {item.title}
+                        </div>
                         {item.issue ? <div className="cell-subtext">{item.issue}</div> : null}
                       </td>
                       <td>
@@ -307,9 +349,13 @@ export function ActionView({
               </div>
 
               <div className="drawer__badges">
-                <span className={getUrgencyBadgeClassName(selectedItem)}>
-                  {formatUrgencyBadge(selectedItem)}
-                </span>
+                {selectedItem.status === "Cut" ? (
+                  <span className="urgency-badge urgency-badge--cut">Cut</span>
+                ) : (
+                  <span className={getUrgencyBadgeClassName(selectedItem)}>
+                    {formatUrgencyBadge(selectedItem)}
+                  </span>
+                )}
               </div>
 
               {selectedItem.issue ? <div className="drawer__issue">{selectedItem.issue}</div> : null}
@@ -430,6 +476,15 @@ export function ActionView({
                       </select>
                     </div>
                   ) : null}
+                  {selectedIssueRecord ? (
+                    <div className="field">
+                      <label>Issue Status</label>
+                      <div className="field-static">
+                        {selectedIssueRecord.status}
+                        {!selectedIssueRecord.dueDate ? " — missing due date" : ""}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="field">
                     <label htmlFor="drawer-type">Type</label>
                     <input
@@ -461,6 +516,42 @@ export function ActionView({
                     value={selectedItem.notes}
                   />
                 </div>
+              </section>
+
+              <section className="drawer-section drawer-section--danger">
+                <h3 className="drawer-section__title">Delete Item</h3>
+                {!isDeleteConfirmOpen ? (
+                  <button className="button-danger" onClick={() => setIsDeleteConfirmOpen(true)} type="button">
+                    Delete
+                  </button>
+                ) : (
+                  <div className="confirm-delete">
+                    <div className="confirm-delete__title">Delete this item?</div>
+                    <div className="confirm-delete__copy">
+                      This will remove it from the current app state.
+                    </div>
+                    <div className="confirm-delete__actions">
+                      <button
+                        className="button-link button-link--inline-secondary"
+                        onClick={() => setIsDeleteConfirmOpen(false)}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="button-danger"
+                        onClick={() => {
+                          deleteItem(selectedItem.id);
+                          setSelectedId(null);
+                          setIsDeleteConfirmOpen(false);
+                        }}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
             </div>
           </aside>

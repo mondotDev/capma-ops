@@ -1,13 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/components/app-state";
-import { ISSUE_OPTIONS, formatDashboardItem, getDashboardMetrics } from "@/lib/ops-utils";
+import { formatDashboardItem, getDashboardMetrics, getVisiblePublicationIssues } from "@/lib/ops-utils";
 
 export function DashboardView() {
   const router = useRouter();
-  const { items } = useAppState();
+  const { completeIssue, generateMissingDeliverablesForIssue, items, issues, openIssue, setIssueStatus } =
+    useAppState();
+  const [publicationFeedback, setPublicationFeedback] = useState("");
+  const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
+  const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
   const dashboardMetrics = getDashboardMetrics(items);
+  const visiblePublicationIssues = reorderVisibleIssues(
+    getVisiblePublicationIssues(issues),
+    activePublicationIssue
+  );
 
   return (
     <section className="dashboard-grid">
@@ -74,21 +83,131 @@ export function DashboardView() {
       <div className="card">
         <div className="card__title">PUBLICATIONS</div>
         <div className="simple-list">
-          {ISSUE_OPTIONS.filter((issue) => (dashboardMetrics.issueOpenCounts[issue] ?? 0) > 0).map((issue) => (
-            <div className="simple-row simple-row--stacked" key={issue}>
-              {issue} — {dashboardMetrics.issueOpenCounts[issue] ?? 0} open
+          {visiblePublicationIssues.map((issue) => (
+            <div
+              className={
+                issue.label === activePublicationIssue
+                  ? "publication-row publication-row--active"
+                  : issue.status === "Planned"
+                    ? "publication-row publication-row--planned"
+                    : "publication-row"
+              }
+              key={issue.label}
+            >
+              <div className="publication-row__body">
+                {issue.status === "Planned" ? (
+                  <div className="publication-row__meta">Next up</div>
+                ) : issue.status === "Open" ? (
+                  <div className="publication-row__meta">Current issue</div>
+                ) : null}
+                <div className="simple-row simple-row--stacked">
+                  {issue.label} — {issue.status} — {dashboardMetrics.issueProgress[issue.label]?.complete ?? 0}/
+                  {dashboardMetrics.issueProgress[issue.label]?.total ?? 0} complete
+                </div>
+                {issue.status === "Planned" && (dashboardMetrics.issueProgress[issue.label]?.total ?? 0) === 0 ? (
+                  <div className="publication-row__meta">0 deliverables</div>
+                ) : null}
+                {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
+              </div>
+              <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
+                {issue.status === "Planned" ? (
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => {
+                      const result = openIssue(issue.label);
+                      setActivePublicationIssue(issue.label);
+                      router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
+                      setPublicationFeedback(formatPublicationFeedback(issue.label, result.created, result.skipped));
+                    }}
+                    type="button"
+                  >
+                    Open Issue
+                  </button>
+                ) : null}
+                {issue.status === "Open" ? (
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => {
+                      setActivePublicationIssue(issue.label);
+                      router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
+                    }}
+                    type="button"
+                  >
+                    Go to Issue
+                  </button>
+                ) : null}
+                {issue.status === "Open" ? (
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => {
+                      const result = generateMissingDeliverablesForIssue(issue.label);
+                      setActivePublicationIssue(issue.label);
+                      setPublicationFeedback(formatGenerateMissingFeedback(issue.label, result.created, result.skipped));
+                    }}
+                    type="button"
+                  >
+                    Generate Missing
+                  </button>
+                ) : null}
+                <select
+                  aria-label={`Issue status for ${issue.label}`}
+                  className="cell-select"
+                  onChange={(event) =>
+                    {
+                      const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
+                      setIssueStatus(issue.label, nextStatus);
+                      setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
+                    }
+                  }
+                  value={issue.status}
+                >
+                  <option value="Planned">Planned</option>
+                  <option value="Open">Open</option>
+                  <option value="Complete">Complete</option>
+                </select>
+              </div>
+              {issue.status === "Open" ? (
+                issuePendingCompletion === issue.label ? (
+                  <div className="confirm-delete publication-confirm">
+                    <div className="confirm-delete__title">Complete this issue?</div>
+                    <div className="confirm-delete__copy">
+                      This will mark the issue complete but keep all related items in local state.
+                    </div>
+                    <div className="confirm-delete__actions">
+                      <button
+                        className="button-link button-link--inline-secondary"
+                        onClick={() => setIssuePendingCompletion(null)}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="button-danger"
+                        onClick={() => {
+                          completeIssue(issue.label);
+                          setIssuePendingCompletion(null);
+                          setActivePublicationIssue(null);
+                          setPublicationFeedback(`${issue.label} marked complete.`);
+                        }}
+                        type="button"
+                      >
+                        Complete Issue
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => setIssuePendingCompletion(issue.label)}
+                    type="button"
+                  >
+                    Complete Issue
+                  </button>
+                )
+              ) : null}
             </div>
           ))}
-          {dashboardMetrics.issueSetupRisks.length > 0 ? (
-            <>
-              <div className="card__subhead">Missing Issue Setup</div>
-              {dashboardMetrics.issueSetupRisks.map((entry) => (
-                <div className="detail-row" key={entry.issue}>
-                  {entry.issue} — {entry.count} affected
-                </div>
-              ))}
-            </>
-          ) : null}
+          {publicationFeedback ? <div className="card__subhead">{publicationFeedback}</div> : null}
         </div>
       </div>
 
@@ -148,4 +267,61 @@ export function DashboardView() {
       </button>
     </section>
   );
+}
+
+function formatPublicationFeedback(issue: string, created: number, skipped: number) {
+  if (created === 0 && skipped === 0) {
+    return `${issue} opened.`;
+  }
+
+  if (skipped === 0) {
+    return `${issue} opened — ${created} deliverables created.`;
+  }
+
+  if (created === 0) {
+    return `${issue} opened — all deliverables already existed.`;
+  }
+
+  return `${issue} opened — ${created} created, ${skipped} skipped.`;
+}
+
+function formatGenerateMissingFeedback(issue: string, created: number, skipped: number) {
+  if (created === 0 && skipped === 0) {
+    return `${issue}: nothing to generate.`;
+  }
+
+  if (created === 0) {
+    return `${issue}: all template deliverables already exist.`;
+  }
+
+  if (skipped === 0) {
+    return `${issue}: ${created} missing deliverables created.`;
+  }
+
+  return `${issue}: ${created} created, ${skipped} already existed.`;
+}
+
+function reorderVisibleIssues(
+  issues: ReturnType<typeof getVisiblePublicationIssues>,
+  activeIssue: string | null
+) {
+  if (!activeIssue) {
+    return issues;
+  }
+
+  return [...issues].sort((a, b) => {
+    if (a.label === activeIssue) {
+      return -1;
+    }
+
+    if (b.label === activeIssue) {
+      return 1;
+    }
+
+    if (a.status !== b.status) {
+      return a.status === "Open" ? -1 : 1;
+    }
+
+    return a.label.localeCompare(b.label);
+  });
 }

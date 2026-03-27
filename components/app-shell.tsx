@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type NewActionItem, useAppState } from "@/components/app-state";
+import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
 import {
   DEFAULT_OWNER,
   getIssueDueDate,
@@ -33,11 +33,18 @@ type QuickAddFormState = {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { addItem } = useAppState();
+  const { addItem, generateIssueDeliverables, issues } = useAppState();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
+  const [generationFeedback, setGenerationFeedback] = useState<string>("");
   const validation = useMemo(() => getValidation(formState), [formState]);
   const availableIssues = useMemo(() => getIssuesForWorkstream(formState.workstream), [formState.workstream]);
+  const selectedIssueRecord = useMemo(
+    () => issues.find((issue) => issue.label === formState.issue) ?? null,
+    [formState.issue, issues]
+  );
+  const canGenerateDeliverables =
+    formState.issue.length > 0 && (formState.workstream === "Newsbrief" || formState.workstream === "The Voice");
 
   useEffect(() => {
     if (!isQuickAddOpen) {
@@ -56,14 +63,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function openQuickAdd() {
     setFormState(createInitialFormState());
+    setGenerationFeedback("");
     setIsQuickAddOpen(true);
   }
 
   function closeQuickAdd() {
     setIsQuickAddOpen(false);
+    setGenerationFeedback("");
   }
 
   function updateField<Key extends keyof QuickAddFormState>(field: Key, value: QuickAddFormState[Key]) {
+    setGenerationFeedback("");
     setFormState((current) => {
       if (field === "status") {
         return {
@@ -127,6 +137,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     } satisfies NewActionItem);
 
     closeQuickAdd();
+  }
+
+  function handleGenerateDeliverables() {
+    if (!canGenerateDeliverables) {
+      return;
+    }
+
+    const result = generateIssueDeliverables(formState.issue);
+    setGenerationFeedback(formatGenerationFeedback(result));
   }
 
   return (
@@ -248,6 +267,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         </option>
                       ))}
                     </select>
+                    {selectedIssueRecord ? (
+                      <div className="field-hint">
+                        Status: <strong>{selectedIssueRecord.status}</strong>
+                        {!selectedIssueRecord.dueDate ? " — missing due date" : ""}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -331,9 +356,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     Fill the highlighted fields to save this item.
                   </span>
                 )}
+                {generationFeedback ? (
+                  <span className="quick-add-feedback">{generationFeedback}</span>
+                ) : null}
               </div>
 
               <div className="quick-add-actions">
+                {canGenerateDeliverables ? (
+                  <button className="button-link button-link--inline-secondary" onClick={handleGenerateDeliverables} type="button">
+                    Generate Issue Deliverables
+                  </button>
+                ) : null}
                 <button className="button-link button-link--inline-secondary" onClick={closeQuickAdd} type="button">
                   Cancel
                 </button>
@@ -347,6 +380,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
     </div>
   );
+}
+
+function formatGenerationFeedback(result: GenerateDeliverablesResult) {
+  if (result.created === 0 && result.skipped === 0) {
+    return "No deliverables generated.";
+  }
+
+  if (result.skipped === 0) {
+    return `${result.created} deliverable${result.created === 1 ? "" : "s"} created.`;
+  }
+
+  if (result.created === 0) {
+    return `${result.skipped} skipped because they already exist.`;
+  }
+
+  return `${result.created} created, ${result.skipped} skipped because they already exist.`;
 }
 
 function createInitialFormState(): QuickAddFormState {
