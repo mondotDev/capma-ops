@@ -2,15 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/components/app-state";
-import {
-  formatDashboardItem,
-  getDashboardMetrics
-} from "@/lib/ops-utils";
-
-const PUBLICATION_PROGRESS = [
-  { title: "April News Brief", workstream: "News Brief", percentComplete: 60 },
-  { title: "Summer Voice", workstream: "The Voice", percentComplete: 25 }
-];
+import { ISSUE_OPTIONS, formatDashboardItem, getDashboardMetrics } from "@/lib/ops-utils";
 
 export function DashboardView() {
   const router = useRouter();
@@ -82,12 +74,21 @@ export function DashboardView() {
       <div className="card">
         <div className="card__title">PUBLICATIONS</div>
         <div className="simple-list">
-          {PUBLICATION_PROGRESS.map((publication) => (
-            <div className="simple-row simple-row--stacked" key={publication.title}>
-              {publication.title} — {publication.percentComplete}% complete —{" "}
-              {dashboardMetrics.workstreamOpenCounts[publication.workstream] ?? 0} open
+          {ISSUE_OPTIONS.filter((issue) => (dashboardMetrics.issueOpenCounts[issue] ?? 0) > 0).map((issue) => (
+            <div className="simple-row simple-row--stacked" key={issue}>
+              {issue} — {dashboardMetrics.issueOpenCounts[issue] ?? 0} open
             </div>
           ))}
+          {dashboardMetrics.issueSetupRisks.length > 0 ? (
+            <>
+              <div className="card__subhead">Missing Issue Setup</div>
+              {dashboardMetrics.issueSetupRisks.map((entry) => (
+                <div className="detail-row" key={entry.issue}>
+                  {entry.issue} — {entry.count} affected
+                </div>
+              ))}
+            </>
+          ) : null}
         </div>
       </div>
 

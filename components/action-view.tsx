@@ -11,7 +11,10 @@ import {
   DEFAULT_OWNER,
   formatDueLabel,
   formatShortDate,
+  getIssuesForWorkstream,
   getActionSummaryCounts,
+  getIssueDueDate,
+  isItemMissingDueDate,
   isWaitingIssue,
   isWaitingMissingReason,
   matchesActionFilter,
@@ -212,7 +215,9 @@ export function ActionView({
                   {sortedItems.map((item) => (
                     <tr
                       className={
-                        isWaitingIssue(item)
+                        isItemMissingDueDate(item)
+                          ? "risk-row"
+                          : isWaitingIssue(item)
                           ? "waiting-row"
                           : formatDueLabel(item) === "Overdue"
                             ? "overdue-row"
@@ -224,7 +229,10 @@ export function ActionView({
                       key={item.id}
                       onClick={() => setSelectedId(item.id)}
                     >
-                      <td>{item.title}</td>
+                      <td>
+                        <div>{item.title}</div>
+                        {item.issue ? <div className="cell-subtext">{item.issue}</div> : null}
+                      </td>
                       <td>
                         <div>{formatShortDate(item.dueDate)}</div>
                         {formatDueLabel(item) ? <div className="cell-hint">{formatDueLabel(item)}</div> : null}
@@ -303,6 +311,11 @@ export function ActionView({
                   {formatUrgencyBadge(selectedItem)}
                 </span>
               </div>
+
+              {selectedItem.issue ? <div className="drawer__issue">{selectedItem.issue}</div> : null}
+              {isItemMissingDueDate(selectedItem) ? (
+                <div className="drawer__warning">Due date not configured for this issue</div>
+              ) : null}
             </div>
 
             <div className="drawer__sections">
@@ -374,7 +387,18 @@ export function ActionView({
                     <label htmlFor="drawer-workstream">Workstream</label>
                     <select
                       id="drawer-workstream"
-                      onChange={(event) => updateItem(selectedItem.id, { workstream: event.target.value })}
+                      onChange={(event) => {
+                        const nextWorkstream = event.target.value;
+                        const nextIssues = getIssuesForWorkstream(nextWorkstream);
+
+                        updateItem(selectedItem.id, {
+                          workstream: nextWorkstream,
+                          issue:
+                            selectedItem.issue && nextIssues.includes(selectedItem.issue as (typeof nextIssues)[number])
+                              ? selectedItem.issue
+                              : ""
+                        });
+                      }}
                       value={selectedItem.workstream}
                     >
                       {WORKSTREAM_OPTIONS.map((option) => (
@@ -384,6 +408,28 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
+                  {selectedItem.issue ? (
+                    <div className="field">
+                      <label htmlFor="drawer-issue">Issue</label>
+                      <select
+                        id="drawer-issue"
+                        onChange={(event) =>
+                          updateItem(selectedItem.id, {
+                            issue: event.target.value || undefined,
+                            dueDate: event.target.value ? (getIssueDueDate(event.target.value) ?? "") : selectedItem.dueDate
+                          })
+                        }
+                        value={selectedItem.issue ?? ""}
+                      >
+                        <option value="">None</option>
+                        {getIssuesForWorkstream(selectedItem.workstream).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                   <div className="field">
                     <label htmlFor="drawer-type">Type</label>
                     <input

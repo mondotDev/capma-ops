@@ -7,7 +7,12 @@ import { usePathname } from "next/navigation";
 import { type NewActionItem, useAppState } from "@/components/app-state";
 import {
   DEFAULT_OWNER,
+  getIssueDueDate,
+  getIssuesForWorkstream,
+  getWorkstreamForIssue,
+  isIssueMissingDueDate,
   STATUS_OPTIONS,
+  shouldRequireIssue,
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
@@ -18,6 +23,7 @@ type QuickAddFormState = {
   type: string;
   title: string;
   workstream: string;
+  issue: string;
   dueDate: string;
   owner: string;
   status: string;
@@ -31,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
   const validation = useMemo(() => getValidation(formState), [formState]);
+  const availableIssues = useMemo(() => getIssuesForWorkstream(formState.workstream), [formState.workstream]);
 
   useEffect(() => {
     if (!isQuickAddOpen) {
@@ -66,6 +73,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         };
       }
 
+      if (field === "workstream") {
+        const nextWorkstream = value as string;
+        const nextIssues = getIssuesForWorkstream(nextWorkstream);
+        const nextIssue =
+          current.issue && nextIssues.includes(current.issue as (typeof nextIssues)[number])
+            ? current.issue
+            : "";
+
+        return {
+          ...current,
+          workstream: nextWorkstream,
+          issue: nextIssue,
+          dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
+        };
+      }
+
+      if (field === "issue") {
+        const nextIssue = value as string;
+
+        return {
+          ...current,
+          issue: nextIssue,
+          workstream: nextIssue ? (getWorkstreamForIssue(nextIssue) ?? current.workstream) : current.workstream,
+          dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? "") : current.dueDate
+        };
+      }
+
       return {
         ...current,
         [field]: value
@@ -84,6 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       type: formState.type,
       title: formState.title.trim(),
       workstream: formState.workstream.trim(),
+      issue: formState.issue || undefined,
       dueDate: formState.dueDate,
       owner: formState.owner.trim(),
       status: formState.status,
@@ -197,6 +232,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </select>
                 </div>
 
+                {availableIssues.length > 0 ? (
+                  <div className="field">
+                    <label htmlFor="quick-add-issue">Issue</label>
+                    <select
+                      className={validation.issue ? "field-control field-control--invalid" : "field-control"}
+                      id="quick-add-issue"
+                      onChange={(event) => updateField("issue", event.target.value)}
+                      value={formState.issue}
+                    >
+                      <option value="">{shouldRequireIssue(formState.type, formState.workstream) ? "Select issue" : "None"}</option>
+                      {availableIssues.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
                 <div className="field">
                   <label htmlFor="quick-add-due-date">Due Date</label>
                   <input
@@ -300,6 +354,7 @@ function createInitialFormState(): QuickAddFormState {
     type: "",
     title: "",
     workstream: "",
+    issue: "",
     dueDate: "",
     owner: DEFAULT_OWNER,
     status: "Not Started",
@@ -313,7 +368,8 @@ function getValidation(formState: QuickAddFormState) {
     type: formState.type.trim().length === 0,
     title: formState.title.trim().length === 0,
     workstream: formState.workstream.trim().length === 0,
-    dueDate: formState.dueDate.length === 0,
+    issue: shouldRequireIssue(formState.type, formState.workstream) && formState.issue.length === 0,
+    dueDate: formState.dueDate.length === 0 && !isIssueMissingDueDate(formState.issue),
     owner: formState.owner.trim().length === 0,
     status: formState.status.trim().length === 0,
     waitingOn: formState.status === "Waiting" && formState.waitingOn.length === 0

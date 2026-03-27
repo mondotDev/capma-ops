@@ -3,6 +3,7 @@ export type ActionItem = {
   title: string;
   type: string;
   workstream: string;
+  issue?: string;
   dueDate: string;
   status: string;
   owner: string;
@@ -17,6 +18,7 @@ export const initialActionItems: ActionItem[] = [
     title: "Draft CEO Briefing",
     type: "Deliverable",
     workstream: "News Brief",
+    issue: "April 2026 News Brief",
     dueDate: "2026-04-18",
     status: "In Progress",
     owner: "Melissa",
@@ -65,6 +67,7 @@ export const initialActionItems: ActionItem[] = [
     title: "Secure printer vendor",
     type: "Production",
     workstream: "The Voice",
+    issue: "Summer 2026 The Voice",
     dueDate: "2026-03-30",
     status: "Waiting",
     owner: "Melissa",
@@ -77,6 +80,7 @@ export const initialActionItems: ActionItem[] = [
     title: "Collect final ad assets",
     type: "Task",
     workstream: "The Voice",
+    issue: "Summer 2026 The Voice",
     dueDate: "2026-03-28",
     status: "Waiting",
     owner: "Melissa",
@@ -89,6 +93,7 @@ export const initialActionItems: ActionItem[] = [
     title: "Production proof not ready",
     type: "Production",
     workstream: "News Brief",
+    issue: "April 2026 News Brief",
     dueDate: "2026-03-27",
     status: "In Progress",
     owner: "Melissa",
@@ -107,5 +112,18 @@ export const initialActionItems: ActionItem[] = [
     waitingOn: "",
     lastUpdated: "2026-03-26",
     notes: ""
+  },
+  {
+    id: "spring-voice-planning",
+    title: "Plan Spring Voice editorial calendar",
+    type: "Task",
+    workstream: "The Voice",
+    issue: "Spring 2027 The Voice",
+    dueDate: "",
+    status: "Not Started",
+    owner: "Melissa",
+    waitingOn: "",
+    lastUpdated: "2026-03-27",
+    notes: "Issue exists for planning, but due date has not been configured yet."
   }
 ];
