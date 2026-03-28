@@ -263,6 +263,18 @@ export function isWaitingMissingReason(item: ActionItem) {
   return isWaitingIssue(item) && item.waitingOn.trim().length === 0;
 }
 
+export function getContextualDueDateLabel(status: string, isBlocked?: boolean) {
+  if (status === "Waiting") {
+    return "Next Follow-Up";
+  }
+
+  if (isBlocked) {
+    return "Next Action";
+  }
+
+  return "Due Date";
+}
+
 export function isBlockedItem(item: ActionItemBlockedState) {
   if (isTerminalStatus(item.status)) {
     return false;

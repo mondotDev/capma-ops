@@ -9,6 +9,7 @@ import {
   createActionNoteEntry,
   DEFAULT_OWNER,
   EVENT_GROUP_OPTIONS,
+  getContextualDueDateLabel,
   getIssuesForWorkstream,
   LOCAL_FALLBACK_NOTE_AUTHOR,
   getOwnerOptions,
@@ -393,7 +394,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ) : null}
 
                 <div className="field">
-                  <label htmlFor="quick-add-due-date">Due Date</label>
+                  <label htmlFor="quick-add-due-date">
+                    {getContextualDueDateLabel(formState.status, formState.isBlocked)}
+                  </label>
                   <input
                     className={validation.dueDate ? "field-control field-control--invalid" : "field-control"}
                     id="quick-add-due-date"
@@ -401,6 +404,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     type="date"
                     value={formState.dueDate}
                   />
+                  {formState.status === "Waiting" ? (
+                    <div className="field-hint">Use this date for the next check-in while the item is waiting.</div>
+                  ) : formState.isBlocked ? (
+                    <div className="field-hint">Use this date for the next step needed to unblock the work.</div>
+                  ) : null}
                 </div>
 
                 <div className="field">

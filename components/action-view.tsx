@@ -27,6 +27,7 @@ import {
   formatDueLabel,
   formatShortDate,
   getActionSummaryCounts,
+  getContextualDueDateLabel,
   getIssuesForWorkstream,
   getOwnerOptions,
   LOCAL_FALLBACK_NOTE_AUTHOR,
@@ -841,15 +842,19 @@ export function ActionView({
                     </select>
                   </div>
                   <div className="field field--priority">
-                    <label htmlFor="drawer-due-date">Due Date</label>
+                    <label htmlFor="drawer-due-date">
+                      {getContextualDueDateLabel(selectedItem.status, isBlockedItem(selectedItem))}
+                    </label>
                     <input
                       id="drawer-due-date"
                       onChange={(event) => updateItem(selectedItem.id, { dueDate: event.target.value })}
                       type="date"
                       value={selectedItem.dueDate}
                     />
-                    {selectedItem.status === "Waiting" || isBlockedItem(selectedItem) ? (
-                      <div className="field-hint">Use this as the next follow-up or next-action date while the item is stalled.</div>
+                    {selectedItem.status === "Waiting" ? (
+                      <div className="field-hint">Use this date for the next check-in while the item is waiting.</div>
+                    ) : isBlockedItem(selectedItem) ? (
+                      <div className="field-hint">Use this date for the next step needed to unblock the work.</div>
                     ) : null}
                   </div>
                   <div className="field">
