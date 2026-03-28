@@ -13,21 +13,23 @@ import {
   type AppStateSnapshot
 } from "@/lib/app-transfer";
 import {
+  generatePublicationIssueDeliverables,
+  openPublicationIssue,
+  setPublicationIssueStatus,
+  type GenerateDeliverablesResult
+} from "@/lib/publication-issue-actions";
+import {
   applyBulkActionItemUpdates,
   applyActionItemUpdates,
   createActionItem,
   normalizeActionItems,
   type NewActionItemInput
 } from "@/lib/action-item-mutations";
-import { getPublicationTemplates } from "@/lib/publication-templates";
 import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
 import {
-  DEFAULT_OWNER,
   type IssueRecord,
   type IssueStatus,
   getGeneratedIssues,
-  getIssueDueDate,
-  getWorkstreamForIssue,
   normalizeActionItemFields
 } from "@/lib/ops-utils";
 
@@ -35,10 +37,7 @@ export { clearPersistedAppState };
 export type { AppStateSnapshot };
 
 export type NewActionItem = NewActionItemInput;
-export type GenerateDeliverablesResult = {
-  created: number;
-  skipped: number;
-};
+export type { GenerateDeliverablesResult };
 export type ImportAppStateResult = {
   itemCount: number;
   usedLegacyFormat: boolean;
@@ -113,47 +112,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }
 
   function generateIssueDeliverables(issue: string): GenerateDeliverablesResult {
-    const workstream = getWorkstreamForIssue(issue);
-
-    if (!workstream) {
-      return { created: 0, skipped: 0 };
-    }
-
     enablePersistence();
-    const templates = getPublicationTemplates(workstream);
     let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
-
     setItems((current) => {
-      const additions: ActionItem[] = [];
-      const issueDueDate = getIssueDueDate(issue) ?? "";
-
-      for (const template of templates) {
-        const exists = current.some(
-          (item) => item.issue === issue && item.workstream === workstream && item.title === template.title
-        );
-
-        if (exists) {
-          result = { ...result, skipped: result.skipped + 1 };
-          continue;
-        }
-
-        additions.push(
-          createActionItem({
-            type: "Deliverable",
-            title: template.title,
-            workstream,
-            issue,
-            dueDate: issueDueDate,
-            status: "Not Started",
-            owner: template.defaultOwner,
-            waitingOn: "",
-            notes: ""
-          })
-        );
-      }
-
-      result = { ...result, created: additions.length };
-      return additions.length > 0 ? [...additions, ...current] : current;
+      const nextState = generatePublicationIssueDeliverables(current, issue);
+      result = nextState.result;
+      return nextState.items;
     });
 
     return result;
@@ -165,28 +129,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   function openIssue(issue: string): GenerateDeliverablesResult {
     enablePersistence();
-    setIssueStatuses((current) => ({
-      ...current,
-      [issue]: "Open"
-    }));
+    let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
 
-    return generateIssueDeliverables(issue);
+    setItems((currentItems) => {
+      let nextItems = currentItems;
+
+      setIssueStatuses((currentIssueStatuses) => {
+        const nextState = openPublicationIssue(currentItems, currentIssueStatuses, issue);
+        nextItems = nextState.items;
+        result = nextState.result;
+        return nextState.issueStatuses;
+      });
+
+      return nextItems;
+    });
+
+    return result;
   }
 
   function setIssueStatus(issue: string, status: IssueStatus) {
     enablePersistence();
-    setIssueStatuses((current) => ({
-      ...current,
-      [issue]: status
-    }));
+    setIssueStatuses((current) => setPublicationIssueStatus(current, issue, status));
   }
 
   function completeIssue(issue: string) {
     enablePersistence();
-    setIssueStatuses((current) => ({
-      ...current,
-      [issue]: "Complete"
-    }));
+    setIssueStatuses((current) => setPublicationIssueStatus(current, issue, "Complete"));
   }
 
   function resetAppState() {
