@@ -29,6 +29,7 @@ import {
   getOwnerOptions,
   isItemMissingDueDate,
   isBlockedItem,
+  isTerminalStatus,
   isWaitingIssue,
   isWaitingMissingReason,
   OWNER_OPTIONS,
@@ -96,6 +97,9 @@ export function ActionView({
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkFeedback, setBulkFeedback] = useState("");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [blockedByDraft, setBlockedByDraft] = useState("");
   const activeFilter = getActionFilterValue(initialFilter);
   const activeFocus = getActionFocusValue(initialFocus);
   const activeLens = getActionLensValue(initialLens);
@@ -176,6 +180,12 @@ export function ActionView({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedId]);
 
+  useEffect(() => {
+    setIsEditingTitle(false);
+    setTitleDraft(selectedItem?.title ?? "");
+    setBlockedByDraft(selectedItem?.blockedBy ?? "");
+  }, [selectedItem?.blockedBy, selectedItem?.id, selectedItem?.title]);
+
   function updateQuery(
     nextFilter: ActionFilter,
     nextFocus: ActionFocus,
@@ -228,6 +238,32 @@ export function ActionView({
 
   function handleFilterChange(nextFilter: ActionFilter) {
     updateQuery(nextFilter, activeFocus, activeLens, activeEventGroup, activeDueDate, activeQuery);
+  }
+
+  function commitBlockedByDraft(item: ActionItem, value: string) {
+    if ((item.blockedBy ?? "") === value) {
+      return;
+    }
+
+    updateItem(item.id, { blockedBy: value });
+  }
+
+  function commitTitleDraft(item: ActionItem, value: string) {
+    if (item.title === value) {
+      return;
+    }
+
+    updateItem(item.id, { title: value });
+  }
+
+  function finishTitleEdit(item: ActionItem) {
+    commitTitleDraft(item, titleDraft);
+    setIsEditingTitle(false);
+  }
+
+  function cancelTitleEdit(item: ActionItem) {
+    setTitleDraft(item.title);
+    setIsEditingTitle(false);
   }
 
   function clearFocus() {
@@ -591,9 +627,11 @@ export function ActionView({
                               <td className="cell-primary">
                                 <div
                                   className={[
-                                    item.status === "Cut" ? "cell-title cell-title--cut" : "cell-title",
-                                    formatDueLabel(item) === "Overdue" ? "cell-title--overdue" : "",
-                                    item.status === "Waiting" && daysSince(item.lastUpdated) >= 7
+                                    isTerminalStatus(item.status) ? "cell-title cell-title--cut" : "cell-title",
+                                    !isTerminalStatus(item.status) && formatDueLabel(item) === "Overdue"
+                                      ? "cell-title--overdue"
+                                      : "",
+                                    !isTerminalStatus(item.status) && item.status === "Waiting" && daysSince(item.lastUpdated) >= 7
                                       ? "cell-title--waiting-aged"
                                       : ""
                                   ]
@@ -609,7 +647,9 @@ export function ActionView({
                               </td>
                               <td>
                                 <div>{formatShortDate(item.dueDate)}</div>
-                                {formatDueLabel(item) ? <div className="cell-hint">{formatDueLabel(item)}</div> : null}
+                                {!isTerminalStatus(item.status) && formatDueLabel(item) ? (
+                                  <div className="cell-hint">{formatDueLabel(item)}</div>
+                                ) : null}
                               </td>
                               <td onClick={(event) => event.stopPropagation()}>
                                 <select
@@ -681,7 +721,38 @@ export function ActionView({
             <div className="drawer__sticky">
               <div className="drawer__header">
                 <div className="drawer__header-text">
-                  <h2 className="drawer__title">{selectedItem.title}</h2>
+                  {isEditingTitle ? (
+                    <input
+                      aria-label="Edit title"
+                      className="drawer__title-input"
+                      id="drawer-title"
+                      onBlur={() => finishTitleEdit(selectedItem)}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelTitleEdit(selectedItem);
+                        }
+
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          finishTitleEdit(selectedItem);
+                        }
+                      }}
+                      autoFocus
+                      value={titleDraft}
+                    />
+                  ) : (
+                    <h2 className="drawer__title">
+                      <button
+                        className="drawer__title-button"
+                        onClick={() => setIsEditingTitle(true)}
+                        type="button"
+                      >
+                        {selectedItem.title}
+                      </button>
+                    </h2>
+                  )}
                   <div className="drawer__workstream">{selectedItem.workstream}</div>
                 </div>
                 <button className="button-link" onClick={() => setSelectedId(null)} type="button">
@@ -693,8 +764,8 @@ export function ActionView({
                 {isBlockedItem(selectedItem) ? (
                   <span className="urgency-badge urgency-badge--blocked">Blocked</span>
                 ) : null}
-                {selectedItem.status === "Cut" ? (
-                  <span className="urgency-badge urgency-badge--cut">Cut</span>
+                {isTerminalStatus(selectedItem.status) ? (
+                  <span className="urgency-badge urgency-badge--cut">{selectedItem.status}</span>
                 ) : (
                   <span className={getUrgencyBadgeClassName(selectedItem)}>
                     {formatUrgencyBadge(selectedItem)}
@@ -791,8 +862,9 @@ export function ActionView({
                     <label htmlFor="drawer-blocked-by">Blocked By</label>
                     <input
                       id="drawer-blocked-by"
-                      onChange={(event) => updateItem(selectedItem.id, { blockedBy: event.target.value })}
-                      value={selectedItem.blockedBy ?? ""}
+                      onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
+                      onChange={(event) => setBlockedByDraft(event.target.value)}
+                      value={blockedByDraft}
                     />
                   </div>
                 </div>

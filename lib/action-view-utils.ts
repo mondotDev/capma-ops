@@ -6,6 +6,7 @@ import {
   formatDueLabel,
   isBlockedItem,
   isItemMissingDueDate,
+  isTerminalStatus,
   isWaitingIssue,
   matchesActionFilter,
   matchesActionFocus,
@@ -73,7 +74,7 @@ export function getItemEventGroupLabel(item: ActionItem) {
 
 export function getVisibleActionItems(items: ActionItem[], filters: ActionViewFilters) {
   return items.filter((item) => {
-    if (!filters.showCompleted && item.status === "Complete") {
+    if (!filters.showCompleted && isTerminalStatus(item.status)) {
       return false;
     }
 
@@ -117,7 +118,7 @@ export function groupItemsByEventGroup(items: ActionItem[]) {
 }
 
 export function getActionRowClassName(item: ActionItem) {
-  if (item.status === "Cut") {
+  if (isTerminalStatus(item.status)) {
     return "cut-row";
   }
 

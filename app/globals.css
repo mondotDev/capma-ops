@@ -1009,6 +1009,37 @@ tr.blocked-row {
   line-height: 1.2;
 }
 
+.drawer__title-button,
+.drawer__title-input {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.drawer__title-button {
+  cursor: text;
+}
+
+.drawer__title-button:hover {
+  color: #243240;
+}
+
+.drawer__title-input {
+  outline: none;
+}
+
+.drawer__title-input:focus {
+  box-shadow: inset 0 -2px 0 #cfd7df;
+}
+
 .drawer__header-text {
   min-width: 0;
 }

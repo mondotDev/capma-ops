@@ -13,6 +13,9 @@ import {
 } from "../lib/publication-issue-actions";
 import type { ActionItem } from "../lib/sample-data";
 import {
+  getVisibleActionItems,
+} from "../lib/action-view-utils";
+import {
   matchesActionLens,
   getOwnerOptions,
   getDailyLoad,
@@ -20,6 +23,7 @@ import {
   getWorkstreamSummary,
   isBlockedItem,
   isItemDueSoon,
+  isTerminalStatus,
   matchesEventGroup,
   daysSince,
   matchesSearchQuery,
@@ -76,6 +80,7 @@ test("isItemDueSoon excludes blocked terminal dates and includes next three days
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-04-02" })), false);
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-27" })), false);
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-30", status: "Complete" })), false);
+    assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-30", status: "Canceled" })), false);
   });
 });
 
@@ -83,6 +88,7 @@ test("isBlockedItem accepts either blocked flag or blockedBy text", () => {
   assert.equal(isBlockedItem(createItem({ isBlocked: true })), true);
   assert.equal(isBlockedItem(createItem({ blockedBy: "Vendor approval" })), true);
   assert.equal(isBlockedItem(createItem({ isBlocked: true, status: "Complete" })), false);
+  assert.equal(isBlockedItem(createItem({ isBlocked: true, status: "Canceled" })), false);
   assert.equal(isBlockedItem({ ...createItem(), blocked: true }), true);
 });
 
@@ -92,6 +98,7 @@ test("getDailyLoad groups only active due-dated items within the requested windo
       [
         createItem({ id: "a", dueDate: "2026-03-28" }),
         createItem({ id: "b", dueDate: "2026-03-28", status: "Complete" }),
+        createItem({ id: "b2", dueDate: "2026-03-28", status: "Canceled" }),
         createItem({ id: "c", dueDate: "2026-03-29" }),
         createItem({ id: "d", dueDate: "" }),
         createItem({ id: "e", dueDate: "2026-04-15" })
@@ -173,6 +180,8 @@ test("action lenses split active work into execution now and planned later", () 
   assert.equal(matchesActionLens(createItem({ status: "In Progress" }), "plannedLater"), false);
   assert.equal(matchesActionLens(createItem({ status: "Complete" }), "executionNow"), false);
   assert.equal(matchesActionLens(createItem({ status: "Complete" }), "plannedLater"), false);
+  assert.equal(matchesActionLens(createItem({ status: "Canceled" }), "executionNow"), false);
+  assert.equal(matchesActionLens(createItem({ status: "Canceled" }), "plannedLater"), false);
 });
 
 test("review lenses surface high-signal cleanup cases", () => {
@@ -194,8 +203,47 @@ test("review lenses surface high-signal cleanup cases", () => {
       matchesActionLens(createItem({ status: "Complete", dueDate: "" }), "reviewMissingDueDate"),
       false
     );
+    assert.equal(
+      matchesActionLens(createItem({ status: "Canceled", dueDate: "" }), "reviewMissingDueDate"),
+      false
+    );
     assert.equal(daysSince("2026-03-14"), 14);
   });
+});
+
+test("terminal helpers and action visibility treat canceled like complete and cut", () => {
+  assert.equal(isTerminalStatus("Complete"), true);
+  assert.equal(isTerminalStatus("Cut"), true);
+  assert.equal(isTerminalStatus("Canceled"), true);
+
+  const items = [
+    createItem({ id: "active-item" }),
+    createItem({ id: "canceled-item", status: "Canceled" })
+  ];
+
+  const hiddenTerminalItems = getVisibleActionItems(items, {
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    showCompleted: false
+  });
+  const shownTerminalItems = getVisibleActionItems(items, {
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    showCompleted: true
+  });
+
+  assert.deepEqual(hiddenTerminalItems.map((item) => item.id), ["active-item"]);
+  assert.deepEqual(shownTerminalItems.map((item) => item.id), ["active-item", "canceled-item"]);
 });
 
 test("shared item shaping and validation helpers align create and edit flows", () => {

@@ -1,6 +1,6 @@
 import type { ActionItem } from "@/lib/sample-data";
 
-export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Complete"] as const;
+export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Canceled", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle", "External"] as const;
 export const WORKSTREAM_OPTIONS = [
   "Legislative Day",
@@ -154,7 +154,7 @@ export function parseDate(dateValue: string) {
 }
 
 export function isComplete(item: ActionItem) {
-  return item.status === "Complete";
+  return isTerminalStatus(item.status);
 }
 
 export function isTerminalStatus(status: string) {
@@ -166,7 +166,7 @@ export function isDueSoonExcludedStatus(status: string) {
 }
 
 export function getActiveItems(items: ActionItem[]) {
-  return items.filter((item) => !isComplete(item));
+  return items.filter((item) => !isTerminalStatus(item.status));
 }
 
 export function hasDueDate(item: Pick<ActionItem, "dueDate"> | string) {
@@ -233,7 +233,7 @@ export function isWaitingTooLong(item: Pick<ActionItem, "status" | "lastUpdated"
 }
 
 export function isStaleItem(item: Pick<ActionItem, "status" | "lastUpdated">) {
-  return item.status !== "Waiting" && daysSince(item.lastUpdated) >= 14;
+  return !isTerminalStatus(item.status) && item.status !== "Waiting" && daysSince(item.lastUpdated) >= 14;
 }
 
 export function isWaitingMissingReason(item: ActionItem) {
@@ -241,7 +241,7 @@ export function isWaitingMissingReason(item: ActionItem) {
 }
 
 export function isBlockedItem(item: ActionItemBlockedState) {
-  if (item.status === "Complete" || item.status === "Cut" || item.status === "Canceled") {
+  if (isTerminalStatus(item.status)) {
     return false;
   }
 
@@ -749,7 +749,7 @@ export function matchesSearchQuery(item: ActionItem, query?: string) {
 
 export function matchesActionFilter(item: ActionItem, filter: ActionFilter) {
   if (filter === "overdue") {
-    return !isComplete(item) && isOverdue(item.dueDate);
+    return !isTerminalStatus(item.status) && isOverdue(item.dueDate);
   }
 
   if (filter === "dueSoon") {
@@ -870,7 +870,7 @@ export function getWorkstreamSummary(items: ActionItem[]): WorkstreamSummaryEntr
   const summaryByWorkstream = new Map<string, WorkstreamSummaryEntry>();
 
   for (const item of items) {
-    if (isComplete(item) || item.status === "Cut" || item.status === "Canceled") {
+    if (isTerminalStatus(item.status)) {
       continue;
     }
 
