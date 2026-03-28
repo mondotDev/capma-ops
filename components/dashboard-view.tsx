@@ -3,7 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/components/app-state";
-import { formatDashboardItem, getDashboardMetrics, getVisiblePublicationIssues } from "@/lib/ops-utils";
+import {
+  formatDashboardItem,
+  formatShortDate,
+  getDailyLoad,
+  getDashboardMetrics,
+  getWorkstreamSummary,
+  getVisiblePublicationIssues
+} from "@/lib/ops-utils";
 
 export function DashboardView() {
   const router = useRouter();
@@ -13,6 +20,16 @@ export function DashboardView() {
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
   const dashboardMetrics = getDashboardMetrics(items);
+  const dailyLoad = getDailyLoad(items);
+  const workstreamSummary = getWorkstreamSummary(items);
+  const highestLoadCount = Math.max(...dailyLoad.map((entry) => entry.count), 0);
+  const highlightedLoadDates = new Set(
+    [...dailyLoad]
+      .sort((a, b) => b.count - a.count || a.date.localeCompare(b.date))
+      .filter((entry) => entry.count > 0)
+      .slice(0, 3)
+      .map((entry) => entry.date)
+  );
   const visiblePublicationIssues = reorderVisibleIssues(
     getVisiblePublicationIssues(issues),
     activePublicationIssue
@@ -63,6 +80,26 @@ export function DashboardView() {
       >
         <div className="card__title">WHERE THINGS ARE STUCK</div>
         <div className="simple-list">
+          <div className="metric-row">
+            <span>Blocked</span>
+            <span>
+              <strong>{dashboardMetrics.blockedCount}</strong>{" "}
+              <button
+                className="button-link button-link--inline"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  router.push("/action?filter=blocked");
+                }}
+                type="button"
+              >
+                View
+              </button>
+            </span>
+          </div>
+          <div className="metric-row">
+            <span>Waiting</span>
+            <strong>{dashboardMetrics.waiting}</strong>
+          </div>
           {dashboardMetrics.waitingGroups.length > 0 ? (
             dashboardMetrics.waitingGroups.map(([label, itemLabels]) => (
               <div className="group-block" key={label}>
@@ -212,9 +249,52 @@ export function DashboardView() {
       </div>
 
       <div className="card">
-        <div className="card__title">EVENT SNAPSHOT</div>
+        <div className="card__title">WORKSTREAM SUMMARY</div>
         <div className="simple-list">
-          <div className="simple-row">Legislative Day - 24 days - 3 overdue</div>
+          {workstreamSummary.length > 0 ? (
+            workstreamSummary.map((entry) => (
+              <div className="detail-row" key={entry.workstream}>
+                {entry.workstream}: {entry.total} total, {entry.overdue} overdue, {entry.dueSoon} due soon,{" "}
+                {entry.inProgress} in progress
+              </div>
+            ))
+          ) : (
+            <div className="muted">No active workstreams</div>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card__title">UPCOMING LOAD</div>
+        <div className="load-list">
+          {dailyLoad.map((entry) => (
+            <button
+              className={
+                entry.count === 0
+                  ? "load-row load-row--disabled"
+                  : highlightedLoadDates.has(entry.date)
+                    ? "load-row load-row--highlight"
+                    : "load-row"
+              }
+              disabled={entry.count === 0}
+              key={entry.date}
+              onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
+              type="button"
+            >
+              <div className="load-row__meta">
+                <span>{formatShortDate(entry.date)}</span>
+                <strong>{entry.count}</strong>
+              </div>
+              <div className="load-bar-track" aria-hidden="true">
+                <div
+                  className="load-bar-fill"
+                  style={{
+                    width: highestLoadCount > 0 ? `${(entry.count / highestLoadCount) * 100}%` : "0%"
+                  }}
+                />
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 

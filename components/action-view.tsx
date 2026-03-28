@@ -5,21 +5,33 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAppState } from "@/components/app-state";
 import type { ActionItem } from "@/lib/sample-data";
 import {
+  getActionDueDateValue,
+  getActionEventGroupValue,
+  getActionFilterValue,
+  getActionFocusValue,
+  getActionQueryValue,
+  getActionRowClassName,
+  getVisibleActionItems,
+  groupItemsByEventGroup
+} from "@/lib/action-view-utils";
+import {
   type ActionFilter,
   type ActionFocus,
   DEFAULT_OWNER,
+  EVENT_GROUP_OPTIONS,
   formatDueLabel,
   formatShortDate,
-  getIssuesForWorkstream,
   getActionSummaryCounts,
   getIssueDueDate,
+  getIssuesForWorkstream,
   isItemMissingDueDate,
+  isBlockedItem,
   isWaitingIssue,
   isWaitingMissingReason,
-  matchesActionFilter,
-  matchesActionFocus,
+  OWNER_OPTIONS,
   sortByPriority,
   STATUS_OPTIONS,
+  syncEventGroupWithWorkstream,
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
@@ -29,6 +41,7 @@ const FILTER_OPTIONS: { label: string; value: ActionFilter }[] = [
   { label: "Overdue", value: "overdue" },
   { label: "Due Soon", value: "dueSoon" },
   { label: "Waiting", value: "waiting" },
+  { label: "Blocked", value: "blocked" },
   { label: "Mine", value: "mine" }
 ];
 
@@ -38,45 +51,73 @@ const FOCUS_LABELS: Record<Exclude<ActionFocus, "all">, string> = {
 };
 
 export function ActionView({
+  initialDueDate,
+  initialEventGroup,
   initialFilter,
   initialFocus,
-  initialIssue
+  initialIssue,
+  initialQuery
 }: {
+  initialDueDate?: string;
+  initialEventGroup?: string;
   initialFilter?: string;
   initialFocus?: string;
   initialIssue?: string;
+  initialQuery?: string;
 }) {
-  const { deleteItem, items, issues, updateItem } = useAppState();
+  const { bulkUpdateItems, deleteItem, items, issues, updateItem } = useAppState();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [showCompleted, setShowCompleted] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const activeFilter = getFilterValue(initialFilter);
-  const activeFocus = getFocusValue(initialFocus);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkFeedback, setBulkFeedback] = useState("");
+  const activeFilter = getActionFilterValue(initialFilter);
+  const activeFocus = getActionFocusValue(initialFocus);
+  const activeDueDate = getActionDueDateValue(initialDueDate);
+  const activeEventGroup = getActionEventGroupValue(initialEventGroup);
+  const activeQuery = getActionQueryValue(initialQuery);
   const summaryCounts = useMemo(() => getActionSummaryCounts(items), [items]);
   const activeIssue = initialIssue?.trim() || "";
+  const eventGroupOptions = useMemo(
+    () =>
+      ["all", ...new Set(items.map((item) => item.eventGroup?.trim()).filter((value): value is string => Boolean(value)))]
+        .map((value) => ({
+          label: value === "all" ? "All Events" : value,
+          value
+        })),
+    [items]
+  );
 
-  const visibleItems = useMemo(() => {
-    return items.filter((item) => {
-      if (!showCompleted && item.status === "Complete") {
-        return false;
-      }
-
-      if (activeIssue && item.issue !== activeIssue) {
-        return false;
-      }
-
-      return matchesActionFilter(item, activeFilter) && matchesActionFocus(item, activeFocus);
-    });
-  }, [activeFilter, activeFocus, activeIssue, items, showCompleted]);
+  const visibleItems = useMemo(
+    () =>
+      getVisibleActionItems(items, {
+        activeDueDate,
+        activeEventGroup,
+        activeFilter,
+        activeFocus,
+        activeIssue,
+        activeQuery,
+        showCompleted
+      }),
+    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeQuery, items, showCompleted]
+  );
 
   const sortedItems = useMemo(() => [...visibleItems].sort(sortByPriority), [visibleItems]);
+  const groupedItems = useMemo(() => groupItemsByEventGroup(sortedItems), [sortedItems]);
   const selectedItem = sortedItems.find((item) => item.id === selectedId) ?? null;
   const selectedIssueRecord = selectedItem?.issue
     ? issues.find((issue) => issue.label === selectedItem.issue) ?? null
     : null;
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
+  const selectedVisibleIds = useMemo(
+    () => selectedItemIds.filter((id) => sortedItems.some((item) => item.id === id)),
+    [selectedItemIds, sortedItems]
+  );
+  const allVisibleSelected = sortedItems.length > 0 && selectedVisibleIds.length === sortedItems.length;
 
   useEffect(() => {
     if (!selectedId) {
@@ -93,6 +134,10 @@ export function ActionView({
   }, [selectedId]);
 
   useEffect(() => {
+    setSelectedItemIds((current) => current.filter((id) => sortedItems.some((item) => item.id === id)));
+  }, [sortedItems]);
+
+  useEffect(() => {
     if (!selectedId) {
       return;
     }
@@ -107,7 +152,13 @@ export function ActionView({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedId]);
 
-  function updateQuery(nextFilter: ActionFilter, nextFocus: ActionFocus) {
+  function updateQuery(
+    nextFilter: ActionFilter,
+    nextFocus: ActionFocus,
+    nextEventGroup: string,
+    nextDueDate: string,
+    nextQuery: string
+  ) {
     const params = new URLSearchParams(searchParams.toString());
 
     if (nextFilter === "all") {
@@ -122,16 +173,38 @@ export function ActionView({
       params.set("focus", nextFocus);
     }
 
+    if (nextEventGroup === "all") {
+      params.delete("eventGroup");
+    } else {
+      params.set("eventGroup", nextEventGroup);
+    }
+
+    if (!nextDueDate) {
+      params.delete("dueDate");
+    } else {
+      params.set("dueDate", nextDueDate);
+    }
+
+    if (!nextQuery.trim()) {
+      params.delete("q");
+    } else {
+      params.set("q", nextQuery);
+    }
+
     const query = params.toString();
     router.replace(query ? `/action?${query}` : "/action");
   }
 
   function handleFilterChange(nextFilter: ActionFilter) {
-    updateQuery(nextFilter, activeFocus);
+    updateQuery(nextFilter, activeFocus, activeEventGroup, activeDueDate, activeQuery);
   }
 
   function clearFocus() {
-    updateQuery(activeFilter, "all");
+    updateQuery(activeFilter, "all", activeEventGroup, activeDueDate, activeQuery);
+  }
+
+  function handleEventGroupChange(nextEventGroup: string) {
+    updateQuery(activeFilter, activeFocus, nextEventGroup, activeDueDate, activeQuery);
   }
 
   function clearIssueFilter() {
@@ -139,6 +212,53 @@ export function ActionView({
     params.delete("issue");
     const query = params.toString();
     router.replace(query ? `/action?${query}` : "/action");
+  }
+
+  function clearDueDateFilter() {
+    updateQuery(activeFilter, activeFocus, activeEventGroup, "", activeQuery);
+  }
+
+  function clearSearchQuery() {
+    updateQuery(activeFilter, activeFocus, activeEventGroup, activeDueDate, "");
+  }
+
+  function toggleGroup(groupLabel: string) {
+    setCollapsedGroups((current) => ({
+      ...current,
+      [groupLabel]: !current[groupLabel]
+    }));
+  }
+
+  function handleBulkOwnerApply() {
+    if (!bulkOwner || selectedVisibleIds.length === 0) {
+      return;
+    }
+
+    bulkUpdateItems(selectedVisibleIds, { owner: bulkOwner });
+    setBulkFeedback(
+      `Assigned ${bulkOwner} to ${selectedVisibleIds.length} ${selectedVisibleIds.length === 1 ? "item" : "items"}.`
+    );
+    setSelectedItemIds([]);
+    setBulkOwner("");
+  }
+
+  function toggleItemSelection(itemId: string) {
+    setBulkFeedback("");
+    setSelectedItemIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]
+    );
+  }
+
+  function toggleSelectAllVisible() {
+    setBulkFeedback("");
+    setSelectedItemIds((current) =>
+      allVisibleSelected ? current.filter((id) => !sortedItems.some((item) => item.id === id)) : sortedItems.map((item) => item.id)
+    );
+  }
+
+  function clearSelection() {
+    setSelectedItemIds([]);
+    setBulkFeedback("");
   }
 
   return (
@@ -170,6 +290,21 @@ export function ActionView({
               {option.label}
             </button>
           ))}
+          <label className="field">
+            <span className="muted">Event</span>
+            <select
+              aria-label="Filter by event"
+              className="cell-select"
+              onChange={(event) => handleEventGroupChange(event.target.value)}
+              value={activeEventGroup}
+            >
+              {eventGroupOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="summary-row" aria-label="Action summary">
@@ -180,6 +315,9 @@ export function ActionView({
             Due Soon: <strong>{summaryCounts.dueSoon}</strong>
           </span>
           <span>
+            Blocked: <strong>{summaryCounts.blocked}</strong>
+          </span>
+          <span>
             Waiting: <strong>{summaryCounts.waiting}</strong>
           </span>
           <span>
@@ -187,15 +325,77 @@ export function ActionView({
           </span>
         </div>
 
+        {selectedVisibleIds.length > 0 ? (
+          <div className="bulk-action-bar">
+            <strong>{selectedVisibleIds.length} selected</strong>
+            <select
+              aria-label="Assign owner to selected items"
+              className="cell-select bulk-action-bar__select"
+              onChange={(event) => setBulkOwner(event.target.value)}
+              value={bulkOwner}
+            >
+              <option value="">Select owner</option>
+              {OWNER_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <button
+              className="topbar__button"
+              disabled={!bulkOwner}
+              onClick={handleBulkOwnerApply}
+              type="button"
+            >
+              Apply Owner
+            </button>
+            <button className="button-link button-link--inline-secondary" onClick={clearSelection} type="button">
+              Clear
+            </button>
+            {bulkFeedback ? <span className="muted">{bulkFeedback}</span> : null}
+          </div>
+        ) : null}
+
+        {activeDueDate ? (
+          <div className="issue-context">
+            <div>
+              <div className="issue-context__title">Due on {formatShortDate(activeDueDate)}</div>
+              <div className="issue-context__meta">
+                {visibleItems.length} {visibleItems.length === 1 ? "item" : "items"}
+              </div>
+            </div>
+            <button className="button-link button-link--inline-secondary" onClick={clearDueDateFilter} type="button">
+              Back to all due dates
+            </button>
+          </div>
+        ) : null}
+
+        {activeQuery ? (
+          <div className="issue-context">
+            <div>
+              <div className="issue-context__title">Search: {activeQuery}</div>
+              <div className="issue-context__meta">
+                {visibleItems.length} {visibleItems.length === 1 ? "item" : "items"}
+              </div>
+            </div>
+            <button className="button-link button-link--inline-secondary" onClick={clearSearchQuery} type="button">
+              Clear search
+            </button>
+          </div>
+        ) : null}
+
         <div className="action-toolbar">
-          <label className="toggle">
-            <input
-              checked={showCompleted}
-              onChange={(event) => setShowCompleted(event.target.checked)}
-              type="checkbox"
-            />
-            <span>Show Completed</span>
-          </label>
+          <div className="action-toolbar__controls">
+            <label className="toggle">
+              <input
+                checked={showCompleted}
+                onChange={(event) => setShowCompleted(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Show Completed</span>
+            </label>
+            <span className="muted">Select rows to bulk-assign owner.</span>
+          </div>
 
           <div className="action-toolbar__meta">
             {focusLabel ? (
@@ -211,6 +411,22 @@ export function ActionView({
                 Showing {getFilterLabel(activeFilter).toLowerCase()} items.{" "}
                 <button className="button-link button-link--inline" onClick={() => handleFilterChange("all")} type="button">
                   Reset
+                </button>
+              </p>
+            ) : null}
+            {activeEventGroup !== "all" ? (
+              <p className="muted action-toolbar__filter">
+                Event group: {activeEventGroup}.{" "}
+                <button className="button-link button-link--inline" onClick={() => handleEventGroupChange("all")} type="button">
+                  Clear
+                </button>
+              </p>
+            ) : null}
+            {activeQuery ? (
+              <p className="muted action-toolbar__filter">
+                Search is active.{" "}
+                <button className="button-link button-link--inline" onClick={clearSearchQuery} type="button">
+                  Clear
                 </button>
               </p>
             ) : null}
@@ -237,6 +453,14 @@ export function ActionView({
               <table>
                 <thead>
                   <tr>
+                    <th>
+                      <input
+                        aria-label="Select all visible items"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        type="checkbox"
+                      />
+                    </th>
                     <th>Title</th>
                     <th>
                       Due Date <span className="sort-indicator">↑ urgency</span>
@@ -249,85 +473,112 @@ export function ActionView({
                     <th>Last Updated</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {sortedItems.map((item) => (
-                    <tr
-                      className={
-                        item.status === "Cut"
-                          ? "cut-row"
-                          : isItemMissingDueDate(item)
-                          ? "risk-row"
-                          : isWaitingIssue(item)
-                          ? "waiting-row"
-                          : formatDueLabel(item) === "Overdue"
-                            ? "overdue-row"
-                            : formatDueLabel(item)
-                                ? "due-soon-row"
-                                : undefined
-                      }
-                      data-clickable="true"
-                      key={item.id}
-                      onClick={() => setSelectedId(item.id)}
-                    >
-                      <td>
-                        <div className={item.status === "Cut" ? "cell-title cell-title--cut" : "cell-title"}>
-                          {item.title}
-                        </div>
-                        {item.issue ? <div className="cell-subtext">{item.issue}</div> : null}
-                      </td>
-                      <td>
-                        <div>{formatShortDate(item.dueDate)}</div>
-                        {formatDueLabel(item) ? <div className="cell-hint">{formatDueLabel(item)}</div> : null}
-                      </td>
-                      <td onClick={(event) => event.stopPropagation()}>
-                        <select
-                          aria-label={`Status for ${item.title}`}
-                          className="cell-select"
-                          onChange={(event) => updateItem(item.id, { status: event.target.value })}
-                          value={item.status}
-                        >
-                          {STATUS_OPTIONS.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td onClick={(event) => event.stopPropagation()}>
-                        <select
-                          aria-label={`Waiting on for ${item.title}`}
-                          className={
-                            isWaitingMissingReason(item)
-                              ? "cell-select cell-select--required"
-                              : item.status !== "Waiting"
-                                ? "cell-select cell-select--muted"
-                                : "cell-select"
-                          }
-                          onChange={(event) => updateItem(item.id, { waitingOn: event.target.value })}
-                          value={item.waitingOn}
-                        >
-                          <option value="">{isWaitingMissingReason(item) ? "Required" : "None"}</option>
-                          {WAITING_ON_SUGGESTIONS.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td onClick={(event) => event.stopPropagation()}>
-                        <input
-                          aria-label={`Owner for ${item.title}`}
-                          className="cell-input"
-                          onChange={(event) => updateItem(item.id, { owner: event.target.value })}
-                          value={item.owner}
-                        />
-                      </td>
-                      <td>{item.workstream}</td>
-                      <td>{item.type}</td>
-                      <td>{formatShortDate(item.lastUpdated)}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                {groupedItems.map((group) => {
+                  const isCollapsed = collapsedGroups[group.label] ?? false;
+
+                  return (
+                    <tbody key={group.label}>
+                      <tr className="group-header-row">
+                        <td colSpan={9}>
+                          <button
+                            aria-expanded={!isCollapsed}
+                            className="group-header-button"
+                            onClick={() => toggleGroup(group.label)}
+                            type="button"
+                          >
+                            <span>{isCollapsed ? "Show" : "Hide"}</span>
+                            <strong>{group.label}</strong>
+                            <span>{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
+                          </button>
+                        </td>
+                      </tr>
+                      {!isCollapsed
+                        ? group.items.map((item) => (
+                            <tr
+                              className={getActionRowClassName(item)}
+                              data-clickable="true"
+                              key={item.id}
+                              onClick={() => setSelectedId(item.id)}
+                            >
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <input
+                                  aria-label={`Select ${item.title}`}
+                                  checked={selectedItemIds.includes(item.id)}
+                                  onChange={() => toggleItemSelection(item.id)}
+                                  type="checkbox"
+                                />
+                              </td>
+                              <td>
+                                <div className={item.status === "Cut" ? "cell-title cell-title--cut" : "cell-title"}>
+                                  {item.title}
+                                </div>
+                                {item.blockedBy?.trim() ? (
+                                  <div className="cell-subtext cell-subtext--blocked">Blocked by: {item.blockedBy.trim()}</div>
+                                ) : null}
+                                {item.issue ? <div className="cell-subtext">{item.issue}</div> : null}
+                              </td>
+                              <td>
+                                <div>{formatShortDate(item.dueDate)}</div>
+                                {formatDueLabel(item) ? <div className="cell-hint">{formatDueLabel(item)}</div> : null}
+                              </td>
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <select
+                                  aria-label={`Status for ${item.title}`}
+                                  className="cell-select"
+                                  onChange={(event) => updateItem(item.id, { status: event.target.value })}
+                                  value={item.status}
+                                >
+                                  {STATUS_OPTIONS.map((status) => (
+                                    <option key={status} value={status}>
+                                      {status}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <select
+                                  aria-label={`Waiting on for ${item.title}`}
+                                  className={
+                                    isWaitingMissingReason(item)
+                                      ? "cell-select cell-select--required"
+                                      : item.status !== "Waiting"
+                                        ? "cell-select cell-select--muted"
+                                        : "cell-select"
+                                  }
+                                  onChange={(event) => updateItem(item.id, { waitingOn: event.target.value })}
+                                  value={item.waitingOn}
+                                >
+                                  <option value="">{isWaitingMissingReason(item) ? "Required" : "None"}</option>
+                                  {WAITING_ON_SUGGESTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <select
+                                  aria-label={`Owner for ${item.title}`}
+                                  className="cell-select"
+                                  onChange={(event) => updateItem(item.id, { owner: event.target.value })}
+                                  value={item.owner}
+                                >
+                                  {OWNER_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td>{item.workstream}</td>
+                              <td>{item.type}</td>
+                              <td>{formatShortDate(item.lastUpdated)}</td>
+                            </tr>
+                          ))
+                        : null}
+                    </tbody>
+                  );
+                })}
               </table>
 
               {sortedItems.length === 0 ? <div className="empty-state">No items match this view.</div> : null}
@@ -349,6 +600,9 @@ export function ActionView({
               </div>
 
               <div className="drawer__badges">
+                {isBlockedItem(selectedItem) ? (
+                  <span className="urgency-badge urgency-badge--blocked">Blocked</span>
+                ) : null}
                 {selectedItem.status === "Cut" ? (
                   <span className="urgency-badge urgency-badge--cut">Cut</span>
                 ) : (
@@ -359,6 +613,9 @@ export function ActionView({
               </div>
 
               {selectedItem.issue ? <div className="drawer__issue">{selectedItem.issue}</div> : null}
+              {selectedItem.blockedBy?.trim() ? (
+                <div className="drawer__warning drawer__warning--blocked">Blocked by {selectedItem.blockedBy.trim()}</div>
+              ) : null}
               {isItemMissingDueDate(selectedItem) ? (
                 <div className="drawer__warning">Due date not configured for this issue</div>
               ) : null}
@@ -417,10 +674,35 @@ export function ActionView({
                   </div>
                   <div className="field">
                     <label htmlFor="drawer-owner">Owner</label>
-                    <input
+                    <select
                       id="drawer-owner"
                       onChange={(event) => updateItem(selectedItem.id, { owner: event.target.value })}
                       value={selectedItem.owner}
+                    >
+                      {OWNER_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="toggle" htmlFor="drawer-blocked">
+                      <input
+                        checked={selectedItem.blocked ?? false}
+                        id="drawer-blocked"
+                        onChange={(event) => updateItem(selectedItem.id, { blocked: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>Blocked</span>
+                    </label>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="drawer-blocked-by">Blocked By</label>
+                    <input
+                      id="drawer-blocked-by"
+                      onChange={(event) => updateItem(selectedItem.id, { blockedBy: event.target.value })}
+                      value={selectedItem.blockedBy ?? ""}
                     />
                   </div>
                 </div>
@@ -439,6 +721,11 @@ export function ActionView({
 
                         updateItem(selectedItem.id, {
                           workstream: nextWorkstream,
+                          eventGroup: syncEventGroupWithWorkstream(
+                            selectedItem.eventGroup,
+                            selectedItem.workstream,
+                            nextWorkstream
+                          ),
                           issue:
                             selectedItem.issue && nextIssues.includes(selectedItem.issue as (typeof nextIssues)[number])
                               ? selectedItem.issue
@@ -448,6 +735,25 @@ export function ActionView({
                       value={selectedItem.workstream}
                     >
                       {WORKSTREAM_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="drawer-event-group">Event Group</label>
+                    <select
+                      id="drawer-event-group"
+                      onChange={(event) =>
+                        updateItem(selectedItem.id, {
+                          eventGroup: event.target.value || undefined
+                        })
+                      }
+                      value={selectedItem.eventGroup ?? ""}
+                    >
+                      <option value="">None</option>
+                      {EVENT_GROUP_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>
@@ -559,22 +865,6 @@ export function ActionView({
       </div>
     </section>
   );
-}
-
-function getFilterValue(filter?: string): ActionFilter {
-  if (filter === "overdue" || filter === "dueSoon" || filter === "waiting" || filter === "mine") {
-    return filter;
-  }
-
-  return "all";
-}
-
-function getFocusValue(focus?: string): ActionFocus {
-  if (focus === "sponsor" || focus === "production") {
-    return focus;
-  }
-
-  return "all";
 }
 
 function getFilterLabel(filter: ActionFilter) {
