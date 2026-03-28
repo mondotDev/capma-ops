@@ -20,6 +20,7 @@ import {
   type ActionFocus,
   type ActionLens,
   DEFAULT_OWNER,
+  daysSince,
   EVENT_GROUP_OPTIONS,
   formatDueLabel,
   formatShortDate,
@@ -61,6 +62,12 @@ const FOCUS_LABELS: Record<Exclude<ActionFocus, "all">, string> = {
   sponsor: "Sponsor items",
   production: "Production items"
 };
+
+const EXECUTION_LENS_OPTIONS = LENS_OPTIONS.slice(0, 3);
+const REVIEW_LENS_OPTIONS = LENS_OPTIONS.slice(3);
+const STATUS_FILTER_OPTIONS = FILTER_OPTIONS.filter(
+  (option) => option.value === "waiting" || option.value === "blocked" || option.value === "mine"
+);
 
 export function ActionView({
   initialDueDate,
@@ -307,28 +314,54 @@ export function ActionView({
         ) : null}
 
         <div className="filter-bar" aria-label="Action filters">
-          {LENS_OPTIONS.map((option) => (
-            <button
-              aria-pressed={activeLens === option.value}
-              className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
-              key={option.value}
-              onClick={() => handleLensChange(option.value)}
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
-          {FILTER_OPTIONS.map((option) => (
-            <button
-              aria-pressed={activeFilter === option.value}
-              className={activeFilter === option.value ? "filter-pill active" : "filter-pill"}
-              key={option.value}
-              onClick={() => handleFilterChange(option.value)}
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
+          <div className="filter-group">
+            <span className="filter-group__label">Execution</span>
+            <div className="filter-group__pills">
+              {EXECUTION_LENS_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={activeLens === option.value}
+                  className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+                  key={option.value}
+                  onClick={() => handleLensChange(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-group">
+            <span className="filter-group__label">Review</span>
+            <div className="filter-group__pills">
+              {REVIEW_LENS_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={activeLens === option.value}
+                  className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+                  key={option.value}
+                  onClick={() => handleLensChange(option.value)}
+                  type="button"
+                >
+                  {option.label.replace("Review: ", "")}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-group">
+            <span className="filter-group__label">Status</span>
+            <div className="filter-group__pills">
+              {STATUS_FILTER_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={activeFilter === option.value}
+                  className={activeFilter === option.value ? "filter-pill active" : "filter-pill"}
+                  key={option.value}
+                  onClick={() => handleFilterChange(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="field">
             <span className="muted">Event</span>
             <select
@@ -555,8 +588,18 @@ export function ActionView({
                                   type="checkbox"
                                 />
                               </td>
-                              <td>
-                                <div className={item.status === "Cut" ? "cell-title cell-title--cut" : "cell-title"}>
+                              <td className="cell-primary">
+                                <div
+                                  className={[
+                                    item.status === "Cut" ? "cell-title cell-title--cut" : "cell-title",
+                                    formatDueLabel(item) === "Overdue" ? "cell-title--overdue" : "",
+                                    item.status === "Waiting" && daysSince(item.lastUpdated) >= 7
+                                      ? "cell-title--waiting-aged"
+                                      : ""
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                >
                                   {item.title}
                                 </div>
                                 {item.blockedBy?.trim() ? (
@@ -617,9 +660,9 @@ export function ActionView({
                                   ))}
                                 </select>
                               </td>
-                              <td>{item.workstream}</td>
-                              <td>{item.type}</td>
-                              <td>{formatShortDate(item.lastUpdated)}</td>
+                              <td className="cell-muted">{item.workstream}</td>
+                              <td className="cell-muted">{item.type}</td>
+                              <td className="cell-muted">{formatShortDate(item.lastUpdated)}</td>
                             </tr>
                           ))
                         : null}

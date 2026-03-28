@@ -228,6 +228,14 @@ export function isWaitingIssue(item: ActionItem) {
   return item.status === "Waiting";
 }
 
+export function isWaitingTooLong(item: Pick<ActionItem, "status" | "lastUpdated">) {
+  return item.status === "Waiting" && daysSince(item.lastUpdated) >= 7;
+}
+
+export function isStaleItem(item: Pick<ActionItem, "status" | "lastUpdated">) {
+  return item.status !== "Waiting" && daysSince(item.lastUpdated) >= 14;
+}
+
 export function isWaitingMissingReason(item: ActionItem) {
   return isWaitingIssue(item) && item.waitingOn.trim().length === 0;
 }
@@ -789,11 +797,11 @@ export function matchesActionLens(item: ActionItem, lens: ActionLens) {
   }
 
   if (lens === "reviewWaitingTooLong") {
-    return isWaitingIssue(item) && daysSince(item.lastUpdated) >= 7;
+    return isWaitingTooLong(item);
   }
 
   if (lens === "reviewStale") {
-    return !isWaitingIssue(item) && daysSince(item.lastUpdated) >= 14;
+    return isStaleItem(item);
   }
 
   const needsAttention =

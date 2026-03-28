@@ -9,7 +9,8 @@ import {
   getDailyLoad,
   getDashboardMetrics,
   getWorkstreamSummary,
-  getVisiblePublicationIssues
+  getVisiblePublicationIssues,
+  isWaitingTooLong
 } from "@/lib/ops-utils";
 
 export function DashboardView() {
@@ -22,6 +23,7 @@ export function DashboardView() {
   const dashboardMetrics = getDashboardMetrics(items);
   const dailyLoad = getDailyLoad(items);
   const workstreamSummary = getWorkstreamSummary(items);
+  const waitingTooLongCount = items.filter((item) => isWaitingTooLong(item)).length;
   const highestLoadCount = Math.max(...dailyLoad.map((entry) => entry.count), 0);
   const highlightedLoadDates = new Set(
     [...dailyLoad]
@@ -37,44 +39,55 @@ export function DashboardView() {
 
   return (
     <section className="dashboard-grid">
-      <button
-        className="card card--clickable card--priority"
-        onClick={() =>
-          router.push(dashboardMetrics.overdue > 0 ? "/action?filter=overdue" : "/action?filter=dueSoon")
-        }
-        type="button"
-      >
-        <div className="card__title">WHAT WILL BURN ME FIRST</div>
-        <div className="metric-list">
-          <div className="metric-row">
-            <span>Overdue</span>
-            <strong>{dashboardMetrics.overdue}</strong>
+      <section className="command-zone">
+        <div className="command-zone__band">
+          <button
+            className="command-zone__header"
+            onClick={() =>
+              router.push(dashboardMetrics.overdue > 0 ? "/action?filter=overdue" : "/action?filter=dueSoon")
+            }
+            type="button"
+          >
+            <div className="card__title">WHAT WILL BURN ME FIRST</div>
+          </button>
+          <div className="command-metrics">
+            <button className="command-metric command-metric--overdue" onClick={() => router.push("/action?filter=overdue")} type="button">
+              <span className="command-metric__label">Overdue</span>
+              <strong className="command-metric__value">{dashboardMetrics.overdue}</strong>
+            </button>
+            <button className="command-metric command-metric--due-soon" onClick={() => router.push("/action?filter=dueSoon")} type="button">
+              <span className="command-metric__label">Due Soon</span>
+              <strong className="command-metric__value">{dashboardMetrics.dueSoon}</strong>
+            </button>
+            <button
+              className="command-metric command-metric--waiting"
+              onClick={() => router.push("/action?lens=reviewWaitingTooLong")}
+              type="button"
+            >
+              <span className="command-metric__label">Waiting Too Long</span>
+              <strong className="command-metric__value">{waitingTooLongCount}</strong>
+            </button>
           </div>
-          <div className="metric-row">
-            <span>Due Soon (3 days)</span>
-            <strong>{dashboardMetrics.dueSoon}</strong>
-          </div>
-          <div className="metric-row">
-            <span>Total Active</span>
-            <strong>{dashboardMetrics.totalActive}</strong>
+          <div className="command-zone__list">
+            {dashboardMetrics.urgentItems.length > 0 ? (
+              dashboardMetrics.urgentItems.slice(0, 2).map((item) => {
+                const label = formatDashboardItem(item);
+
+                return (
+                  <div className="detail-row detail-row--truncate" key={item.id} title={label}>
+                    {label}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="muted">No urgent items right now</div>
+            )}
           </div>
         </div>
-        <div className="card__subhead">Top urgent items</div>
-        <div className="detail-list">
-          {dashboardMetrics.urgentItems.length > 0 ? (
-            dashboardMetrics.urgentItems.map((item) => (
-              <div className="detail-row" key={item.id}>
-                {formatDashboardItem(item)}
-              </div>
-            ))
-          ) : (
-            <div className="muted">No urgent items right now</div>
-          )}
-        </div>
-      </button>
+      </section>
 
       <div
-        className="card card--clickable"
+        className="card card--clickable card--secondary"
         onClick={() => router.push("/action?filter=waiting")}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -86,7 +99,7 @@ export function DashboardView() {
         tabIndex={0}
       >
         <div className="card__title">WHERE THINGS ARE STUCK</div>
-        <div className="simple-list">
+        <div className="simple-list simple-list--tight">
           <div className="metric-row">
             <span>Blocked</span>
             <span>
@@ -108,11 +121,11 @@ export function DashboardView() {
             <strong>{dashboardMetrics.waiting}</strong>
           </div>
           {dashboardMetrics.waitingGroups.length > 0 ? (
-            dashboardMetrics.waitingGroups.map(([label, itemLabels]) => (
+            dashboardMetrics.waitingGroups.slice(0, 2).map(([label, itemLabels]) => (
               <div className="group-block" key={label}>
                 <div className="group-title">{`Waiting on ${label} (${itemLabels.length})`}</div>
-                {itemLabels.map((itemLabel) => (
-                  <div className="detail-row detail-row--indented" key={itemLabel}>
+                {itemLabels.slice(0, 1).map((itemLabel) => (
+                  <div className="detail-row detail-row--indented detail-row--truncate" key={itemLabel} title={itemLabel}>
                     {itemLabel}
                   </div>
                 ))}
@@ -124,9 +137,9 @@ export function DashboardView() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card card--secondary">
         <div className="card__title">PUBLICATIONS</div>
-        <div className="simple-list">
+        <div className="simple-list simple-list--tight">
           {visiblePublicationIssues.map((issue) => (
             <div
               className={
@@ -144,7 +157,7 @@ export function DashboardView() {
                 ) : issue.status === "Open" ? (
                   <div className="publication-row__meta">Current issue</div>
                 ) : null}
-                <div className="simple-row simple-row--stacked">
+                <div className="simple-row simple-row--stacked simple-row--truncate" title={`${issue.label} - ${issue.status}`}>
                   {issue.label} — {issue.status} — {dashboardMetrics.issueProgress[issue.label]?.complete ?? 0}/
                   {dashboardMetrics.issueProgress[issue.label]?.total ?? 0} complete
                 </div>
@@ -263,23 +276,7 @@ export function DashboardView() {
         </div>
       </div>
 
-      <div className="card">
-        <div className="card__title">WORKSTREAM SUMMARY</div>
-        <div className="simple-list">
-          {workstreamSummary.length > 0 ? (
-            workstreamSummary.map((entry) => (
-              <div className="detail-row" key={entry.workstream}>
-                {entry.workstream}: {entry.total} total, {entry.overdue} overdue, {entry.dueSoon} due soon,{" "}
-                {entry.inProgress} in progress
-              </div>
-            ))
-          ) : (
-            <div className="muted">No active workstreams</div>
-          )}
-        </div>
-      </div>
-
-      <div className="card">
+      <div className="card card--secondary">
         <div className="card__title">UPCOMING LOAD</div>
         <div className="load-list">
           {dailyLoad.map((entry) => (
@@ -314,7 +311,7 @@ export function DashboardView() {
       </div>
 
       <button
-        className="card card--clickable"
+        className="card card--clickable card--secondary"
         onClick={() =>
           router.push(
             dashboardMetrics.sponsorRiskItems.length > 0 ? "/action?focus=sponsor" : "/action?filter=waiting"
@@ -323,10 +320,10 @@ export function DashboardView() {
         type="button"
       >
         <div className="card__title">SPONSOR RISK</div>
-        <div className="detail-list">
+        <div className="detail-list detail-list--tight">
           {dashboardMetrics.sponsorRiskItems.length > 0 ? (
             dashboardMetrics.sponsorRiskItems.map((item) => (
-              <div className="detail-row" key={item.id}>
+              <div className="detail-row detail-row--truncate" key={item.id} title={formatDashboardItem(item)}>
                 {formatDashboardItem(item)}
               </div>
             ))
@@ -337,7 +334,7 @@ export function DashboardView() {
       </button>
 
       <button
-        className="card card--clickable"
+        className="card card--clickable card--secondary"
         onClick={() =>
           router.push(
             dashboardMetrics.productionRiskItems.length > 0
@@ -348,10 +345,10 @@ export function DashboardView() {
         type="button"
       >
         <div className="card__title">PRODUCTION RISK</div>
-        <div className="detail-list">
+        <div className="detail-list detail-list--tight">
           {dashboardMetrics.productionRiskItems.length > 0 ? (
             dashboardMetrics.productionRiskItems.map((item) => (
-              <div className="detail-row" key={item.id}>
+              <div className="detail-row detail-row--truncate" key={item.id} title={formatDashboardItem(item)}>
                 {formatDashboardItem(item)}
               </div>
             ))
@@ -360,6 +357,26 @@ export function DashboardView() {
           )}
         </div>
       </button>
+
+      <div className="card card--secondary card--muted">
+        <div className="card__title">WORKSTREAM SUMMARY</div>
+        <div className="simple-list simple-list--tight">
+          {workstreamSummary.length > 0 ? (
+            workstreamSummary.slice(0, 5).map((entry) => (
+              <div
+                className="detail-row detail-row--truncate"
+                key={entry.workstream}
+                title={`${entry.workstream}: ${entry.total} total, ${entry.overdue} overdue, ${entry.dueSoon} due soon, ${entry.inProgress} in progress`}
+              >
+                {entry.workstream}: {entry.total} total, {entry.overdue} overdue, {entry.dueSoon} due soon,{" "}
+                {entry.inProgress} in progress
+              </div>
+            ))
+          ) : (
+            <div className="muted">No active workstreams</div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
