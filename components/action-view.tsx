@@ -21,10 +21,9 @@ import {
   EVENT_GROUP_OPTIONS,
   formatDueLabel,
   formatShortDate,
-  getOwnerOptions,
   getActionSummaryCounts,
-  getIssueDueDate,
   getIssuesForWorkstream,
+  getOwnerOptions,
   isItemMissingDueDate,
   isBlockedItem,
   isWaitingIssue,
@@ -32,7 +31,8 @@ import {
   OWNER_OPTIONS,
   sortByPriority,
   STATUS_OPTIONS,
-  syncEventGroupWithWorkstream,
+  syncActionItemIssue,
+  syncActionItemWorkstream,
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
@@ -718,19 +718,12 @@ export function ActionView({
                       id="drawer-workstream"
                       onChange={(event) => {
                         const nextWorkstream = event.target.value;
-                        const nextIssues = getIssuesForWorkstream(nextWorkstream);
+                        const nextItem = syncActionItemWorkstream(selectedItem, nextWorkstream);
 
                         updateItem(selectedItem.id, {
-                          workstream: nextWorkstream,
-                          eventGroup: syncEventGroupWithWorkstream(
-                            selectedItem.eventGroup,
-                            selectedItem.workstream,
-                            nextWorkstream
-                          ),
-                          issue:
-                            selectedItem.issue && nextIssues.includes(selectedItem.issue as (typeof nextIssues)[number])
-                              ? selectedItem.issue
-                              : ""
+                          workstream: nextItem.workstream,
+                          eventGroup: nextItem.eventGroup,
+                          issue: nextItem.issue
                         });
                       }}
                       value={selectedItem.workstream}
@@ -767,10 +760,16 @@ export function ActionView({
                       <select
                         id="drawer-issue"
                         onChange={(event) =>
-                          updateItem(selectedItem.id, {
-                            issue: event.target.value || undefined,
-                            dueDate: event.target.value ? (getIssueDueDate(event.target.value) ?? "") : selectedItem.dueDate
-                          })
+                          {
+                            const nextItem = syncActionItemIssue(selectedItem, event.target.value);
+
+                            updateItem(selectedItem.id, {
+                              issue: nextItem.issue || undefined,
+                              workstream: nextItem.workstream,
+                              eventGroup: nextItem.eventGroup,
+                              dueDate: nextItem.dueDate
+                            });
+                          }
                         }
                         value={selectedItem.issue ?? ""}
                       >

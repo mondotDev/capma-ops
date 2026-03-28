@@ -17,15 +17,13 @@ import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/l
 import {
   DEFAULT_OWNER,
   getSuggestedEventGroupForWorkstream,
-  getSuggestedOwnerForWorkstream,
   type IssueRecord,
   type IssueStatus,
   getGeneratedIssues,
   getIssueDueDate,
   getWorkstreamForIssue,
-  normalizeEventGroupValue,
-  normalizeOwnerValue,
-  normalizeWorkstreamValue
+  normalizeActionItemFields,
+  resolveInitialOwner
 } from "@/lib/ops-utils";
 
 export { clearPersistedAppState };
@@ -67,14 +65,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [shouldPersist, setShouldPersist] = useState(true);
 
   useEffect(() => {
-    const loadResult = loadPersistedAppState(normalizeActionItem);
+    const loadResult = loadPersistedAppState(normalizeActionItemFields);
 
     if (loadResult.state) {
       setItems(
         migratePersistedItems(loadResult.state.items, {
           legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,
           getDefaultItems,
-          normalizeItem: normalizeActionItem
+          normalizeItem: normalizeActionItemFields
         })
       );
       setIssueStatuses(loadResult.state.issueStatuses);
@@ -207,7 +205,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           idSet.has(item.id)
             ? {
                 ...item,
-                ...normalizeActionItem({ ...item, ...updates }),
+                ...normalizeActionItemFields({ ...item, ...updates }),
                 lastUpdated: updates.lastUpdated ?? new Date().toISOString().slice(0, 10)
               }
             : item
@@ -227,7 +225,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
 
       enablePersistence();
-      setItems(parsedState.items.map((item) => normalizeActionItem(item)));
+      setItems(parsedState.items.map((item) => normalizeActionItemFields(item)));
       setIssueStatuses(parsedState.issueStatuses);
 
       return {
@@ -245,7 +243,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           item.id === id
             ? {
                 ...item,
-                ...normalizeActionItem({ ...item, ...updates }),
+                ...normalizeActionItemFields({ ...item, ...updates }),
                 lastUpdated: updates.lastUpdated ?? new Date().toISOString().slice(0, 10)
               }
             : item
@@ -270,7 +268,7 @@ export function useAppState() {
 }
 
 function createActionItem(item: NewActionItem): ActionItem {
-  const normalizedItem = normalizeActionItem({
+  const normalizedItem = normalizeActionItemFields({
     ...item,
     eventGroup: item.eventGroup ?? getSuggestedEventGroupForWorkstream(item.workstream),
     owner: resolveInitialOwner(item.owner, item.workstream)
@@ -290,24 +288,5 @@ function createActionItem(item: NewActionItem): ActionItem {
 }
 
 function getDefaultItems() {
-  return initialActionItems.map((item) => normalizeActionItem({ ...item }));
-}
-
-function normalizeActionItem<T extends Pick<ActionItem, "owner" | "workstream"> & Partial<Pick<ActionItem, "eventGroup">>>(item: T): T {
-  return {
-    ...item,
-    owner: normalizeOwnerValue(item.owner),
-    workstream: normalizeWorkstreamValue(item.workstream),
-    eventGroup: normalizeEventGroupValue(item.eventGroup)
-  };
-}
-
-function resolveInitialOwner(owner: string, workstream: string) {
-  const trimmedOwner = owner.trim();
-
-  if (trimmedOwner.length > 0 && trimmedOwner !== DEFAULT_OWNER) {
-    return trimmedOwner;
-  }
-
-  return (getSuggestedOwnerForWorkstream(workstream) ?? trimmedOwner) || DEFAULT_OWNER;
+  return initialActionItems.map((item) => normalizeActionItemFields({ ...item }));
 }

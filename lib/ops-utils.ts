@@ -105,6 +105,18 @@ export type IssueProgress = {
   total: number;
 };
 
+export type ActionItemValidation = {
+  type: boolean;
+  title: boolean;
+  workstream: boolean;
+  issue: boolean;
+  dueDate: boolean;
+  owner: boolean;
+  status: boolean;
+  waitingOn: boolean;
+  isValid: boolean;
+};
+
 const NEWSBRIEF_ISSUES = buildNewsbriefIssues([2026, 2027]);
 const VOICE_ISSUES = buildVoiceIssues();
 export const ISSUE_DEFINITIONS = [...NEWSBRIEF_ISSUES, ...VOICE_ISSUES];
@@ -250,6 +262,16 @@ export function normalizeOwnerValue(owner?: string) {
   return trimmedOwner;
 }
 
+export function resolveInitialOwner(owner: string, workstream: string) {
+  const trimmedOwner = owner.trim();
+
+  if (trimmedOwner.length > 0 && trimmedOwner !== DEFAULT_OWNER) {
+    return trimmedOwner;
+  }
+
+  return (getSuggestedOwnerForWorkstream(workstream) ?? trimmedOwner) || DEFAULT_OWNER;
+}
+
 export function getOwnerOptions(owner?: string) {
   const normalizedOwner = owner?.trim();
 
@@ -258,6 +280,79 @@ export function getOwnerOptions(owner?: string) {
   }
 
   return [normalizedOwner, ...OWNER_OPTIONS];
+}
+
+export function normalizeActionItemFields<
+  T extends Pick<ActionItem, "owner" | "workstream"> & Partial<Pick<ActionItem, "eventGroup">>
+>(item: T): T {
+  return {
+    ...item,
+    owner: normalizeOwnerValue(item.owner),
+    workstream: normalizeWorkstreamValue(item.workstream),
+    eventGroup: normalizeEventGroupValue(item.eventGroup)
+  };
+}
+
+export function syncActionItemStatus<T extends Pick<ActionItem, "status" | "waitingOn">>(
+  current: T,
+  nextStatus: string
+): T {
+  return {
+    ...current,
+    status: nextStatus,
+    waitingOn: nextStatus === "Waiting" ? current.waitingOn : ""
+  };
+}
+
+export function syncActionItemWorkstream<
+  T extends Pick<ActionItem, "workstream" | "dueDate"> & Partial<Pick<ActionItem, "eventGroup" | "issue">>
+>(current: T, nextWorkstream: string): T {
+  const nextIssues = getIssuesForWorkstream(nextWorkstream);
+  const nextIssue =
+    current.issue && nextIssues.includes(current.issue as (typeof nextIssues)[number]) ? current.issue : "";
+
+  return {
+    ...current,
+    workstream: nextWorkstream,
+    eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
+    issue: nextIssue,
+    dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
+  };
+}
+
+export function syncActionItemIssue<
+  T extends Pick<ActionItem, "workstream" | "dueDate"> & Partial<Pick<ActionItem, "eventGroup" | "issue">>
+>(current: T, nextIssue: string): T {
+  const nextWorkstream = nextIssue ? (getWorkstreamForIssue(nextIssue) ?? current.workstream) : current.workstream;
+
+  return {
+    ...current,
+    issue: nextIssue,
+    workstream: nextWorkstream,
+    eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
+    dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
+  };
+}
+
+export function validateActionItemInput(
+  input: Pick<ActionItem, "type" | "title" | "workstream" | "dueDate" | "owner" | "status" | "waitingOn"> &
+    Partial<Pick<ActionItem, "issue">>
+): ActionItemValidation {
+  const validation = {
+    type: input.type.trim().length === 0,
+    title: input.title.trim().length === 0,
+    workstream: input.workstream.trim().length === 0,
+    issue: shouldRequireIssue(input.type, input.workstream) && (input.issue?.length ?? 0) === 0,
+    dueDate: input.dueDate.length === 0 && !isIssueMissingDueDate(input.issue),
+    owner: input.owner.trim().length === 0,
+    status: input.status.trim().length === 0,
+    waitingOn: input.status === "Waiting" && input.waitingOn.length === 0
+  };
+
+  return {
+    ...validation,
+    isValid: Object.values(validation).every((value) => !value)
+  };
 }
 
 export function normalizeWorkstreamValue(workstream?: string) {

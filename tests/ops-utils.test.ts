@@ -11,7 +11,11 @@ import {
   matchesEventGroup,
   matchesSearchQuery,
   normalizeOwnerValue,
-  syncEventGroupWithWorkstream
+  syncActionItemIssue,
+  syncActionItemStatus,
+  syncActionItemWorkstream,
+  syncEventGroupWithWorkstream,
+  validateActionItemInput
 } from "../lib/ops-utils";
 
 function withMockedToday<T>(isoDateTime: string, callback: () => T) {
@@ -144,4 +148,50 @@ test("matchesEventGroup and matchesSearchQuery support grouped filtered views", 
   assert.equal(matchesSearchQuery(item, "venue"), true);
   assert.equal(matchesSearchQuery(item, "room layout"), true);
   assert.equal(matchesSearchQuery(item, "crystelle"), false);
+});
+
+test("shared item shaping and validation helpers align create and edit flows", () => {
+  const base = createItem({
+    type: "Deliverable",
+    workstream: "Legislative Day",
+    eventGroup: "Legislative Day",
+    issue: "",
+    dueDate: "2026-03-30",
+    status: "Waiting",
+    waitingOn: "Sponsor"
+  });
+
+  assert.equal(syncActionItemStatus(base, "In Progress").waitingOn, "");
+
+  const syncedWorkstream = syncActionItemWorkstream(base, "Monday Mingle");
+  assert.equal(syncedWorkstream.workstream, "Monday Mingle");
+  assert.equal(syncedWorkstream.eventGroup, "Monday Mingle");
+
+  const syncedIssue = syncActionItemIssue(
+    {
+      ...base,
+      workstream: "General Operations",
+      eventGroup: "General Operations",
+      issue: "",
+      dueDate: "2026-03-30"
+    },
+    "March 2026 Newsbrief"
+  );
+  assert.equal(syncedIssue.workstream, "Newsbrief");
+  assert.equal(syncedIssue.eventGroup, undefined);
+  assert.equal(syncedIssue.dueDate, "2026-03-20");
+
+  const validation = validateActionItemInput({
+    type: "Deliverable",
+    title: "Monthly CEO Briefing",
+    workstream: "Newsbrief",
+    issue: "",
+    dueDate: "",
+    owner: "Melissa",
+    status: "Not Started",
+    waitingOn: ""
+  });
+  assert.equal(validation.issue, true);
+  assert.equal(validation.dueDate, false);
+  assert.equal(validation.isValid, false);
 });

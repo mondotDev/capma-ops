@@ -8,14 +8,14 @@ import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from
 import {
   DEFAULT_OWNER,
   EVENT_GROUP_OPTIONS,
-  getIssueDueDate,
   getIssuesForWorkstream,
   getOwnerOptions,
-  getWorkstreamForIssue,
-  isIssueMissingDueDate,
   STATUS_OPTIONS,
-  syncEventGroupWithWorkstream,
+  syncActionItemIssue,
+  syncActionItemStatus,
+  syncActionItemWorkstream,
   shouldRequireIssue,
+  validateActionItemInput,
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
@@ -55,7 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
   const [generationFeedback, setGenerationFeedback] = useState<string>("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const validation = useMemo(() => getValidation(formState), [formState]);
+  const validation = useMemo(() => validateActionItemInput(formState), [formState]);
   const availableIssues = useMemo(() => getIssuesForWorkstream(formState.workstream), [formState.workstream]);
   const selectedIssueRecord = useMemo(
     () => issues.find((issue) => issue.label === formState.issue) ?? null,
@@ -187,41 +187,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setGenerationFeedback("");
     setFormState((current) => {
       if (field === "status") {
-        return {
-          ...current,
-          status: value as string,
-          waitingOn: value === "Waiting" ? current.waitingOn : ""
-        };
+        return syncActionItemStatus(current, value as string);
       }
 
       if (field === "workstream") {
-        const nextWorkstream = value as string;
-        const nextIssues = getIssuesForWorkstream(nextWorkstream);
-        const nextIssue =
-          current.issue && nextIssues.includes(current.issue as (typeof nextIssues)[number])
-            ? current.issue
-            : "";
-
-        return {
-          ...current,
-          workstream: nextWorkstream,
-          eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
-          issue: nextIssue,
-          dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
-        };
+        return syncActionItemWorkstream(current, value as string);
       }
 
       if (field === "issue") {
-        const nextIssue = value as string;
-        const nextWorkstream = nextIssue ? (getWorkstreamForIssue(nextIssue) ?? current.workstream) : current.workstream;
-
-        return {
-          ...current,
-          issue: nextIssue,
-          workstream: nextWorkstream,
-          eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
-          dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? "") : current.dueDate
-        };
+        return syncActionItemIssue(current, value as string);
       }
 
       return {
@@ -652,24 +626,6 @@ function createInitialFormState(): QuickAddFormState {
     status: "Not Started",
     waitingOn: "",
     notes: ""
-  };
-}
-
-function getValidation(formState: QuickAddFormState) {
-  const validation = {
-    type: formState.type.trim().length === 0,
-    title: formState.title.trim().length === 0,
-    workstream: formState.workstream.trim().length === 0,
-    issue: shouldRequireIssue(formState.type, formState.workstream) && formState.issue.length === 0,
-    dueDate: formState.dueDate.length === 0 && !isIssueMissingDueDate(formState.issue),
-    owner: formState.owner.trim().length === 0,
-    status: formState.status.trim().length === 0,
-    waitingOn: formState.status === "Waiting" && formState.waitingOn.length === 0
-  };
-
-  return {
-    ...validation,
-    isValid: Object.values(validation).every((value) => !value)
   };
 }
 
