@@ -1,5 +1,6 @@
 import type { ActionItem } from "@/lib/sample-data";
 import type { IssueStatus } from "@/lib/ops-utils";
+import type { AppStateSnapshot } from "@/lib/app-transfer";
 
 export type PersistedAppState = {
   items: ActionItem[];
@@ -12,13 +13,6 @@ export type LoadPersistedAppStateResult = {
   primaryStateStatus: "valid" | "invalid" | "missing";
   backupStateStatus: "valid" | "invalid" | "missing";
   shouldPersist: boolean;
-};
-
-export type AppStateSnapshot = {
-  version: 1;
-  exportedAt: string;
-  items: ActionItem[];
-  issueStatuses: Partial<Record<string, IssueStatus>>;
 };
 
 export const APP_STATE_STORAGE_KEY = "capma-ops-state";
@@ -96,58 +90,6 @@ export function clearPersistedAppState() {
 
   window.localStorage.removeItem(APP_STATE_STORAGE_KEY);
   window.localStorage.removeItem(APP_STATE_BACKUP_STORAGE_KEY);
-}
-
-export function createAppStateSnapshot(
-  items: ActionItem[],
-  issueStatuses: Partial<Record<string, IssueStatus>>
-): AppStateSnapshot {
-  return {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    items: items.map((item) => ({ ...item })),
-    issueStatuses: { ...issueStatuses }
-  };
-}
-
-export function parseImportedAppState(
-  value: unknown
-): (PersistedAppState & { usedLegacyFormat: boolean }) | null {
-  if (Array.isArray(value)) {
-    const items = value.filter(isActionItemRecord);
-
-    if (items.length !== value.length) {
-      return null;
-    }
-
-    return {
-      items,
-      issueStatuses: {},
-      usedLegacyFormat: true
-    };
-  }
-
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const snapshot = value as Partial<AppStateSnapshot>;
-
-  if (!Array.isArray(snapshot.items) || !isIssueStatusMap(snapshot.issueStatuses)) {
-    return null;
-  }
-
-  const items = snapshot.items.filter(isActionItemRecord);
-
-  if (items.length !== snapshot.items.length) {
-    return null;
-  }
-
-  return {
-    items,
-    issueStatuses: snapshot.issueStatuses,
-    usedLegacyFormat: false
-  };
 }
 
 export function migratePersistedItems(

@@ -3,13 +3,15 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   clearPersistedAppState,
-  createAppStateSnapshot,
   loadPersistedAppState,
   migratePersistedItems,
-  parseImportedAppState,
-  savePersistedAppState,
-  type AppStateSnapshot
+  savePersistedAppState
 } from "@/lib/app-persistence";
+import {
+  createAppStateSnapshot,
+  parseImportedAppState,
+  type AppStateSnapshot
+} from "@/lib/app-transfer";
 import { getPublicationTemplates } from "@/lib/publication-templates";
 import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
 import {
