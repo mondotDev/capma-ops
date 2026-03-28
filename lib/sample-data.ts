@@ -1,5 +1,18 @@
 import planningSeed from "@/lib/planning-seed.json";
 
+export type ActionNoteAuthor = {
+  userId: string | null;
+  initials: string;
+  displayName?: string | null;
+};
+
+export type ActionNoteEntry = {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: ActionNoteAuthor;
+};
+
 export type ActionItem = {
   id: string;
   title: string;
@@ -14,7 +27,8 @@ export type ActionItem = {
   owner: string;
   waitingOn: string;
   lastUpdated: string;
-  notes: string;
+  noteEntries: ActionNoteEntry[];
+  notes?: string;
 };
 
 export const LEGACY_SAMPLE_ITEM_IDS = [

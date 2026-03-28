@@ -5,18 +5,21 @@
   --border: #d9e0e7;
   --text: #1f2933;
   --muted: #66788a;
-  --accent: #1f6feb;
-  --accent-soft: #e8f0fe;
+  --accent: #003b6d;
+  --accent-soft: #e7eff5;
+  --success: #67b346;
+  --success-soft: #edf6e7;
+  --gold: #d4af37;
   --danger: #c0392b;
   --danger-soft: #fff2f0;
   --warning-soft: #fff8df;
   --waiting-soft: #fff3e8;
-  --blocked-soft: #eef6ff;
+  --blocked-soft: #f6efe0;
   --required: #dc2626;
   --sidebar-width: 220px;
   --topbar-height: 72px;
-  --drawer-width: 460px;
-  font-family: Arial, Helvetica, sans-serif;
+  --drawer-width: 760px;
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
 }
 
 * {
@@ -32,7 +35,8 @@ body {
 }
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+  font-weight: 400;
 }
 
 a {
@@ -57,7 +61,7 @@ textarea {
   left: 0;
   bottom: 0;
   width: var(--sidebar-width);
-  background: #111827;
+  background: #0f2942;
   color: #f9fafb;
   padding: 24px 16px;
   display: flex;
@@ -66,8 +70,10 @@ textarea {
 }
 
 .sidebar__brand {
+  font-family: var(--font-title), Impact, sans-serif;
   font-size: 20px;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .sidebar__nav {
@@ -104,7 +110,7 @@ textarea {
 
 .sidebar__link.active {
   background: #ffffff;
-  color: #111827;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -235,6 +241,7 @@ textarea {
 }
 
 .quick-add-modal__title {
+  font-family: var(--font-title), Impact, sans-serif;
   margin: 0;
   font-size: 24px;
 }
@@ -390,9 +397,11 @@ textarea {
 }
 
 .card__title {
+  font-family: var(--font-heading), Arial, sans-serif;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  color: #516273;
 }
 
 .command-metrics {
@@ -527,8 +536,8 @@ textarea {
 }
 
 .publication-row--active {
-  background: #fafbfc;
-  box-shadow: inset 3px 0 0 #9aa5b1;
+  background: #f5f8fb;
+  box-shadow: inset 3px 0 0 var(--accent);
   padding-left: 10px;
   padding-right: 10px;
   border-radius: 10px;
@@ -549,7 +558,7 @@ textarea {
 
 .publication-row__meta {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 400;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #7b8794;
@@ -1004,6 +1013,7 @@ tr.blocked-row {
 }
 
 .drawer__title {
+  font-family: var(--font-title), Impact, sans-serif;
   margin: 0;
   font-size: 24px;
   line-height: 1.2;
@@ -1068,7 +1078,7 @@ tr.blocked-row {
 }
 
 .drawer__warning--blocked {
-  color: #355d8a;
+  color: #8a4b12;
 }
 
 .urgency-badge {
@@ -1097,7 +1107,7 @@ tr.blocked-row {
 
 .urgency-badge--blocked {
   background: var(--blocked-soft);
-  color: #355d8a;
+  color: #8a4b12;
 }
 
 .urgency-badge--cut {
@@ -1110,33 +1120,112 @@ tr.blocked-row {
   gap: 14px;
 }
 
+.drawer__grid--two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .drawer__sections {
   display: grid;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+  gap: 18px 22px;
   padding: 18px 22px 22px;
 }
 
 .drawer-section {
   display: grid;
   gap: 14px;
+  align-content: start;
 }
 
-.drawer-section + .drawer-section {
+.drawer-section--primary {
+  grid-column: 1;
+}
+
+.drawer-section--primary + .drawer-section--primary {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.drawer-section--notes {
+  grid-column: 2;
+}
+
+.drawer-section--notes + .drawer-section--notes {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.drawer-section--primary + .drawer-section--danger {
   padding-top: 18px;
   border-top: 1px solid var(--border);
 }
 
 .drawer-section--danger {
   margin-top: 8px;
+  grid-column: 1;
 }
 
 .drawer-section__title {
+  font-family: var(--font-heading), Arial, sans-serif;
   margin: 0;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.note-history {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.note-entry {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+
+.note-entry__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.note-entry__initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #e8edf2;
+  color: #415262;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.note-entry__timestamp {
+  color: #738292;
+}
+
+.note-entry__text {
+  white-space: pre-wrap;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.drawer__note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .field {
@@ -1156,6 +1245,34 @@ tr.blocked-row {
   color: var(--muted);
 }
 
+th,
+td,
+input,
+select,
+textarea,
+.field-static,
+.field-hint,
+.cell-subtext,
+.cell-hint,
+.muted,
+.detail-row,
+.group-title,
+.metric-row,
+.publication-row,
+.note-entry__text,
+.note-entry__timestamp,
+.drawer__workstream,
+.drawer__issue,
+.drawer__warning,
+.command-metric__label,
+.command-zone__list,
+.topbar__search,
+.sidebar__link,
+.sidebar__settings {
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+  font-weight: 400;
+}
+
 .drawer .field input,
 .drawer .field select,
 .drawer .field textarea {
@@ -1166,6 +1283,10 @@ tr.blocked-row {
 .drawer .field textarea {
   min-height: 220px;
   resize: vertical;
+}
+
+#drawer-add-note {
+  min-height: 96px;
 }
 
 .empty-state {
@@ -1247,6 +1368,16 @@ tr.blocked-row {
     width: min(var(--drawer-width), calc(100vw - 32px));
     height: min(78vh, 720px);
     border-left: 1px solid var(--border);
+  }
+
+  .drawer__sections {
+    grid-template-columns: 1fr;
+  }
+
+  .drawer-section--primary,
+  .drawer-section--notes,
+  .drawer-section--danger {
+    grid-column: 1;
   }
 }
 

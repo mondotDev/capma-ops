@@ -16,17 +16,20 @@ import {
   groupItemsByEventGroup
 } from "@/lib/action-view-utils";
 import {
+  createActionNoteEntry,
   type ActionFilter,
   type ActionFocus,
   type ActionLens,
   DEFAULT_OWNER,
   daysSince,
   EVENT_GROUP_OPTIONS,
+  formatNoteEntryTimestamp,
   formatDueLabel,
   formatShortDate,
   getActionSummaryCounts,
   getIssuesForWorkstream,
   getOwnerOptions,
+  LOCAL_FALLBACK_NOTE_AUTHOR,
   isItemMissingDueDate,
   isBlockedItem,
   isTerminalStatus,
@@ -34,6 +37,7 @@ import {
   isWaitingMissingReason,
   OWNER_OPTIONS,
   sortByPriority,
+  sortNoteEntriesNewestFirst,
   STATUS_OPTIONS,
   syncActionItemIssue,
   syncActionItemWorkstream,
@@ -100,6 +104,7 @@ export function ActionView({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [blockedByDraft, setBlockedByDraft] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
   const activeFilter = getActionFilterValue(initialFilter);
   const activeFocus = getActionFocusValue(initialFocus);
   const activeLens = getActionLensValue(initialLens);
@@ -184,6 +189,7 @@ export function ActionView({
     setIsEditingTitle(false);
     setTitleDraft(selectedItem?.title ?? "");
     setBlockedByDraft(selectedItem?.blockedBy ?? "");
+    setNoteDraft("");
   }, [selectedItem?.blockedBy, selectedItem?.id, selectedItem?.title]);
 
   function updateQuery(
@@ -264,6 +270,17 @@ export function ActionView({
   function cancelTitleEdit(item: ActionItem) {
     setTitleDraft(item.title);
     setIsEditingTitle(false);
+  }
+
+  function addNote(item: ActionItem) {
+    const nextEntry = createActionNoteEntry(noteDraft, { author: LOCAL_FALLBACK_NOTE_AUTHOR });
+
+    if (!nextEntry) {
+      return;
+    }
+
+    updateItem(item.id, { noteEntries: [nextEntry, ...item.noteEntries] });
+    setNoteDraft("");
   }
 
   function clearFocus() {
@@ -783,9 +800,9 @@ export function ActionView({
             </div>
 
             <div className="drawer__sections">
-              <section className="drawer-section">
+              <section className="drawer-section drawer-section--primary">
                 <h3 className="drawer-section__title">Operational</h3>
-                <div className="drawer__grid">
+                <div className="drawer__grid drawer__grid--two-up">
                   <div className="field">
                     <label htmlFor="drawer-status">Status</label>
                     <select
@@ -870,9 +887,9 @@ export function ActionView({
                 </div>
               </section>
 
-              <section className="drawer-section">
+              <section className="drawer-section drawer-section--primary">
                 <h3 className="drawer-section__title">Context</h3>
-                <div className="drawer__grid">
+                <div className="drawer__grid drawer__grid--two-up">
                   <div className="field">
                     <label htmlFor="drawer-workstream">Workstream</label>
                     <select
@@ -972,17 +989,54 @@ export function ActionView({
                 </div>
               </section>
 
-              <section className="drawer-section">
-                <h3 className="drawer-section__title">Notes</h3>
+              <section className="drawer-section drawer-section--notes">
+                <h3 className="drawer-section__title">Add Note</h3>
                 <div className="field">
-                  <label htmlFor="drawer-notes">Notes</label>
+                  <label htmlFor="drawer-add-note">New Note</label>
                   <textarea
-                    id="drawer-notes"
-                    onChange={(event) => updateItem(selectedItem.id, { notes: event.target.value })}
-                    rows={10}
-                    value={selectedItem.notes}
+                    id="drawer-add-note"
+                    onChange={(event) => setNoteDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        addNote(selectedItem);
+                      }
+                    }}
+                    placeholder="Add a timestamped note. Press Enter to save, Shift+Enter for a new line."
+                    rows={4}
+                    value={noteDraft}
                   />
                 </div>
+                <div className="drawer__note-actions">
+                  <div className="field-hint">Enter saves. Shift+Enter adds a new line.</div>
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    disabled={noteDraft.trim().length === 0}
+                    onClick={() => addNote(selectedItem)}
+                    type="button"
+                  >
+                    Add note
+                  </button>
+                </div>
+              </section>
+
+              <section className="drawer-section drawer-section--notes">
+                <h3 className="drawer-section__title">Note History</h3>
+                {selectedItem.noteEntries.length > 0 ? (
+                  <div className="note-history">
+                    {sortNoteEntriesNewestFirst(selectedItem.noteEntries).map((entry) => (
+                      <article className="note-entry" key={entry.id}>
+                        <div className="note-entry__meta">
+                          <span className="note-entry__initials">{entry.author.initials}</span>
+                          <span className="note-entry__timestamp">{formatNoteEntryTimestamp(entry.createdAt)}</span>
+                        </div>
+                        <div className="note-entry__text">{entry.text}</div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted">No note history yet.</div>
+                )}
               </section>
 
               <section className="drawer-section drawer-section--danger">

@@ -51,7 +51,7 @@ export function generatePublicationIssueDeliverables(
         status: "Not Started",
         owner: template.defaultOwner,
         waitingOn: "",
-        notes: ""
+        noteEntries: []
       })
     );
   }

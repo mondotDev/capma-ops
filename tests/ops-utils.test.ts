@@ -17,6 +17,7 @@ import {
 } from "../lib/action-view-utils";
 import {
   matchesActionLens,
+  createActionNoteEntry,
   getOwnerOptions,
   getDailyLoad,
   getSuggestedEventGroupForWorkstream,
@@ -69,7 +70,7 @@ function createItem(overrides: Partial<ActionItem> = {}): ActionItem {
     owner: "Melissa",
     waitingOn: "",
     lastUpdated: "2026-03-28",
-    notes: "",
+    noteEntries: [],
     ...overrides
   };
 }
@@ -161,7 +162,7 @@ test("matchesEventGroup and matchesSearchQuery support grouped filtered views", 
   const item = createItem({
     eventGroup: "Monday Mingle",
     blockedBy: "Venue confirmation",
-    notes: "Need final room layout"
+    noteEntries: [createActionNoteEntry("Need final room layout")!]
   });
 
   assert.equal(matchesEventGroup(item, "Monday Mingle"), true);
@@ -305,7 +306,7 @@ test("shared mutation helpers keep add update bulk and import shaping aligned", 
     status: "Not Started",
     owner: "Unknown Owner",
     waitingOn: "",
-    notes: ""
+    noteEntries: []
   });
 
   assert.match(created.id, /^custom-owner-follow-up-/);
@@ -333,12 +334,20 @@ test("shared mutation helpers keep add update bulk and import shaping aligned", 
 
   const normalized = normalizeActionItems([
     createItem({ workstream: "First Fridays", owner: "External Sponsor Rep" }),
-    { ...createItem({ id: "legacy-item" }), blocked: true, blockedBy: "  Sponsor art  " } as ActionItem & { blocked: boolean }
+    {
+      ...createItem({ id: "legacy-item" }),
+      blocked: true,
+      blockedBy: "  Sponsor art  ",
+      notes: "  Sponsor art is waiting on approval  "
+    } as ActionItem & { blocked: boolean }
   ]);
   assert.equal(normalized[0].workstream, "First Friday");
   assert.equal(normalized[0].owner, "External Sponsor Rep");
   assert.equal(normalized[1].isBlocked, true);
   assert.equal(normalized[1].blockedBy, "Sponsor art");
+  assert.equal(normalized[1].noteEntries.length, 1);
+  assert.equal(normalized[1].noteEntries[0].author.initials, "LEG");
+  assert.equal(normalized[1].noteEntries[0].text, "Sponsor art is waiting on approval");
 });
 
 test("opening a publication issue keeps only one open issue per publication workstream", () => {

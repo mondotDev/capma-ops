@@ -1,4 +1,4 @@
-import type { ActionItem } from "@/lib/sample-data";
+import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
 
 export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Canceled", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle", "External"] as const;
@@ -41,13 +41,21 @@ export type EventGroupOption = (typeof EVENT_GROUP_OPTIONS)[number];
 type LegacyBlockedFields = {
   blocked?: boolean;
 };
+type LegacyNotesField = {
+  notes?: string;
+};
 type ActionItemBlockedState = Pick<ActionItem, "isBlocked" | "blockedBy" | "status"> & LegacyBlockedFields;
 type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
-  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy">> &
-  LegacyBlockedFields;
-type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<T, "blocked" | "isBlocked" | "blockedBy"> &
+  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy" | "noteEntries" | "lastUpdated">> &
+  LegacyBlockedFields &
+  LegacyNotesField;
+type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
+  T,
+  "blocked" | "isBlocked" | "blockedBy" | "notes" | "noteEntries"
+> &
   Pick<ActionItem, "owner" | "workstream"> &
-  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy">>;
+  Pick<ActionItem, "noteEntries"> &
+  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy" | "notes">>;
 
 const NEWSBRIEF_MONTHS = [
   "January",
@@ -138,6 +146,16 @@ const NEWSBRIEF_ISSUES = buildNewsbriefIssues([2026, 2027]);
 const VOICE_ISSUES = buildVoiceIssues();
 export const ISSUE_DEFINITIONS = [...NEWSBRIEF_ISSUES, ...VOICE_ISSUES];
 export const ISSUE_OPTIONS = ISSUE_DEFINITIONS.map((issue) => issue.label);
+export const LOCAL_FALLBACK_NOTE_AUTHOR: ActionNoteAuthor = {
+  userId: null,
+  initials: "LOC",
+  displayName: "Local user"
+};
+export const LEGACY_NOTE_AUTHOR: ActionNoteAuthor = {
+  userId: null,
+  initials: "LEG",
+  displayName: "Legacy note"
+};
 
 export function getCurrentDate() {
   const currentDate = new Date();
@@ -322,8 +340,9 @@ export function getOwnerOptions(owner?: string) {
 }
 
 export function normalizeActionItemFields<T extends NormalizeActionItemInput>(item: T): NormalizeActionItemResult<T> {
-  const { blocked, blockedBy, isBlocked, ...rest } = item;
+  const { blocked, blockedBy, isBlocked, noteEntries, notes, ...rest } = item;
   const normalizedBlockedBy = blockedBy?.trim();
+  const normalizedNoteEntries = normalizeNoteEntries(noteEntries, notes, item.lastUpdated);
 
   return {
     ...rest,
@@ -331,8 +350,119 @@ export function normalizeActionItemFields<T extends NormalizeActionItemInput>(it
     workstream: normalizeWorkstreamValue(item.workstream),
     eventGroup: normalizeEventGroupValue(item.eventGroup),
     isBlocked: isBlocked ?? blocked ?? undefined,
-    blockedBy: normalizedBlockedBy ? normalizedBlockedBy : undefined
+    blockedBy: normalizedBlockedBy ? normalizedBlockedBy : undefined,
+    noteEntries: normalizedNoteEntries,
+    notes: undefined
   } as NormalizeActionItemResult<T>;
+}
+
+export function createActionNoteEntry(
+  text: string,
+  options?: {
+    author?: Partial<ActionNoteAuthor>;
+    createdAt?: string;
+    id?: string;
+  }
+): ActionNoteEntry | null {
+  const normalizedText = text.trim();
+
+  if (!normalizedText) {
+    return null;
+  }
+
+  const initials = options?.author?.initials?.trim() || LOCAL_FALLBACK_NOTE_AUTHOR.initials;
+  const displayName = options?.author?.displayName?.trim() || LOCAL_FALLBACK_NOTE_AUTHOR.displayName || null;
+
+  return {
+    id: options?.id?.trim() || `note-${Date.now().toString(36)}`,
+    text: normalizedText,
+    createdAt: normalizeNoteTimestamp(options?.createdAt),
+    author: {
+      userId: options?.author?.userId ?? LOCAL_FALLBACK_NOTE_AUTHOR.userId,
+      initials,
+      displayName
+    }
+  };
+}
+
+export function normalizeNoteEntries(
+  noteEntries?: ActionNoteEntry[],
+  legacyNotes?: string,
+  fallbackCreatedAt?: string
+) {
+  const normalizedEntries = (noteEntries ?? []).flatMap((entry) => {
+    const normalizedText = entry.text?.trim();
+
+    if (!normalizedText) {
+      return [];
+    }
+
+    return [
+      {
+        id: entry.id?.trim() || `note-${normalizeNoteTimestamp(entry.createdAt)}-${normalizedText.slice(0, 12)}`,
+        text: normalizedText,
+        createdAt: normalizeNoteTimestamp(entry.createdAt || fallbackCreatedAt),
+        author: {
+          userId: entry.author?.userId ?? LOCAL_FALLBACK_NOTE_AUTHOR.userId,
+          initials: entry.author?.initials?.trim() || LOCAL_FALLBACK_NOTE_AUTHOR.initials,
+          displayName: entry.author?.displayName?.trim() || LOCAL_FALLBACK_NOTE_AUTHOR.displayName || null
+        }
+      }
+    ];
+  });
+
+  if (normalizedEntries.length > 0) {
+    return normalizedEntries;
+  }
+
+  const migratedLegacyNote = legacyNotes?.trim();
+
+  if (!migratedLegacyNote) {
+    return [];
+  }
+
+  return [
+    {
+      id: "legacy-note",
+      text: migratedLegacyNote,
+      createdAt: normalizeNoteTimestamp(fallbackCreatedAt),
+      author: { ...LEGACY_NOTE_AUTHOR }
+    }
+  ];
+}
+
+export function sortNoteEntriesNewestFirst(noteEntries: ActionNoteEntry[]) {
+  return [...noteEntries].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+}
+
+export function formatNoteEntryTimestamp(createdAt: string) {
+  const parsedDate = new Date(createdAt);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return createdAt;
+  }
+
+  return parsedDate.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function normalizeNoteTimestamp(createdAt?: string) {
+  if (!createdAt?.trim()) {
+    return new Date().toISOString();
+  }
+
+  const normalizedCreatedAt = createdAt.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedCreatedAt)) {
+    return `${normalizedCreatedAt}T12:00:00.000Z`;
+  }
+
+  return normalizedCreatedAt;
 }
 
 export function syncActionItemStatus<T extends Pick<ActionItem, "status" | "waitingOn">>(
@@ -712,7 +842,7 @@ export function isSponsorRelated(item: ActionItem) {
 }
 
 export function isProductionRisk(item: ActionItem) {
-  const haystack = `${item.title} ${item.notes} ${item.waitingOn} ${item.type}`.toLowerCase();
+  const haystack = `${item.title} ${item.noteEntries.map((entry) => entry.text).join(" ")} ${item.waitingOn} ${item.type}`.toLowerCase();
   return (
     isItemMissingDueDate(item) ||
     haystack.includes("missing file") ||
@@ -732,7 +862,7 @@ export function matchesSearchQuery(item: ActionItem, query?: string) {
 
   const haystack = [
     item.title,
-    item.notes,
+    ...item.noteEntries.map((entry) => entry.text),
     item.workstream,
     item.eventGroup,
     item.issue,

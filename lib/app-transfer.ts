@@ -65,7 +65,7 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     return false;
   }
 
-  const item = value as Partial<ActionItem> & { blocked?: unknown };
+  const item = value as Partial<ActionItem> & { blocked?: unknown; notes?: unknown };
 
   return [
     item.id,
@@ -76,14 +76,45 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     item.status,
     item.owner,
     item.waitingOn,
-    item.lastUpdated,
-    item.notes
+    item.lastUpdated
   ].every((field) => typeof field === "string") &&
+    (item.noteEntries === undefined || isNoteEntryList(item.noteEntries)) &&
+    (item.notes === undefined || typeof item.notes === "string") &&
     (item.isBlocked === undefined || typeof item.isBlocked === "boolean") &&
     (item.blocked === undefined || typeof item.blocked === "boolean") &&
     (item.blockedBy === undefined || typeof item.blockedBy === "string") &&
     (item.issue === undefined || typeof item.issue === "string") &&
     (item.eventGroup === undefined || typeof item.eventGroup === "string");
+}
+
+function isNoteEntryList(value: unknown) {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return false;
+      }
+
+      const noteEntry = entry as {
+        id?: unknown;
+        text?: unknown;
+        createdAt?: unknown;
+        author?: { userId?: unknown; initials?: unknown; displayName?: unknown };
+      };
+
+      return (
+        typeof noteEntry.id === "string" &&
+        typeof noteEntry.text === "string" &&
+        typeof noteEntry.createdAt === "string" &&
+        Boolean(noteEntry.author) &&
+        (noteEntry.author?.userId === null || typeof noteEntry.author?.userId === "string") &&
+        typeof noteEntry.author?.initials === "string" &&
+        (noteEntry.author?.displayName === undefined ||
+          noteEntry.author?.displayName === null ||
+          typeof noteEntry.author?.displayName === "string")
+      );
+    })
+  );
 }
 
 function isIssueStatusMap(

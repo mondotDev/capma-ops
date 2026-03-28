@@ -6,9 +6,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
 import {
+  createActionNoteEntry,
   DEFAULT_OWNER,
   EVENT_GROUP_OPTIONS,
   getIssuesForWorkstream,
+  LOCAL_FALLBACK_NOTE_AUTHOR,
   getOwnerOptions,
   STATUS_OPTIONS,
   syncActionItemIssue,
@@ -214,6 +216,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const initialNoteEntry = createActionNoteEntry(formState.notes, { author: LOCAL_FALLBACK_NOTE_AUTHOR });
+
     addItem({
       type: formState.type,
       title: formState.title.trim(),
@@ -226,7 +230,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       waitingOn: formState.waitingOn,
       isBlocked: formState.isBlocked || undefined,
       blockedBy: formState.blockedBy,
-      notes: formState.notes.trim()
+      noteEntries: initialNoteEntry ? [initialNoteEntry] : []
     } satisfies NewActionItem);
 
     closeQuickAdd();
@@ -477,7 +481,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
 
                 <div className="field field--wide">
-                  <label htmlFor="quick-add-notes">Notes</label>
+                  <label htmlFor="quick-add-notes">Initial Note</label>
                   <textarea
                     className="field-control"
                     id="quick-add-notes"
