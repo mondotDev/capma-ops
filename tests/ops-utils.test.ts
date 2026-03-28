@@ -1,5 +1,11 @@
 import test = require("node:test");
 import assert = require("node:assert/strict");
+import {
+  applyActionItemUpdates,
+  applyBulkActionItemUpdates,
+  createActionItem,
+  normalizeActionItems
+} from "../lib/action-item-mutations";
 import type { ActionItem } from "../lib/sample-data";
 import {
   getOwnerOptions,
@@ -194,4 +200,46 @@ test("shared item shaping and validation helpers align create and edit flows", (
   assert.equal(validation.issue, true);
   assert.equal(validation.dueDate, false);
   assert.equal(validation.isValid, false);
+});
+
+test("shared mutation helpers keep add update bulk and import shaping aligned", () => {
+  const created = createActionItem({
+    type: "Task",
+    title: "Custom owner follow-up",
+    workstream: "First Fridays",
+    eventGroup: undefined,
+    issue: undefined,
+    dueDate: "2026-03-30",
+    status: "Not Started",
+    owner: "Unknown Owner",
+    waitingOn: "",
+    notes: ""
+  });
+
+  assert.match(created.id, /^custom-owner-follow-up-/);
+  assert.equal(created.workstream, "First Friday");
+  assert.equal(created.eventGroup, "First Friday");
+  assert.equal(created.owner, "Unknown Owner");
+
+  const updated = applyActionItemUpdates(created, {
+    workstream: "First Fridays",
+    owner: "Jake"
+  });
+  assert.equal(updated.workstream, "First Friday");
+  assert.equal(updated.owner, "Governmental Affairs Chair");
+  assert.match(updated.lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
+
+  const bulkUpdated = applyBulkActionItemUpdates(
+    [created, createItem({ id: "item-2" })],
+    [created.id],
+    { owner: "president" }
+  );
+  assert.equal(bulkUpdated[0].owner, "Sitting President");
+  assert.equal(bulkUpdated[1].owner, "Melissa");
+
+  const normalized = normalizeActionItems([
+    createItem({ workstream: "First Fridays", owner: "External Sponsor Rep" })
+  ]);
+  assert.equal(normalized[0].workstream, "First Friday");
+  assert.equal(normalized[0].owner, "External Sponsor Rep");
 });

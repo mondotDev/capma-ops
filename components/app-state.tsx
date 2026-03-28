@@ -12,24 +12,29 @@ import {
   parseImportedAppState,
   type AppStateSnapshot
 } from "@/lib/app-transfer";
+import {
+  applyBulkActionItemUpdates,
+  applyActionItemUpdates,
+  createActionItem,
+  normalizeActionItems,
+  type NewActionItemInput
+} from "@/lib/action-item-mutations";
 import { getPublicationTemplates } from "@/lib/publication-templates";
 import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
 import {
   DEFAULT_OWNER,
-  getSuggestedEventGroupForWorkstream,
   type IssueRecord,
   type IssueStatus,
   getGeneratedIssues,
   getIssueDueDate,
   getWorkstreamForIssue,
-  normalizeActionItemFields,
-  resolveInitialOwner
+  normalizeActionItemFields
 } from "@/lib/ops-utils";
 
 export { clearPersistedAppState };
 export type { AppStateSnapshot };
 
-export type NewActionItem = Omit<ActionItem, "id" | "lastUpdated">;
+export type NewActionItem = NewActionItemInput;
 export type GenerateDeliverablesResult = {
   created: number;
   skipped: number;
@@ -198,19 +203,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     addItem,
     bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => {
       enablePersistence();
-      const idSet = new Set(ids);
-
-      setItems((current) =>
-        current.map((item) =>
-          idSet.has(item.id)
-            ? {
-                ...item,
-                ...normalizeActionItemFields({ ...item, ...updates }),
-                lastUpdated: updates.lastUpdated ?? new Date().toISOString().slice(0, 10)
-              }
-            : item
-        )
-      );
+      setItems((current) => applyBulkActionItemUpdates(current, ids, updates));
     },
     deleteItem,
     completeIssue,
@@ -225,7 +218,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
 
       enablePersistence();
-      setItems(parsedState.items.map((item) => normalizeActionItemFields(item)));
+      setItems(normalizeActionItems(parsedState.items));
       setIssueStatuses(parsedState.issueStatuses);
 
       return {
@@ -238,17 +231,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setIssueStatus,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       enablePersistence();
-      setItems((current) =>
-        current.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                ...normalizeActionItemFields({ ...item, ...updates }),
-                lastUpdated: updates.lastUpdated ?? new Date().toISOString().slice(0, 10)
-              }
-            : item
-        )
-      );
+      setItems((current) => current.map((item) => (item.id === id ? applyActionItemUpdates(item, updates) : item)));
     }
     }),
     [issueStatuses, items]
@@ -267,26 +250,6 @@ export function useAppState() {
   return context;
 }
 
-function createActionItem(item: NewActionItem): ActionItem {
-  const normalizedItem = normalizeActionItemFields({
-    ...item,
-    eventGroup: item.eventGroup ?? getSuggestedEventGroupForWorkstream(item.workstream),
-    owner: resolveInitialOwner(item.owner, item.workstream)
-  });
-  const slug = item.title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-  const timestamp = Date.now().toString(36);
-
-  return {
-    ...normalizedItem,
-    id: `${slug || "item"}-${timestamp}`,
-    lastUpdated: new Date().toISOString().slice(0, 10)
-  };
-}
-
 function getDefaultItems() {
-  return initialActionItems.map((item) => normalizeActionItemFields({ ...item }));
+  return normalizeActionItems(initialActionItems);
 }
