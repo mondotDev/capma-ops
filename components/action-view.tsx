@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
 import type { ActionItem } from "@/lib/sample-data";
 import {
@@ -23,7 +24,6 @@ import {
   DEFAULT_OWNER,
   daysSince,
   EVENT_GROUP_OPTIONS,
-  formatNoteEntryTimestamp,
   formatDueLabel,
   formatShortDate,
   getActionSummaryCounts,
@@ -38,7 +38,6 @@ import {
   isWaitingMissingReason,
   OWNER_OPTIONS,
   sortByPriority,
-  sortNoteEntriesNewestFirst,
   STATUS_OPTIONS,
   syncActionItemIssue,
   syncActionItemWorkstream,
@@ -1046,55 +1045,12 @@ export function ActionView({
                 </div>
               </section>
 
-              <section className="drawer-section drawer-section--notes drawer-section--notes-panel">
-                <h3 className="drawer__panel-title">Notes</h3>
-                {selectedItem.noteEntries.length > 0 ? (
-                  <div className="note-history">
-                    {[...sortNoteEntriesNewestFirst(selectedItem.noteEntries)].reverse().map((entry) => (
-                      <article className="note-entry" key={entry.id}>
-                        <div className="note-entry__rail">
-                          <span className="note-entry__initials">{entry.author.initials}</span>
-                          <span className="note-entry__timestamp">{formatNoteEntryTimestamp(entry.createdAt)}</span>
-                        </div>
-                        <div className="note-entry__body">
-                          <div className="note-entry__text">{entry.text}</div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="muted">No note history yet.</div>
-                )}
-                <div className="drawer__composer">
-                  <div className="field">
-                    <label htmlFor="drawer-add-note">Add Note</label>
-                    <textarea
-                      id="drawer-add-note"
-                      onChange={(event) => setNoteDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          addNote(selectedItem);
-                        }
-                      }}
-                      placeholder="Add a timestamped note. Press Enter to save, Shift+Enter for a new line."
-                      rows={5}
-                      value={noteDraft}
-                    />
-                  </div>
-                  <div className="drawer__note-actions">
-                    <div className="field-hint">Enter saves. Shift+Enter adds a new line.</div>
-                    <button
-                      className="button-link button-link--inline-secondary"
-                      disabled={noteDraft.trim().length === 0}
-                      onClick={() => addNote(selectedItem)}
-                      type="button"
-                    >
-                      Add note
-                    </button>
-                  </div>
-                </div>
-              </section>
+              <ActionItemNotesPanel
+                noteDraft={noteDraft}
+                noteEntries={selectedItem.noteEntries}
+                onAddNote={() => addNote(selectedItem)}
+                onNoteDraftChange={setNoteDraft}
+              />
             </div>
             {isDeleteConfirmOpen ? (
               <div className="drawer__confirm-bar">
