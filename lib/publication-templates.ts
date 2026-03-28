@@ -1,44 +1,55 @@
+import type { OwnerOption } from "@/lib/ops-utils";
+
+export type PublicationTemplateDefinition = {
+  title: string;
+  defaultOwner: OwnerOption;
+};
+
 export const PUBLICATION_TEMPLATES = {
   Newsbrief: [
-    "New Members",
-    "Monthly CEO Briefing",
-    "Upcoming Events",
-    "Follow-up Content",
-    "Member Feedback in Action",
-    "CAPMA Caught in the Community",
-    "Scholarship Promo",
-    "Member Survey",
-    "CAPMA Classifieds",
-    "Preferred Partners",
-    "Good To Know",
-    "District Meetings",
-    "From the Voice",
-    "Staff Contact"
+    { title: "New Members", defaultOwner: "Melissa" },
+    { title: "Monthly CEO Briefing", defaultOwner: "Crystelle" },
+    { title: "Upcoming Events", defaultOwner: "Melissa" },
+    { title: "Follow-up Content", defaultOwner: "Melissa" },
+    { title: "Member Feedback in Action", defaultOwner: "Melissa" },
+    { title: "CAPMA Caught in the Community", defaultOwner: "Crystelle" },
+    { title: "Scholarship Promo", defaultOwner: "Crystelle" },
+    { title: "Member Survey", defaultOwner: "Melissa" },
+    { title: "CAPMA Classifieds", defaultOwner: "Crystelle" },
+    { title: "Preferred Partners", defaultOwner: "Melissa" },
+    { title: "Good To Know", defaultOwner: "Crystelle" },
+    { title: "District Meetings", defaultOwner: "Melissa" },
+    { title: "From the Voice", defaultOwner: "Melissa" },
+    { title: "Staff Contact", defaultOwner: "Melissa" }
   ],
   "The Voice": [
-    "Message from the President",
-    "Message from the CEO",
-    "State Legislative Report",
-    "Insurance Report",
-    "Educational Article",
-    "Your Member Benefits Explained",
-    "From the CAPMA Archives",
-    "Center Spread",
-    "Event Follow Up",
-    "Committee Spotlight",
-    "Member Profile",
-    "CAPMA in the Community",
-    "Staff Contact",
-    "BOD Nominations"
+    { title: "Message from the President", defaultOwner: "Sitting President" },
+    { title: "Message from the CEO", defaultOwner: "Crystelle" },
+    { title: "State Legislative Report", defaultOwner: "Governmental Affairs Chair" },
+    { title: "Insurance Report", defaultOwner: "External / TBD" },
+    { title: "Educational Article", defaultOwner: "Melissa" },
+    { title: "Your Member Benefits Explained", defaultOwner: "Melissa" },
+    { title: "From the CAPMA Archives", defaultOwner: "Melissa" },
+    { title: "Center Spread", defaultOwner: "Melissa" },
+    { title: "Event Follow Up", defaultOwner: "Melissa" },
+    { title: "Committee Spotlight", defaultOwner: "Melissa" },
+    { title: "Member Profile", defaultOwner: "Melissa" },
+    { title: "CAPMA in the Community", defaultOwner: "Melissa" },
+    { title: "Staff Contact", defaultOwner: "Melissa" },
+    { title: "BOD Nominations", defaultOwner: "Crystelle" }
   ]
-} as const;
+} as const satisfies Record<string, readonly PublicationTemplateDefinition[]>;
 
 export type PublicationTemplateWorkstream = keyof typeof PUBLICATION_TEMPLATES;
 
-export function getPublicationTemplateTitles(workstream: string) {
+export function getPublicationTemplates(workstream: string) {
   if (workstream === "Newsbrief" || workstream === "The Voice") {
     return [...PUBLICATION_TEMPLATES[workstream]];
   }
 
   return [];
+}
+
+export function getPublicationTemplateTitles(workstream: string) {
+  return getPublicationTemplates(workstream).map((template) => template.title);
 }

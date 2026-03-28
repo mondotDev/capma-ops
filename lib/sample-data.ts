@@ -1,8 +1,13 @@
+import planningSeed from "@/lib/planning-seed.json";
+
 export type ActionItem = {
   id: string;
   title: string;
   type: string;
   workstream: string;
+  eventGroup?: string;
+  blocked?: boolean;
+  blockedBy?: string;
   issue?: string;
   dueDate: string;
   status: string;
@@ -12,118 +17,16 @@ export type ActionItem = {
   notes: string;
 };
 
-export const initialActionItems: ActionItem[] = [
-  {
-    id: "draft-ceo-briefing",
-    title: "Draft CEO Briefing",
-    type: "Deliverable",
-    workstream: "Newsbrief",
-    issue: "April 2026 Newsbrief",
-    dueDate: "2026-04-18",
-    status: "In Progress",
-    owner: "Melissa",
-    waitingOn: "",
-    lastUpdated: "2026-03-25",
-    notes: ""
-  },
-  {
-    id: "get-sponsor-logos",
-    title: "Get sponsor logos",
-    type: "Task",
-    workstream: "Legislative Day",
-    dueDate: "2026-04-10",
-    status: "Waiting",
-    owner: "Melissa",
-    waitingOn: "Sponsor",
-    lastUpdated: "2026-03-20",
-    notes: ""
-  },
-  {
-    id: "print-table-tents",
-    title: "Print table tents",
-    type: "Collateral",
-    workstream: "Legislative Day",
-    dueDate: "2026-04-15",
-    status: "Not Started",
-    owner: "Melissa",
-    waitingOn: "",
-    lastUpdated: "2026-03-10",
-    notes: ""
-  },
-  {
-    id: "confirm-luncheon-signage",
-    title: "Confirm luncheon signage",
-    type: "Task",
-    workstream: "Legislative Day",
-    dueDate: "2026-03-29",
-    status: "Waiting",
-    owner: "Melissa",
-    waitingOn: "Sponsor",
-    lastUpdated: "2026-03-24",
-    notes: ""
-  },
-  {
-    id: "secure-printer-vendor",
-    title: "Secure printer vendor",
-    type: "Production",
-    workstream: "The Voice",
-    issue: "Summer 2026 The Voice",
-    dueDate: "2026-03-30",
-    status: "Waiting",
-    owner: "Melissa",
-    waitingOn: "Vendor",
-    lastUpdated: "2026-03-22",
-    notes: "Missing printer confirmation."
-  },
-  {
-    id: "collect-final-ad-assets",
-    title: "Collect final ad assets",
-    type: "Task",
-    workstream: "The Voice",
-    issue: "Summer 2026 The Voice",
-    dueDate: "2026-03-28",
-    status: "Waiting",
-    owner: "Melissa",
-    waitingOn: "Assets",
-    lastUpdated: "2026-03-23",
-    notes: "Missing file package for production handoff."
-  },
-  {
-    id: "production-proof-approval",
-    title: "Production proof not ready",
-    type: "Production",
-    workstream: "Newsbrief",
-    issue: "April 2026 Newsbrief",
-    dueDate: "2026-03-27",
-    status: "In Progress",
-    owner: "Melissa",
-    waitingOn: "Internal",
-    lastUpdated: "2026-03-26",
-    notes: "Press proof is not ready for release."
-  },
-  {
-    id: "sponsor-thank-you-email",
-    title: "Sponsor thank-you email",
-    type: "Deliverable",
-    workstream: "Legislative Day",
-    dueDate: "2026-03-26",
-    status: "Complete",
-    owner: "Melissa",
-    waitingOn: "",
-    lastUpdated: "2026-03-26",
-    notes: ""
-  },
-  {
-    id: "spring-voice-planning",
-    title: "Plan Spring Voice editorial calendar",
-    type: "Task",
-    workstream: "The Voice",
-    issue: "Spring 2027 The Voice",
-    dueDate: "",
-    status: "Not Started",
-    owner: "Melissa",
-    waitingOn: "",
-    lastUpdated: "2026-03-27",
-    notes: "Issue exists for planning, but due date has not been configured yet."
-  }
-];
+export const LEGACY_SAMPLE_ITEM_IDS = [
+  "draft-ceo-briefing",
+  "get-sponsor-logos",
+  "print-table-tents",
+  "confirm-luncheon-signage",
+  "secure-printer-vendor",
+  "collect-final-ad-assets",
+  "production-proof-approval",
+  "sponsor-thank-you-email",
+  "spring-voice-planning"
+] as const;
+
+export const initialActionItems: ActionItem[] = planningSeed as ActionItem[];
