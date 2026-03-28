@@ -17,6 +17,7 @@ import {
 } from "../lib/action-view-utils";
 import {
   matchesActionLens,
+  matchesActionFilter,
   createActionNoteEntry,
   getOwnerOptions,
   getDailyLoad,
@@ -210,6 +211,18 @@ test("review lenses surface high-signal cleanup cases", () => {
     );
     assert.equal(daysSince("2026-03-14"), 14);
   });
+});
+
+test("waiting filter excludes blocked items while keeping true waiting items", () => {
+  assert.equal(
+    matchesActionFilter(createItem({ status: "Waiting", waitingOn: "External" }), "waiting"),
+    true
+  );
+  assert.equal(
+    matchesActionFilter(createItem({ status: "Waiting", waitingOn: "External", isBlocked: true }), "waiting"),
+    false
+  );
+  assert.equal(matchesActionFilter(createItem({ isBlocked: true }), "waiting"), false);
 });
 
 test("terminal helpers and action visibility treat canceled like complete and cut", () => {

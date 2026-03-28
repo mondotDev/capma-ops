@@ -887,7 +887,7 @@ export function matchesActionFilter(item: ActionItem, filter: ActionFilter) {
   }
 
   if (filter === "waiting") {
-    return isWaitingIssue(item);
+    return isWaitingIssue(item) && !isBlockedItem(item);
   }
 
   if (filter === "blocked") {

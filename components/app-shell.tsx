@@ -261,8 +261,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </nav>
         <div className="sidebar__footer">
-          <button className="sidebar__settings" onClick={openSettings} type="button">
-            Settings
+          <button aria-label="Open settings" className="sidebar__settings" onClick={openSettings} type="button">
+            <span aria-hidden="true">⚙</span>
           </button>
         </div>
       </aside>

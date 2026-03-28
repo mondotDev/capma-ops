@@ -98,6 +98,7 @@ export function ActionView({
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [showCompleted, setShowCompleted] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkFeedback, setBulkFeedback] = useState("");
@@ -164,6 +165,7 @@ export function ActionView({
 
   useEffect(() => {
     setIsDeleteConfirmOpen(false);
+    setIsActionsMenuOpen(false);
   }, [selectedId]);
 
   useEffect(() => {
@@ -734,7 +736,7 @@ export function ActionView({
         </div>
 
         {selectedItem ? (
-          <aside className="drawer" aria-label="Item details">
+          <aside className={isBlockedItem(selectedItem) ? "drawer drawer--blocked" : "drawer"} aria-label="Item details">
             <div className="drawer__sticky">
               <div className="drawer__header">
                 <div className="drawer__header-text">
@@ -771,23 +773,45 @@ export function ActionView({
                     </h2>
                   )}
                   <div className="drawer__workstream">{selectedItem.workstream}</div>
+                  <div className="drawer__header-meta">
+                    <span className={getDrawerPrimaryBadgeClassName(selectedItem)}>{getDrawerPrimaryBadgeLabel(selectedItem)}</span>
+                    {getDrawerSecondaryMeta(selectedItem) ? (
+                      <span className="drawer__due-text">{getDrawerSecondaryMeta(selectedItem)}</span>
+                    ) : null}
+                  </div>
                 </div>
-                <button className="button-link" onClick={() => setSelectedId(null)} type="button">
-                  Close
-                </button>
-              </div>
-
-              <div className="drawer__badges">
-                {isBlockedItem(selectedItem) ? (
-                  <span className="urgency-badge urgency-badge--blocked">Blocked</span>
-                ) : null}
-                {isTerminalStatus(selectedItem.status) ? (
-                  <span className="urgency-badge urgency-badge--cut">{selectedItem.status}</span>
-                ) : (
-                  <span className={getUrgencyBadgeClassName(selectedItem)}>
-                    {formatUrgencyBadge(selectedItem)}
-                  </span>
-                )}
+                <div className="drawer__header-actions">
+                  <div className="drawer__actions-menu">
+                    <button
+                      aria-expanded={isActionsMenuOpen}
+                      aria-haspopup="menu"
+                      className="drawer__actions-trigger"
+                      onClick={() => setIsActionsMenuOpen((current) => !current)}
+                      type="button"
+                    >
+                      <span aria-hidden="true">⚙</span>
+                      <span className="sr-only">Open item actions</span>
+                    </button>
+                    {isActionsMenuOpen ? (
+                      <div className="drawer__actions-popover" role="menu">
+                        <button
+                          className="drawer__actions-item drawer__actions-item--danger"
+                          onClick={() => {
+                            setIsDeleteConfirmOpen(true);
+                            setIsActionsMenuOpen(false);
+                          }}
+                          role="menuitem"
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <button className="button-link" onClick={() => setSelectedId(null)} type="button">
+                    Close
+                  </button>
+                </div>
               </div>
 
               {selectedItem.issue ? <div className="drawer__issue">{selectedItem.issue}</div> : null}
@@ -800,10 +824,9 @@ export function ActionView({
             </div>
 
             <div className="drawer__sections">
-              <section className="drawer-section drawer-section--primary">
-                <h3 className="drawer-section__title">Operational</h3>
-                <div className="drawer__grid drawer__grid--two-up">
-                  <div className="field">
+              <section className="drawer-section drawer-section--form">
+                <div className="drawer__grid drawer__grid--form">
+                  <div className="field field--priority">
                     <label htmlFor="drawer-status">Status</label>
                     <select
                       id="drawer-status"
@@ -817,7 +840,7 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
-                  <div className="field">
+                  <div className="field field--priority">
                     <label htmlFor="drawer-due-date">Due Date</label>
                     <input
                       id="drawer-due-date"
@@ -864,33 +887,7 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
-                  <div className="field">
-                    <label className="toggle" htmlFor="drawer-blocked">
-                      <input
-                        checked={selectedItem.isBlocked ?? false}
-                        id="drawer-blocked"
-                        onChange={(event) => updateItem(selectedItem.id, { isBlocked: event.target.checked })}
-                        type="checkbox"
-                      />
-                      <span>Blocked</span>
-                    </label>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="drawer-blocked-by">Blocked By</label>
-                    <input
-                      id="drawer-blocked-by"
-                      onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
-                      onChange={(event) => setBlockedByDraft(event.target.value)}
-                      value={blockedByDraft}
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section className="drawer-section drawer-section--primary">
-                <h3 className="drawer-section__title">Context</h3>
-                <div className="drawer__grid drawer__grid--two-up">
-                  <div className="field">
+                  <div className="field field--secondary">
                     <label htmlFor="drawer-workstream">Workstream</label>
                     <select
                       id="drawer-workstream"
@@ -913,7 +910,7 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
-                  <div className="field">
+                  <div className="field field--secondary">
                     <label htmlFor="drawer-event-group">Event Group</label>
                     <select
                       id="drawer-event-group"
@@ -969,7 +966,7 @@ export function ActionView({
                       </div>
                     </div>
                   ) : null}
-                  <div className="field">
+                  <div className="field field--secondary">
                     <label htmlFor="drawer-type">Type</label>
                     <input
                       id="drawer-type"
@@ -977,104 +974,147 @@ export function ActionView({
                       value={selectedItem.type}
                     />
                   </div>
-                  <div className="field">
-                    <label htmlFor="drawer-last-updated">Last Updated</label>
-                    <input
-                      id="drawer-last-updated"
-                      onChange={(event) => updateItem(selectedItem.id, { lastUpdated: event.target.value })}
-                      type="date"
-                      value={selectedItem.lastUpdated}
-                    />
+                  <div className="field drawer__blocked-control">
+                    <div className="drawer__blocked-stack">
+                      <label className="toggle drawer__blocked-toggle" htmlFor="drawer-blocked">
+                        <input
+                          checked={selectedItem.isBlocked ?? false}
+                          id="drawer-blocked"
+                          onChange={(event) => updateItem(selectedItem.id, { isBlocked: event.target.checked })}
+                          type="checkbox"
+                        />
+                        <span>Blocked</span>
+                      </label>
+                    </div>
                   </div>
+                  {selectedItem.isBlocked ? (
+                    <div className="field field--wide drawer__blocked-details">
+                      <label htmlFor="drawer-blocked-by">Blocked By</label>
+                      <input
+                        id="drawer-blocked-by"
+                        onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
+                        onChange={(event) => setBlockedByDraft(event.target.value)}
+                        value={blockedByDraft}
+                      />
+                    </div>
+                  ) : null}
+                  {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
+                    <div className="field field--wide">
+                      <label htmlFor="drawer-issue">Issue</label>
+                      <select
+                        id="drawer-issue"
+                        onChange={(event) => {
+                          const nextItem = syncActionItemIssue(selectedItem, event.target.value);
+
+                          updateItem(selectedItem.id, {
+                            issue: nextItem.issue || undefined,
+                            workstream: nextItem.workstream,
+                            eventGroup: nextItem.eventGroup,
+                            dueDate: nextItem.dueDate
+                          });
+                        }}
+                        value={selectedItem.issue ?? ""}
+                      >
+                        <option value="">None</option>
+                        {selectedItemIssueOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  {selectedIssueRecord ? (
+                    <div className="field field--wide">
+                      <div className="field-static">
+                        Issue status: {selectedIssueRecord.status}
+                        {!selectedIssueRecord.dueDate ? " • missing due date" : ""}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </section>
 
-              <section className="drawer-section drawer-section--notes">
-                <h3 className="drawer-section__title">Add Note</h3>
-                <div className="field">
-                  <label htmlFor="drawer-add-note">New Note</label>
-                  <textarea
-                    id="drawer-add-note"
-                    onChange={(event) => setNoteDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        addNote(selectedItem);
-                      }
-                    }}
-                    placeholder="Add a timestamped note. Press Enter to save, Shift+Enter for a new line."
-                    rows={4}
-                    value={noteDraft}
-                  />
-                </div>
-                <div className="drawer__note-actions">
-                  <div className="field-hint">Enter saves. Shift+Enter adds a new line.</div>
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    disabled={noteDraft.trim().length === 0}
-                    onClick={() => addNote(selectedItem)}
-                    type="button"
-                  >
-                    Add note
-                  </button>
-                </div>
-              </section>
-
-              <section className="drawer-section drawer-section--notes">
-                <h3 className="drawer-section__title">Note History</h3>
+              <section className="drawer-section drawer-section--notes drawer-section--notes-panel">
+                <h3 className="drawer__panel-title">Notes</h3>
                 {selectedItem.noteEntries.length > 0 ? (
                   <div className="note-history">
-                    {sortNoteEntriesNewestFirst(selectedItem.noteEntries).map((entry) => (
+                    {[...sortNoteEntriesNewestFirst(selectedItem.noteEntries)].reverse().map((entry) => (
                       <article className="note-entry" key={entry.id}>
-                        <div className="note-entry__meta">
+                        <div className="note-entry__rail">
                           <span className="note-entry__initials">{entry.author.initials}</span>
                           <span className="note-entry__timestamp">{formatNoteEntryTimestamp(entry.createdAt)}</span>
                         </div>
-                        <div className="note-entry__text">{entry.text}</div>
+                        <div className="note-entry__body">
+                          <div className="note-entry__text">{entry.text}</div>
+                        </div>
                       </article>
                     ))}
                   </div>
                 ) : (
                   <div className="muted">No note history yet.</div>
                 )}
-              </section>
-
-              <section className="drawer-section drawer-section--danger">
-                <h3 className="drawer-section__title">Delete Item</h3>
-                {!isDeleteConfirmOpen ? (
-                  <button className="button-danger" onClick={() => setIsDeleteConfirmOpen(true)} type="button">
-                    Delete
-                  </button>
-                ) : (
-                  <div className="confirm-delete">
-                    <div className="confirm-delete__title">Delete this item?</div>
-                    <div className="confirm-delete__copy">
-                      This will remove it from the current app state.
-                    </div>
-                    <div className="confirm-delete__actions">
-                      <button
-                        className="button-link button-link--inline-secondary"
-                        onClick={() => setIsDeleteConfirmOpen(false)}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="button-danger"
-                        onClick={() => {
-                          deleteItem(selectedItem.id);
-                          setSelectedId(null);
-                          setIsDeleteConfirmOpen(false);
-                        }}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                <div className="drawer__composer">
+                  <div className="field">
+                    <label htmlFor="drawer-add-note">Add Note</label>
+                    <textarea
+                      id="drawer-add-note"
+                      onChange={(event) => setNoteDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          addNote(selectedItem);
+                        }
+                      }}
+                      placeholder="Add a timestamped note. Press Enter to save, Shift+Enter for a new line."
+                      rows={5}
+                      value={noteDraft}
+                    />
                   </div>
-                )}
+                  <div className="drawer__note-actions">
+                    <div className="field-hint">Enter saves. Shift+Enter adds a new line.</div>
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      disabled={noteDraft.trim().length === 0}
+                      onClick={() => addNote(selectedItem)}
+                      type="button"
+                    >
+                      Add note
+                    </button>
+                  </div>
+                </div>
               </section>
             </div>
+            {isDeleteConfirmOpen ? (
+              <div className="drawer__confirm-bar">
+                <div className="confirm-delete">
+                  <div className="confirm-delete__title">Delete this item?</div>
+                  <div className="confirm-delete__copy">
+                    This will remove it from the current app state.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => setIsDeleteConfirmOpen(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button-danger"
+                      onClick={() => {
+                        deleteItem(selectedItem.id);
+                        setSelectedId(null);
+                        setIsDeleteConfirmOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </aside>
         ) : null}
       </div>
@@ -1097,6 +1137,75 @@ function formatUrgencyBadge(item: ActionItem) {
 
   const dueLabel = formatDueLabel(item);
   return dueLabel || `Due ${formatShortDate(item.dueDate)}`;
+}
+
+function formatDrawerDueText(item: ActionItem) {
+  const dueLabel = formatDueLabel(item);
+
+  if (!item.dueDate) {
+    return dueLabel || "No due date set";
+  }
+
+  if (!dueLabel || dueLabel === `Due ${formatShortDate(item.dueDate)}`) {
+    return `Due ${formatShortDate(item.dueDate)}`;
+  }
+
+  if (dueLabel === "No due date set") {
+    return dueLabel;
+  }
+
+  return `${formatShortDate(item.dueDate)} · ${dueLabel}`;
+}
+
+function getDrawerPrimaryBadgeLabel(item: ActionItem) {
+  if (isBlockedItem(item)) {
+    return "Blocked";
+  }
+
+  if (formatDueLabel(item) === "Overdue") {
+    return "Overdue";
+  }
+
+  if (isWaitingIssue(item)) {
+    return "Waiting";
+  }
+
+  if (isTerminalStatus(item.status)) {
+    return item.status;
+  }
+
+  return item.status === "In Progress" ? "Active" : "Normal";
+}
+
+function getDrawerPrimaryBadgeClassName(item: ActionItem) {
+  if (isBlockedItem(item)) {
+    return "drawer__status-chip drawer__status-chip--blocked";
+  }
+
+  if (formatDueLabel(item) === "Overdue") {
+    return "drawer__status-chip drawer__status-chip--overdue";
+  }
+
+  if (isWaitingIssue(item)) {
+    return "drawer__status-chip drawer__status-chip--waiting";
+  }
+
+  return "drawer__status-chip";
+}
+
+function getDrawerSecondaryMeta(item: ActionItem) {
+  const parts: string[] = [];
+  const dueText = formatDrawerDueText(item);
+
+  if (dueText && dueText !== getDrawerPrimaryBadgeLabel(item)) {
+    parts.push(dueText);
+  }
+
+  if (item.status === "Waiting" && item.waitingOn.trim()) {
+    parts.push(`Waiting on ${item.waitingOn.trim()}`);
+  }
+
+  return parts.join(" • ");
 }
 
 function getUrgencyBadgeClassName(item: ActionItem) {
