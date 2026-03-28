@@ -46,7 +46,7 @@ type LegacyNotesField = {
 };
 type ActionItemBlockedState = Pick<ActionItem, "isBlocked" | "blockedBy" | "status"> & LegacyBlockedFields;
 type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
-  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy" | "noteEntries" | "lastUpdated">> &
+  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy" | "waitingOn" | "noteEntries" | "lastUpdated">> &
   LegacyBlockedFields &
   LegacyNotesField;
 type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
@@ -128,6 +128,11 @@ export type WorkstreamSummaryEntry = {
 export type IssueProgress = {
   complete: number;
   total: number;
+};
+export type StuckReasonCount = {
+  label: string;
+  count: number;
+  source: "waiting" | "blocked" | "mixed";
 };
 
 export type ActionItemValidation = {
@@ -341,7 +346,7 @@ export function getOwnerOptions(owner?: string) {
 
 export function normalizeActionItemFields<T extends NormalizeActionItemInput>(item: T): NormalizeActionItemResult<T> {
   const { blocked, blockedBy, isBlocked, noteEntries, notes, ...rest } = item;
-  const normalizedBlockedBy = blockedBy?.trim();
+  const normalizedBlockedBy = normalizeOperationalReason(blockedBy);
   const normalizedNoteEntries = normalizeNoteEntries(noteEntries, notes, item.lastUpdated);
 
   return {
@@ -349,6 +354,7 @@ export function normalizeActionItemFields<T extends NormalizeActionItemInput>(it
     owner: normalizeOwnerValue(item.owner),
     workstream: normalizeWorkstreamValue(item.workstream),
     eventGroup: normalizeEventGroupValue(item.eventGroup),
+    waitingOn: normalizeOperationalReason(item.waitingOn) ?? "",
     isBlocked: isBlocked ?? blocked ?? undefined,
     blockedBy: normalizedBlockedBy ? normalizedBlockedBy : undefined,
     noteEntries: normalizedNoteEntries,
@@ -1042,14 +1048,11 @@ export function getWorkstreamSummary(items: ActionItem[]): WorkstreamSummaryEntr
 export function getDashboardMetrics(items: ActionItem[]) {
   const activeItems = getActiveItems(items);
   const summary = getActionSummaryCounts(items);
-  const waitingGroups = activeItems.reduce<Record<string, string[]>>((groups, item) => {
-    if (!item.waitingOn || !isWaitingIssue(item)) {
-      return groups;
-    }
-
-    groups[item.waitingOn] = [...(groups[item.waitingOn] ?? []), formatDashboardItem(item)];
-    return groups;
-  }, {});
+  const waitingCount = activeItems.filter((item) => isWaitingIssue(item) && !isBlockedItem(item)).length;
+  const stuckItems = activeItems.filter((item) => isBlockedItem(item) || isWaitingIssue(item));
+  const stuckOverdueCount = stuckItems.filter((item) => hasDueDate(item.dueDate) && isOverdue(item.dueDate)).length;
+  const stuckDueSoonCount = stuckItems.filter((item) => isItemDueSoon(item)).length;
+  const stuckReasonCounts = getStuckReasonCounts(stuckItems);
 
   const urgentItems = activeItems
     .filter((item) => isItemMissingDueDate(item) || isOverdue(item.dueDate) || isItemDueSoon(item))
@@ -1086,9 +1089,12 @@ export function getDashboardMetrics(items: ActionItem[]) {
 
   return {
     ...summary,
+    waiting: waitingCount,
     urgentItems,
     blockedCount: activeItems.filter((item) => isBlockedItem(item)).length,
-    waitingGroups: Object.entries(waitingGroups),
+    stuckOverdueCount,
+    stuckDueSoonCount,
+    stuckReasonCounts,
     sponsorRiskItems,
     productionRiskItems,
     workstreamOpenCounts,
@@ -1097,6 +1103,71 @@ export function getDashboardMetrics(items: ActionItem[]) {
     issueProgress,
     issueSetupRisks
   };
+}
+
+function getStuckReasonCounts(items: ActionItem[]): StuckReasonCount[] {
+  const reasonCounts = items.reduce<
+    Map<string, { count: number; hasWaiting: boolean; hasBlocked: boolean }>
+  >((counts, item) => {
+    const reasons = new Map<string, { waiting: boolean; blocked: boolean }>();
+    const waitingReason = normalizeStuckReason(item.waitingOn);
+    const blockedReason = normalizeStuckReason(item.blockedBy);
+
+    if (isWaitingIssue(item)) {
+      reasons.set(waitingReason, {
+        waiting: true,
+        blocked: reasons.get(waitingReason)?.blocked ?? false
+      });
+    }
+
+    if (isBlockedItem(item)) {
+      reasons.set(blockedReason, {
+        waiting: reasons.get(blockedReason)?.waiting ?? false,
+        blocked: true
+      });
+    }
+
+    reasons.forEach((reasonState, label) => {
+      const existing = counts.get(label);
+      counts.set(label, {
+        count: (existing?.count ?? 0) + 1,
+        hasWaiting: (existing?.hasWaiting ?? false) || reasonState.waiting,
+        hasBlocked: (existing?.hasBlocked ?? false) || reasonState.blocked
+      });
+    });
+
+    return counts;
+  }, new Map());
+
+  return [...reasonCounts.entries()]
+    .map(([label, counts]) => ({
+      label,
+      count: counts.count,
+      source: (
+        counts.hasWaiting && counts.hasBlocked ? "mixed" : counts.hasBlocked ? "blocked" : "waiting"
+      ) as StuckReasonCount["source"]
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, 3);
+}
+
+function normalizeStuckReason(reason?: string) {
+  const normalizedReason = normalizeOperationalReason(reason);
+  return normalizedReason ? normalizedReason : "Unspecified";
+}
+
+function normalizeOperationalReason(reason?: string) {
+  const trimmedReason = reason?.trim();
+
+  if (!trimmedReason) {
+    return undefined;
+  }
+
+  const matchedSuggestion = WAITING_ON_SUGGESTIONS.find(
+    (option) => option.toLowerCase() === trimmedReason.toLowerCase()
+  );
+
+  return matchedSuggestion ?? trimmedReason;
 }
 
 function buildNewsbriefIssues(years: number[]) {

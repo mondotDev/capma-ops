@@ -88,52 +88,80 @@ export function DashboardView() {
 
       <div
         className="card card--clickable card--secondary"
-        onClick={() => router.push("/action?filter=waiting")}
+        onClick={() => router.push("/action?lens=executionNow")}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            router.push("/action?filter=waiting");
+            router.push("/action?lens=executionNow");
           }
         }}
         role="button"
         tabIndex={0}
       >
         <div className="card__title">WHERE THINGS ARE STUCK</div>
-        <div className="simple-list simple-list--tight">
-          <div className="metric-row">
-            <span>Blocked</span>
-            <span>
-              <strong>{dashboardMetrics.blockedCount}</strong>{" "}
-              <button
-                className="button-link button-link--inline"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  router.push("/action?filter=blocked");
-                }}
-                type="button"
-              >
-                View
-              </button>
-            </span>
+        <div className="stuck-card">
+          <div className="stuck-card__primary">
+            <button
+              className="stuck-metric"
+              onClick={(event) => {
+                event.stopPropagation();
+                router.push("/action?filter=blocked");
+              }}
+              type="button"
+            >
+              <span className="stuck-metric__label">Blocked</span>
+              <strong className="stuck-metric__value">{dashboardMetrics.blockedCount}</strong>
+            </button>
+            <button
+              className="stuck-metric"
+              onClick={(event) => {
+                event.stopPropagation();
+                router.push("/action?filter=waiting");
+              }}
+              type="button"
+            >
+              <span className="stuck-metric__label">Waiting</span>
+              <strong className="stuck-metric__value">{dashboardMetrics.waiting}</strong>
+            </button>
           </div>
-          <div className="metric-row">
-            <span>Waiting</span>
-            <strong>{dashboardMetrics.waiting}</strong>
+          <div className="stuck-card__secondary">
+            <button
+              className="stuck-secondary"
+              onClick={(event) => {
+                event.stopPropagation();
+                router.push("/action?filter=overdue");
+              }}
+              type="button"
+            >
+              <span className="stuck-secondary__label">Stuck + Overdue</span>
+              <strong className="stuck-secondary__value">{dashboardMetrics.stuckOverdueCount}</strong>
+            </button>
+            <button
+              className="stuck-secondary"
+              onClick={(event) => {
+                event.stopPropagation();
+                router.push("/action?filter=dueSoon");
+              }}
+              type="button"
+            >
+              <span className="stuck-secondary__label">Stuck + Due Soon</span>
+              <strong className="stuck-secondary__value">{dashboardMetrics.stuckDueSoonCount}</strong>
+            </button>
           </div>
-          {dashboardMetrics.waitingGroups.length > 0 ? (
-            dashboardMetrics.waitingGroups.slice(0, 2).map(([label, itemLabels]) => (
-              <div className="group-block" key={label}>
-                <div className="group-title">{`Waiting on ${label} (${itemLabels.length})`}</div>
-                {itemLabels.slice(0, 1).map((itemLabel) => (
-                  <div className="detail-row detail-row--indented detail-row--truncate" key={itemLabel} title={itemLabel}>
-                    {itemLabel}
-                  </div>
-                ))}
-              </div>
-            ))
-          ) : (
-            <div className="muted">No waiting items</div>
-          )}
+          <div className="stuck-card__reasons">
+            {dashboardMetrics.stuckReasonCounts.length > 0 ? (
+              dashboardMetrics.stuckReasonCounts.map((reason) => (
+                <div className="stuck-reason" key={reason.label}>
+                  <span className="stuck-reason__label">{reason.label}</span>
+                  <span className="stuck-reason__meta">
+                    {formatStuckReasonSource(reason.source)} {reason.count}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="muted">No blocked or waiting items</div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -426,6 +454,14 @@ function formatCompletionBlockedFeedback(issue: string, blockedDeliverables: str
   }
 
   return `${issue} cannot be completed. Open deliverables remain: ${preview}.`;
+}
+
+function formatStuckReasonSource(source: "waiting" | "blocked" | "mixed") {
+  if (source === "mixed") {
+    return "mixed";
+  }
+
+  return source;
 }
 
 function reorderVisibleIssues(

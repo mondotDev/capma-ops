@@ -848,6 +848,9 @@ export function ActionView({
                       type="date"
                       value={selectedItem.dueDate}
                     />
+                    {selectedItem.status === "Waiting" || isBlockedItem(selectedItem) ? (
+                      <div className="field-hint">Use this as the next follow-up or next-action date while the item is stalled.</div>
+                    ) : null}
                   </div>
                   <div className="field">
                     <label htmlFor="drawer-waiting-on">Waiting On</label>
@@ -872,6 +875,7 @@ export function ActionView({
                         </option>
                       ))}
                     </select>
+                    <div className="field-hint">Who or what you are waiting on. Use a shared category when one fits.</div>
                   </div>
                   <div className="field">
                     <label htmlFor="drawer-owner">Owner</label>
@@ -994,8 +998,10 @@ export function ActionView({
                         id="drawer-blocked-by"
                         onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
                         onChange={(event) => setBlockedByDraft(event.target.value)}
+                        placeholder="Short reason the work cannot move, like logo approval or internal decision"
                         value={blockedByDraft}
                       />
+                      <div className="field-hint">Use a short blocker reason. Shared categories will stay standardized; custom reasons are preserved.</div>
                     </div>
                   ) : null}
                   {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (

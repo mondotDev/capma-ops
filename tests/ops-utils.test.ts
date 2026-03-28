@@ -19,6 +19,7 @@ import {
   matchesActionLens,
   matchesActionFilter,
   createActionNoteEntry,
+  getDashboardMetrics,
   getOwnerOptions,
   getDailyLoad,
   getSuggestedEventGroupForWorkstream,
@@ -30,6 +31,7 @@ import {
   daysSince,
   matchesSearchQuery,
   normalizeOwnerValue,
+  normalizeActionItemFields,
   syncActionItemIssue,
   syncActionItemStatus,
   syncActionItemWorkstream,
@@ -135,6 +137,60 @@ test("getWorkstreamSummary returns workload rollups by workstream", () => {
   });
 });
 
+test("getDashboardMetrics surfaces stuck urgency overlaps and top reasons", () => {
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    const metrics = getDashboardMetrics([
+      createItem({
+        id: "blocked-overdue",
+        dueDate: "2026-03-27",
+        status: "Not Started",
+        isBlocked: true,
+        blockedBy: "Internal"
+      }),
+      createItem({
+        id: "waiting-due-soon",
+        dueDate: "2026-03-29",
+        status: "Waiting",
+        waitingOn: "External"
+      }),
+      createItem({
+        id: "mixed-unspecified",
+        dueDate: "2026-03-30",
+        status: "Waiting",
+        waitingOn: "",
+        isBlocked: true,
+        blockedBy: ""
+      }),
+      createItem({
+        id: "mixed-shared-reason",
+        dueDate: "2026-04-08",
+        status: "Waiting",
+        waitingOn: "Internal",
+        isBlocked: true,
+        blockedBy: "Internal"
+      }),
+      createItem({
+        id: "terminal-stuck",
+        dueDate: "2026-03-28",
+        status: "Canceled",
+        waitingOn: "External",
+        isBlocked: true,
+        blockedBy: "External"
+      })
+    ]);
+
+    assert.equal(metrics.blockedCount, 3);
+    assert.equal(metrics.waiting, 1);
+    assert.equal(metrics.stuckOverdueCount, 1);
+    assert.equal(metrics.stuckDueSoonCount, 2);
+    assert.deepEqual(metrics.stuckReasonCounts, [
+      { label: "Internal", count: 2, source: "mixed" },
+      { label: "External", count: 1, source: "waiting" },
+      { label: "Unspecified", count: 1, source: "mixed" }
+    ]);
+  });
+});
+
 test("normalizeOwnerValue and event-group helpers keep canonical values stable", () => {
   assert.equal(normalizeOwnerValue("Jake"), "Governmental Affairs Chair");
   assert.equal(normalizeOwnerValue("External Sponsor Rep"), "External Sponsor Rep");
@@ -157,6 +213,40 @@ test("normalizeOwnerValue and event-group helpers keep canonical values stable",
     syncEventGroupWithWorkstream("Custom Group", "Legislative Day", "Monday Mingle"),
     "Custom Group"
   );
+});
+
+test("normalizeActionItemFields standardizes obvious waiting and blocked reason drift", () => {
+  const normalized = normalizeActionItemFields(
+    createItem({
+      status: "Waiting",
+      waitingOn: " external ",
+      isBlocked: true,
+      blockedBy: " internal "
+    })
+  );
+
+  assert.equal(normalized.waitingOn, "External");
+  assert.equal(normalized.blockedBy, "Internal");
+
+  const customReason = normalizeActionItemFields(
+    createItem({
+      isBlocked: true,
+      blockedBy: "No response from sponsor"
+    })
+  );
+
+  assert.equal(customReason.blockedBy, "No response from sponsor");
+
+  const blankReason = normalizeActionItemFields(
+    createItem({
+      status: "Waiting",
+      waitingOn: "   ",
+      blockedBy: "   "
+    })
+  );
+
+  assert.equal(blankReason.waitingOn, "");
+  assert.equal(blankReason.blockedBy, undefined);
 });
 
 test("matchesEventGroup and matchesSearchQuery support grouped filtered views", () => {
