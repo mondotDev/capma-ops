@@ -21,6 +21,7 @@ import {
   EVENT_GROUP_OPTIONS,
   formatDueLabel,
   formatShortDate,
+  getOwnerOptions,
   getActionSummaryCounts,
   getIssueDueDate,
   getIssuesForWorkstream,
@@ -563,7 +564,7 @@ export function ActionView({
                                   onChange={(event) => updateItem(item.id, { owner: event.target.value })}
                                   value={item.owner}
                                 >
-                                  {OWNER_OPTIONS.map((option) => (
+                                  {getOwnerOptions(item.owner).map((option) => (
                                     <option key={option} value={option}>
                                       {option}
                                     </option>
@@ -679,7 +680,7 @@ export function ActionView({
                       onChange={(event) => updateItem(selectedItem.id, { owner: event.target.value })}
                       value={selectedItem.owner}
                     >
-                      {OWNER_OPTIONS.map((option) => (
+                      {getOwnerOptions(selectedItem.owner).map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>

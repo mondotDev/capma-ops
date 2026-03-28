@@ -247,7 +247,17 @@ export function normalizeOwnerValue(owner?: string) {
     return "External / TBD";
   }
 
-  return DEFAULT_OWNER;
+  return trimmedOwner;
+}
+
+export function getOwnerOptions(owner?: string) {
+  const normalizedOwner = owner?.trim();
+
+  if (!normalizedOwner || isOwnerOption(normalizedOwner)) {
+    return [...OWNER_OPTIONS];
+  }
+
+  return [normalizedOwner, ...OWNER_OPTIONS];
 }
 
 export function normalizeWorkstreamValue(workstream?: string) {

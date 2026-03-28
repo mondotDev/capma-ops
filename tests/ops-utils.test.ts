@@ -2,6 +2,7 @@ import test = require("node:test");
 import assert = require("node:assert/strict");
 import type { ActionItem } from "../lib/sample-data";
 import {
+  getOwnerOptions,
   getDailyLoad,
   getSuggestedEventGroupForWorkstream,
   getWorkstreamSummary,
@@ -109,6 +110,16 @@ test("getWorkstreamSummary returns workload rollups by workstream", () => {
 
 test("normalizeOwnerValue and event-group helpers keep canonical values stable", () => {
   assert.equal(normalizeOwnerValue("Jake"), "Governmental Affairs Chair");
+  assert.equal(normalizeOwnerValue("External Sponsor Rep"), "External Sponsor Rep");
+  assert.equal(normalizeOwnerValue("   External Sponsor Rep   "), "External Sponsor Rep");
+  assert.deepEqual(getOwnerOptions("External Sponsor Rep"), [
+    "External Sponsor Rep",
+    "Melissa",
+    "Crystelle",
+    "Sitting President",
+    "Governmental Affairs Chair",
+    "External / TBD"
+  ]);
   assert.equal(getSuggestedEventGroupForWorkstream("Best Pest Expo"), "Best Pest Expo");
   assert.equal(getSuggestedEventGroupForWorkstream("Unknown Bucket"), "General Operations");
   assert.equal(

@@ -10,9 +10,9 @@ import {
   EVENT_GROUP_OPTIONS,
   getIssueDueDate,
   getIssuesForWorkstream,
+  getOwnerOptions,
   getWorkstreamForIssue,
   isIssueMissingDueDate,
-  OWNER_OPTIONS,
   STATUS_OPTIONS,
   syncEventGroupWithWorkstream,
   shouldRequireIssue,
@@ -429,7 +429,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     onChange={(event) => updateField("owner", event.target.value)}
                     value={formState.owner}
                   >
-                    {OWNER_OPTIONS.map((option) => (
+                    {getOwnerOptions(formState.owner).map((option) => (
                       <option key={option} value={option}>
                         {option}
                       </option>
