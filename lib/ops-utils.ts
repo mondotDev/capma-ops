@@ -7,15 +7,37 @@ export const WORKSTREAM_OPTIONS = [
   "Best Pest Expo",
   "Pest Ed",
   "Termite Academy",
-  "First Fridays",
+  "First Friday",
   "Hands-On Workshops",
   "Development Summit",
+  "Monday Mingle",
   "Newsbrief",
   "The Voice",
   "Membership Campaigns",
   "General Operations"
 ] as const;
+export const EVENT_GROUP_OPTIONS = [
+  "Legislative Day",
+  "Best Pest Expo",
+  "Pest Ed",
+  "Termite Academy",
+  "First Friday",
+  "Hands-On Workshops",
+  "Development Summit",
+  "Monday Mingle",
+  "Membership Campaigns",
+  "General Operations"
+] as const;
+export const OWNER_OPTIONS = [
+  "Melissa",
+  "Crystelle",
+  "Sitting President",
+  "Governmental Affairs Chair",
+  "External / TBD"
+] as const;
 export const DEFAULT_OWNER = "Melissa";
+export type OwnerOption = (typeof OWNER_OPTIONS)[number];
+export type EventGroupOption = (typeof EVENT_GROUP_OPTIONS)[number];
 
 const NEWSBRIEF_MONTHS = [
   "January",
@@ -47,7 +69,7 @@ const VOICE_ISSUE_CONFIG = {
   }
 } as const;
 
-export type ActionFilter = "all" | "overdue" | "dueSoon" | "waiting" | "mine";
+export type ActionFilter = "all" | "overdue" | "dueSoon" | "waiting" | "blocked" | "mine";
 export type ActionFocus = "all" | "sponsor" | "production";
 export type IssueStatus = "Planned" | "Open" | "Complete";
 export type IssueDefinition = {
@@ -63,8 +85,20 @@ export type IssueRecord = IssueDefinition & {
 export type ActionSummaryCounts = {
   overdue: number;
   dueSoon: number;
+  blocked: number;
   waiting: number;
   totalActive: number;
+};
+export type DailyLoadEntry = {
+  date: string;
+  count: number;
+};
+export type WorkstreamSummaryEntry = {
+  workstream: string;
+  total: number;
+  overdue: number;
+  dueSoon: number;
+  inProgress: number;
 };
 export type IssueProgress = {
   complete: number;
@@ -92,6 +126,10 @@ export function parseDate(dateValue: string) {
 
 export function isComplete(item: ActionItem) {
   return item.status === "Complete";
+}
+
+export function isDueSoonExcludedStatus(status: string) {
+  return status === "Complete" || status === "Cut" || status === "Canceled";
 }
 
 export function getActiveItems(items: ActionItem[]) {
@@ -127,6 +165,22 @@ export function isDueSoon(dueDate: string) {
   return days >= 0 && days <= 3;
 }
 
+export function isItemDueSoon(item: ActionItem) {
+  if (isDueSoonExcludedStatus(item.status)) {
+    return false;
+  }
+
+  if (!hasDueDate(item.dueDate)) {
+    return false;
+  }
+
+  if (isOverdue(item.dueDate)) {
+    return false;
+  }
+
+  return isDueSoon(item.dueDate);
+}
+
 export function isWaitingIssue(item: ActionItem) {
   return item.status === "Waiting";
 }
@@ -135,8 +189,149 @@ export function isWaitingMissingReason(item: ActionItem) {
   return isWaitingIssue(item) && item.waitingOn.trim().length === 0;
 }
 
+export function isBlockedItem(item: Pick<ActionItem, "blocked" | "blockedBy" | "status">) {
+  if (item.status === "Complete" || item.status === "Cut" || item.status === "Canceled") {
+    return false;
+  }
+
+  return Boolean(item.blocked || item.blockedBy?.trim());
+}
+
 export function isPublicationWorkstream(workstream: string) {
   return workstream === "Newsbrief" || workstream === "The Voice";
+}
+
+export function isOwnerOption(value: string): value is OwnerOption {
+  return OWNER_OPTIONS.includes(value as OwnerOption);
+}
+
+export function normalizeOwnerValue(owner?: string) {
+  const trimmedOwner = owner?.trim();
+
+  if (!trimmedOwner) {
+    return DEFAULT_OWNER;
+  }
+
+  if (isOwnerOption(trimmedOwner)) {
+    return trimmedOwner;
+  }
+
+  const normalizedOwner = trimmedOwner.toLowerCase();
+
+  if (normalizedOwner === "jake" || normalizedOwner.includes("governmental affairs chair")) {
+    return "Governmental Affairs Chair";
+  }
+
+  if (
+    normalizedOwner === "president" ||
+    normalizedOwner === "sitting president" ||
+    (normalizedOwner.includes("president") && normalizedOwner !== "vice president")
+  ) {
+    return "Sitting President";
+  }
+
+  if (normalizedOwner === "crystelle") {
+    return "Crystelle";
+  }
+
+  if (normalizedOwner === "melissa") {
+    return "Melissa";
+  }
+
+  if (
+    normalizedOwner === "external" ||
+    normalizedOwner === "tbd" ||
+    normalizedOwner === "external / tbd" ||
+    normalizedOwner.includes("vendor")
+  ) {
+    return "External / TBD";
+  }
+
+  return DEFAULT_OWNER;
+}
+
+export function normalizeWorkstreamValue(workstream?: string) {
+  const trimmedWorkstream = workstream?.trim();
+
+  if (!trimmedWorkstream) {
+    return "";
+  }
+
+  if (trimmedWorkstream === "First Fridays") {
+    return "First Friday";
+  }
+
+  return trimmedWorkstream;
+}
+
+export function normalizeEventGroupValue(eventGroup?: string) {
+  const trimmedEventGroup = eventGroup?.trim();
+
+  if (!trimmedEventGroup) {
+    return undefined;
+  }
+
+  if (trimmedEventGroup === "First Fridays") {
+    return "First Friday";
+  }
+
+  return trimmedEventGroup;
+}
+
+export function isEventGroupOption(value: string): value is EventGroupOption {
+  return EVENT_GROUP_OPTIONS.includes(value as EventGroupOption);
+}
+
+export function getSuggestedEventGroupForWorkstream(workstream?: string): EventGroupOption | undefined {
+  const normalizedWorkstream = normalizeWorkstreamValue(workstream);
+
+  if (!normalizedWorkstream || isPublicationWorkstream(normalizedWorkstream)) {
+    return undefined;
+  }
+
+  if (isEventGroupOption(normalizedWorkstream)) {
+    return normalizedWorkstream;
+  }
+
+  return "General Operations";
+}
+
+export function syncEventGroupWithWorkstream(
+  currentEventGroup: string | undefined,
+  previousWorkstream: string | undefined,
+  nextWorkstream: string | undefined
+) {
+  const trimmedEventGroup = normalizeEventGroupValue(currentEventGroup);
+
+  if (!trimmedEventGroup) {
+    return getSuggestedEventGroupForWorkstream(nextWorkstream);
+  }
+
+  const previousSuggestedEventGroup = getSuggestedEventGroupForWorkstream(previousWorkstream);
+
+  if (trimmedEventGroup === previousSuggestedEventGroup) {
+    return getSuggestedEventGroupForWorkstream(nextWorkstream);
+  }
+
+  return trimmedEventGroup;
+}
+
+export function getSuggestedOwnerForWorkstream(workstream?: string): OwnerOption | undefined {
+  const normalizedWorkstream = normalizeWorkstreamValue(workstream).toLowerCase();
+
+  if (!normalizedWorkstream || isPublicationWorkstream(normalizedWorkstream)) {
+    return undefined;
+  }
+
+  if (normalizedWorkstream === "legislative day" || normalizedWorkstream === "first friday") {
+    return "Melissa";
+  }
+
+  if (normalizedWorkstream.includes("government") || normalizedWorkstream.includes("legislative")) {
+    return "Governmental Affairs Chair";
+  }
+
+  return undefined;
 }
 
 export function getIssueDefinition(issue: string) {
@@ -381,21 +576,49 @@ export function isProductionRisk(item: ActionItem) {
   );
 }
 
+export function matchesSearchQuery(item: ActionItem, query?: string) {
+  const normalizedQuery = query?.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const haystack = [
+    item.title,
+    item.notes,
+    item.workstream,
+    item.eventGroup,
+    item.issue,
+    item.owner,
+    item.waitingOn,
+    item.blockedBy
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
+}
+
 export function matchesActionFilter(item: ActionItem, filter: ActionFilter) {
   if (filter === "overdue") {
     return !isComplete(item) && isOverdue(item.dueDate);
   }
 
   if (filter === "dueSoon") {
-    return !isComplete(item) && isDueSoon(item.dueDate);
+    return isItemDueSoon(item);
   }
 
   if (filter === "waiting") {
     return isWaitingIssue(item);
   }
 
+  if (filter === "blocked") {
+    return isBlockedItem(item);
+  }
+
   if (filter === "mine") {
-    return item.owner === DEFAULT_OWNER;
+    return normalizeOwnerValue(item.owner) === DEFAULT_OWNER;
   }
 
   return true;
@@ -413,15 +636,95 @@ export function matchesActionFocus(item: ActionItem, focus: ActionFocus) {
   return true;
 }
 
+export function matchesEventGroup(item: ActionItem, eventGroup?: string) {
+  if (!eventGroup || eventGroup === "all") {
+    return true;
+  }
+
+  return (item.eventGroup ?? "").trim() === eventGroup;
+}
+
 export function getActionSummaryCounts(items: ActionItem[]): ActionSummaryCounts {
   const activeItems = getActiveItems(items);
 
   return {
     overdue: activeItems.filter((item) => isOverdue(item.dueDate)).length,
-    dueSoon: activeItems.filter((item) => isDueSoon(item.dueDate)).length,
+    dueSoon: activeItems.filter((item) => isItemDueSoon(item)).length,
+    blocked: activeItems.filter((item) => isBlockedItem(item)).length,
     waiting: activeItems.filter((item) => isWaitingIssue(item)).length,
     totalActive: activeItems.length
   };
+}
+
+export function getDailyLoad(items: ActionItem[], days = 14): DailyLoadEntry[] {
+  const startDate = getCurrentDate();
+  const loadByDate = new Map<string, number>();
+
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + offset);
+    loadByDate.set(date.toISOString().slice(0, 10), 0);
+  }
+
+  for (const item of items) {
+    if (isDueSoonExcludedStatus(item.status) || !hasDueDate(item.dueDate)) {
+      continue;
+    }
+
+    if (!loadByDate.has(item.dueDate)) {
+      continue;
+    }
+
+    loadByDate.set(item.dueDate, (loadByDate.get(item.dueDate) ?? 0) + 1);
+  }
+
+  return Array.from(loadByDate, ([date, count]) => ({
+    date,
+    count
+  }));
+}
+
+export function getWorkstreamSummary(items: ActionItem[]): WorkstreamSummaryEntry[] {
+  const summaryByWorkstream = new Map<string, WorkstreamSummaryEntry>();
+
+  for (const item of items) {
+    if (isComplete(item) || item.status === "Cut" || item.status === "Canceled") {
+      continue;
+    }
+
+    const workstream = item.workstream.trim() || "Unassigned";
+    const existingSummary = summaryByWorkstream.get(workstream) ?? {
+      workstream,
+      total: 0,
+      overdue: 0,
+      dueSoon: 0,
+      inProgress: 0
+    };
+
+    existingSummary.total += 1;
+
+    if (isOverdue(item.dueDate)) {
+      existingSummary.overdue += 1;
+    }
+
+    if (isItemDueSoon(item)) {
+      existingSummary.dueSoon += 1;
+    }
+
+    if (item.status === "In Progress") {
+      existingSummary.inProgress += 1;
+    }
+
+    summaryByWorkstream.set(workstream, existingSummary);
+  }
+
+  return [...summaryByWorkstream.values()].sort(
+    (a, b) =>
+      b.total - a.total ||
+      b.overdue - a.overdue ||
+      b.dueSoon - a.dueSoon ||
+      a.workstream.localeCompare(b.workstream)
+  );
 }
 
 export function getDashboardMetrics(items: ActionItem[]) {
@@ -437,7 +740,7 @@ export function getDashboardMetrics(items: ActionItem[]) {
   }, {});
 
   const urgentItems = activeItems
-    .filter((item) => isItemMissingDueDate(item) || isOverdue(item.dueDate) || isDueSoon(item.dueDate))
+    .filter((item) => isItemMissingDueDate(item) || isOverdue(item.dueDate) || isItemDueSoon(item))
     .sort(sortByPriority)
     .slice(0, 3);
 
@@ -472,6 +775,7 @@ export function getDashboardMetrics(items: ActionItem[]) {
   return {
     ...summary,
     urgentItems,
+    blockedCount: activeItems.filter((item) => isBlockedItem(item)).length,
     waitingGroups: Object.entries(waitingGroups),
     sponsorRiskItems,
     productionRiskItems,

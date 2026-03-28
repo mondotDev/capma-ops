@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
 import {
   DEFAULT_OWNER,
+  EVENT_GROUP_OPTIONS,
   getIssueDueDate,
   getIssuesForWorkstream,
   getWorkstreamForIssue,
   isIssueMissingDueDate,
+  OWNER_OPTIONS,
   STATUS_OPTIONS,
+  syncEventGroupWithWorkstream,
   shouldRequireIssue,
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
@@ -23,6 +26,7 @@ type QuickAddFormState = {
   type: string;
   title: string;
   workstream: string;
+  eventGroup: string;
   issue: string;
   dueDate: string;
   owner: string;
@@ -33,12 +37,24 @@ type QuickAddFormState = {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { addItem, generateIssueDeliverables, issues, resetAppState } = useAppState();
+  const {
+    addItem,
+    exportAppStateSnapshot,
+    generateIssueDeliverables,
+    importAppStateSnapshot,
+    issues,
+    resetAppState
+  } = useAppState();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetPending, setIsResetPending] = useState(false);
+  const [isImportPending, setIsImportPending] = useState(false);
+  const [pendingImportPayload, setPendingImportPayload] = useState<unknown>(null);
+  const [pendingImportFileName, setPendingImportFileName] = useState("");
+  const [settingsFeedback, setSettingsFeedback] = useState("");
   const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
   const [generationFeedback, setGenerationFeedback] = useState<string>("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const validation = useMemo(() => getValidation(formState), [formState]);
   const availableIssues = useMemo(() => getIssuesForWorkstream(formState.workstream), [formState.workstream]);
   const selectedIssueRecord = useMemo(
@@ -77,17 +93,94 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function openSettings() {
     setIsResetPending(false);
+    setIsImportPending(false);
+    setPendingImportPayload(null);
+    setPendingImportFileName("");
+    setSettingsFeedback("");
     setIsSettingsOpen(true);
   }
 
   function closeSettings() {
     setIsSettingsOpen(false);
     setIsResetPending(false);
+    setIsImportPending(false);
+    setPendingImportPayload(null);
+    setPendingImportFileName("");
+    setSettingsFeedback("");
   }
 
   function handleResetLocalData() {
     resetAppState();
     closeSettings();
+  }
+
+  function handleExportData() {
+    const exportDate = new Date().toISOString().slice(0, 10);
+    const snapshot = exportAppStateSnapshot();
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = downloadUrl;
+    link.download = `capma-ops-export-${exportDate}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+    setSettingsFeedback(`Exported ${snapshot.items.length} item${snapshot.items.length === 1 ? "" : "s"}.`);
+  }
+
+  function handleImportButtonClick() {
+    setSettingsFeedback("");
+    importInputRef.current?.click();
+  }
+
+  async function handleImportFileChange(event: { target: HTMLInputElement }) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText);
+
+      setPendingImportPayload(parsed);
+      setPendingImportFileName(file.name);
+      setIsImportPending(true);
+      setSettingsFeedback("");
+    } catch {
+      setPendingImportPayload(null);
+      setPendingImportFileName("");
+      setIsImportPending(false);
+      setSettingsFeedback("That file could not be imported. Use a valid CAPMA Ops Hub JSON export.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  function handleConfirmImport() {
+    if (!pendingImportPayload) {
+      return;
+    }
+
+    try {
+      const result = importAppStateSnapshot(pendingImportPayload);
+      setSettingsFeedback(
+        result.usedLegacyFormat
+          ? `Imported ${result.itemCount} items from a legacy export. Issue statuses were reset.`
+          : `Imported ${result.itemCount} items and restored issue statuses.`
+      );
+      setPendingImportPayload(null);
+      setPendingImportFileName("");
+      setIsImportPending(false);
+    } catch (error) {
+      setSettingsFeedback(error instanceof Error ? error.message : "Import failed.");
+      setPendingImportPayload(null);
+      setPendingImportFileName("");
+      setIsImportPending(false);
+    }
   }
 
   function updateField<Key extends keyof QuickAddFormState>(field: Key, value: QuickAddFormState[Key]) {
@@ -112,6 +205,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return {
           ...current,
           workstream: nextWorkstream,
+          eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
           issue: nextIssue,
           dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
         };
@@ -119,11 +213,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       if (field === "issue") {
         const nextIssue = value as string;
+        const nextWorkstream = nextIssue ? (getWorkstreamForIssue(nextIssue) ?? current.workstream) : current.workstream;
 
         return {
           ...current,
           issue: nextIssue,
-          workstream: nextIssue ? (getWorkstreamForIssue(nextIssue) ?? current.workstream) : current.workstream,
+          workstream: nextWorkstream,
+          eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
           dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? "") : current.dueDate
         };
       }
@@ -146,9 +242,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       type: formState.type,
       title: formState.title.trim(),
       workstream: formState.workstream.trim(),
+      eventGroup: formState.eventGroup || undefined,
       issue: formState.issue || undefined,
       dueDate: formState.dueDate,
-      owner: formState.owner.trim(),
+      owner: formState.owner,
       status: formState.status,
       waitingOn: formState.waitingOn,
       notes: formState.notes.trim()
@@ -192,12 +289,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button className="topbar__button" onClick={openQuickAdd} type="button">
             + Add Item
           </button>
-          <input
-            aria-label="Search"
-            className="topbar__search"
-            placeholder="Search"
-            type="search"
-          />
+          <Suspense fallback={<TopbarSearchFallback pathname={pathname} />}>
+            <TopbarSearch pathname={pathname} />
+          </Suspense>
         </header>
         <main className="page">{children}</main>
       </div>
@@ -274,6 +368,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </select>
                 </div>
 
+                <div className="field">
+                  <label htmlFor="quick-add-event-group">Event Group</label>
+                  <select
+                    className="field-control"
+                    id="quick-add-event-group"
+                    onChange={(event) => updateField("eventGroup", event.target.value)}
+                    value={formState.eventGroup}
+                  >
+                    <option value="">None</option>
+                    {EVENT_GROUP_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {availableIssues.length > 0 ? (
                   <div className="field">
                     <label htmlFor="quick-add-issue">Issue</label>
@@ -312,12 +423,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                 <div className="field">
                   <label htmlFor="quick-add-owner">Owner</label>
-                  <input
+                  <select
                     className={validation.owner ? "field-control field-control--invalid" : "field-control"}
                     id="quick-add-owner"
                     onChange={(event) => updateField("owner", event.target.value)}
                     value={formState.owner}
-                  />
+                  >
+                    {OWNER_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="field">
@@ -420,6 +537,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <div className="settings-section">
               <div className="settings-section__header">
+                <h3 className="drawer-section__title">Backup</h3>
+                <p className="field-hint">Download or restore local app state as a JSON backup file.</p>
+              </div>
+
+              <div className="settings-actions">
+                <button className="button-link button-link--inline-secondary" onClick={handleExportData} type="button">
+                  Export Data
+                </button>
+                <button className="button-link button-link--inline-secondary" onClick={handleImportButtonClick} type="button">
+                  Import Data
+                </button>
+              </div>
+
+              <input
+                accept=".json,application/json"
+                className="visually-hidden"
+                onChange={handleImportFileChange}
+                ref={importInputRef}
+                type="file"
+              />
+
+              {isImportPending ? (
+                <div className="confirm-delete">
+                  <div className="confirm-delete__title">Import backup data?</div>
+                  <div className="confirm-delete__copy">
+                    This will replace the current local app state with {pendingImportFileName || "the selected file"}.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => {
+                        setIsImportPending(false);
+                        setPendingImportPayload(null);
+                        setPendingImportFileName("");
+                      }}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button className="topbar__button" onClick={handleConfirmImport} type="button">
+                      Import
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {settingsFeedback ? <div className="field-hint">{settingsFeedback}</div> : null}
+            </div>
+
+            <div className="settings-section">
+              <div className="settings-section__header">
                 <h3 className="drawer-section__title">Local Data</h3>
                 <p className="field-hint">Reset saved app changes and return to the default seeded state.</p>
               </div>
@@ -477,6 +645,7 @@ function createInitialFormState(): QuickAddFormState {
     type: "",
     title: "",
     workstream: "",
+    eventGroup: "",
     issue: "",
     dueDate: "",
     owner: DEFAULT_OWNER,
@@ -502,4 +671,63 @@ function getValidation(formState: QuickAddFormState) {
     ...validation,
     isValid: Object.values(validation).every((value) => !value)
   };
+}
+
+function TopbarSearch({ pathname }: { pathname: string }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeQuery = pathname === "/action" ? searchParams.get("q")?.trim() ?? "" : "";
+  const [searchValue, setSearchValue] = useState(activeQuery);
+
+  useEffect(() => {
+    setSearchValue(activeQuery);
+  }, [activeQuery]);
+
+  function handleSearchChange(value: string) {
+    setSearchValue(value);
+
+    if (pathname !== "/action") {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (!value.trim()) {
+      params.delete("q");
+    } else {
+      params.set("q", value);
+    }
+
+    const query = params.toString();
+
+    startTransition(() => {
+      router.replace(query ? `/action?${query}` : "/action");
+    });
+  }
+
+  return (
+    <input
+      aria-label="Search"
+      className="topbar__search"
+      disabled={pathname !== "/action"}
+      onChange={(event) => handleSearchChange(event.target.value)}
+      placeholder={pathname === "/action" ? "Search Action View" : "Search available in Action View"}
+      type="search"
+      value={searchValue}
+    />
+  );
+}
+
+function TopbarSearchFallback({ pathname }: { pathname: string }) {
+  return (
+    <input
+      aria-label="Search"
+      className="topbar__search"
+      disabled
+      placeholder={pathname === "/action" ? "Search Action View" : "Search available in Action View"}
+      type="search"
+      value=""
+      readOnly
+    />
+  );
 }
