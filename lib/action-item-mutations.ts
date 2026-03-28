@@ -45,6 +45,22 @@ export function applyBulkActionItemUpdates(
   return items.map((item) => (idSet.has(item.id) ? applyActionItemUpdates(item, updates) : item));
 }
 
+export function updateActionItemById(
+  items: ActionItem[],
+  id: string,
+  updates: Partial<ActionItem>
+): ActionItem[] {
+  return items.map((item) => (item.id === id ? applyActionItemUpdates(item, updates) : item));
+}
+
+export function deleteActionItemById(items: ActionItem[], id: string): ActionItem[] {
+  return items.filter((item) => item.id !== id);
+}
+
+export function prependActionItem(items: ActionItem[], item: NewActionItemInput): ActionItem[] {
+  return [createActionItem(item), ...items];
+}
+
 export function normalizeActionItems(items: ActionItem[]): ActionItem[] {
   return items.map((item) => normalizeActionItemFields({ ...item }));
 }

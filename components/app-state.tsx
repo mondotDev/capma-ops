@@ -20,9 +20,10 @@ import {
 } from "@/lib/publication-issue-actions";
 import {
   applyBulkActionItemUpdates,
-  applyActionItemUpdates,
-  createActionItem,
+  deleteActionItemById,
   normalizeActionItems,
+  prependActionItem,
+  updateActionItemById,
   type NewActionItemInput
 } from "@/lib/action-item-mutations";
 import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
@@ -103,12 +104,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   function addItem(item: NewActionItem) {
     enablePersistence();
-    setItems((current) => [createActionItem(item), ...current]);
+    setItems((current) => prependActionItem(current, item));
   }
 
   function deleteItem(id: string) {
     enablePersistence();
-    setItems((current) => current.filter((item) => item.id !== id));
+    setItems((current) => deleteActionItemById(current, id));
   }
 
   function generateIssueDeliverables(issue: string): GenerateDeliverablesResult {
@@ -199,7 +200,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setIssueStatus,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       enablePersistence();
-      setItems((current) => current.map((item) => (item.id === id ? applyActionItemUpdates(item, updates) : item)));
+      setItems((current) => updateActionItemById(current, id, updates));
     }
     }),
     [issueStatuses, items]
