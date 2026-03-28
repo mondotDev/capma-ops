@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
 import type { ActionItem } from "@/lib/sample-data";
@@ -31,7 +32,6 @@ import {
   getIssuesForWorkstream,
   getOwnerOptions,
   LOCAL_FALLBACK_NOTE_AUTHOR,
-  isItemMissingDueDate,
   isBlockedItem,
   isTerminalStatus,
   isWaitingIssue,
@@ -737,92 +737,22 @@ export function ActionView({
 
         {selectedItem ? (
           <aside className={isBlockedItem(selectedItem) ? "drawer drawer--blocked" : "drawer"} aria-label="Item details">
-            <div className="drawer__sticky">
-              <div className="drawer__header">
-                <div className="drawer__header-text">
-                  {isEditingTitle ? (
-                    <input
-                      aria-label="Edit title"
-                      className="drawer__title-input"
-                      id="drawer-title"
-                      onBlur={() => finishTitleEdit(selectedItem)}
-                      onChange={(event) => setTitleDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          cancelTitleEdit(selectedItem);
-                        }
-
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          finishTitleEdit(selectedItem);
-                        }
-                      }}
-                      autoFocus
-                      value={titleDraft}
-                    />
-                  ) : (
-                    <h2 className="drawer__title">
-                      <button
-                        className="drawer__title-button"
-                        onClick={() => setIsEditingTitle(true)}
-                        type="button"
-                      >
-                        {selectedItem.title}
-                      </button>
-                    </h2>
-                  )}
-                  <div className="drawer__workstream">{selectedItem.workstream}</div>
-                  <div className="drawer__header-meta">
-                    <span className={getDrawerPrimaryBadgeClassName(selectedItem)}>{getDrawerPrimaryBadgeLabel(selectedItem)}</span>
-                    {getDrawerSecondaryMeta(selectedItem) ? (
-                      <span className="drawer__due-text">{getDrawerSecondaryMeta(selectedItem)}</span>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="drawer__header-actions">
-                  <div className="drawer__actions-menu">
-                    <button
-                      aria-expanded={isActionsMenuOpen}
-                      aria-haspopup="menu"
-                      className="drawer__actions-trigger"
-                      onClick={() => setIsActionsMenuOpen((current) => !current)}
-                      type="button"
-                    >
-                      <span aria-hidden="true">⚙</span>
-                      <span className="sr-only">Open item actions</span>
-                    </button>
-                    {isActionsMenuOpen ? (
-                      <div className="drawer__actions-popover" role="menu">
-                        <button
-                          className="drawer__actions-item drawer__actions-item--danger"
-                          onClick={() => {
-                            setIsDeleteConfirmOpen(true);
-                            setIsActionsMenuOpen(false);
-                          }}
-                          role="menuitem"
-                          type="button"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  <button className="button-link" onClick={() => setSelectedId(null)} type="button">
-                    Close
-                  </button>
-                </div>
-              </div>
-
-              {selectedItem.issue ? <div className="drawer__issue">{selectedItem.issue}</div> : null}
-              {selectedItem.blockedBy?.trim() ? (
-                <div className="drawer__warning drawer__warning--blocked">Blocked by {selectedItem.blockedBy.trim()}</div>
-              ) : null}
-              {isItemMissingDueDate(selectedItem) ? (
-                <div className="drawer__warning">Due date not configured for this issue</div>
-              ) : null}
-            </div>
-
+            <ActionItemDrawerHeader
+              isActionsMenuOpen={isActionsMenuOpen}
+              isEditingTitle={isEditingTitle}
+              item={selectedItem}
+              onCancelTitleEdit={() => cancelTitleEdit(selectedItem)}
+              onClose={() => setSelectedId(null)}
+              onDeleteRequest={() => {
+                setIsDeleteConfirmOpen(true);
+                setIsActionsMenuOpen(false);
+              }}
+              onFinishTitleEdit={() => finishTitleEdit(selectedItem)}
+              onStartTitleEdit={() => setIsEditingTitle(true)}
+              onTitleDraftChange={setTitleDraft}
+              onToggleActionsMenu={() => setIsActionsMenuOpen((current) => !current)}
+              titleDraft={titleDraft}
+            />
             <div className="drawer__sections">
               <section className="drawer-section drawer-section--form">
                 <div className="drawer__grid drawer__grid--form">
