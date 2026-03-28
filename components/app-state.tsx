@@ -1,6 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  clearPersistedAppState,
+  createAppStateSnapshot,
+  loadPersistedAppState,
+  migratePersistedItems,
+  parseImportedAppState,
+  savePersistedAppState,
+  type AppStateSnapshot
+} from "@/lib/app-persistence";
 import { getPublicationTemplates } from "@/lib/publication-templates";
 import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
 import {
@@ -17,16 +26,13 @@ import {
   normalizeWorkstreamValue
 } from "@/lib/ops-utils";
 
+export { clearPersistedAppState };
+export type { AppStateSnapshot };
+
 export type NewActionItem = Omit<ActionItem, "id" | "lastUpdated">;
 export type GenerateDeliverablesResult = {
   created: number;
   skipped: number;
-};
-export type AppStateSnapshot = {
-  version: 1;
-  exportedAt: string;
-  items: ActionItem[];
-  issueStatuses: Partial<Record<string, IssueStatus>>;
 };
 export type ImportAppStateResult = {
   itemCount: number;
@@ -51,31 +57,33 @@ type AppStateContextValue = {
 };
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
-const APP_STATE_STORAGE_KEY = "capma-ops-state";
-
-type PersistedAppState = {
-  items: ActionItem[];
-  issueStatuses: Partial<Record<string, IssueStatus>>;
-};
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ActionItem[]>(getDefaultItems);
   const [issueStatuses, setIssueStatuses] = useState<Partial<Record<string, IssueStatus>>>({});
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [shouldPersist, setShouldPersist] = useState(true);
 
   useEffect(() => {
-    const savedState = loadPersistedAppState();
+    const loadResult = loadPersistedAppState(normalizeActionItem);
 
-    if (savedState) {
-      setItems(migratePersistedItems(savedState.items));
-      setIssueStatuses(savedState.issueStatuses);
+    if (loadResult.state) {
+      setItems(
+        migratePersistedItems(loadResult.state.items, {
+          legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,
+          getDefaultItems,
+          normalizeItem: normalizeActionItem
+        })
+      );
+      setIssueStatuses(loadResult.state.issueStatuses);
     }
 
+    setShouldPersist(loadResult.shouldPersist);
     setHasHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!hasHydrated) {
+    if (!hasHydrated || !shouldPersist) {
       return;
     }
 
@@ -83,13 +91,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       items,
       issueStatuses
     });
-  }, [hasHydrated, issueStatuses, items]);
+  }, [hasHydrated, issueStatuses, items, shouldPersist]);
+
+  function enablePersistence() {
+    setShouldPersist(true);
+  }
 
   function addItem(item: NewActionItem) {
+    enablePersistence();
     setItems((current) => [createActionItem(item), ...current]);
   }
 
   function deleteItem(id: string) {
+    enablePersistence();
     setItems((current) => current.filter((item) => item.id !== id));
   }
 
@@ -100,6 +114,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       return { created: 0, skipped: 0 };
     }
 
+    enablePersistence();
     const templates = getPublicationTemplates(workstream);
     let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
 
@@ -144,6 +159,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }
 
   function openIssue(issue: string): GenerateDeliverablesResult {
+    enablePersistence();
     setIssueStatuses((current) => ({
       ...current,
       [issue]: "Open"
@@ -153,6 +169,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }
 
   function setIssueStatus(issue: string, status: IssueStatus) {
+    enablePersistence();
     setIssueStatuses((current) => ({
       ...current,
       [issue]: status
@@ -160,6 +177,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }
 
   function completeIssue(issue: string) {
+    enablePersistence();
     setIssueStatuses((current) => ({
       ...current,
       [issue]: "Complete"
@@ -168,6 +186,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   function resetAppState() {
     clearPersistedAppState();
+    enablePersistence();
     setItems(getDefaultItems());
     setIssueStatuses({});
   }
@@ -178,6 +197,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     issues: getGeneratedIssues(issueStatuses),
     addItem,
     bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => {
+      enablePersistence();
       const idSet = new Set(ids);
 
       setItems((current) =>
@@ -204,6 +224,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         throw new Error("That file is not a valid CAPMA Ops Hub backup.");
       }
 
+      enablePersistence();
       setItems(parsedState.items.map((item) => normalizeActionItem(item)));
       setIssueStatuses(parsedState.issueStatuses);
 
@@ -216,6 +237,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     resetAppState,
     setIssueStatus,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
+      enablePersistence();
       setItems((current) =>
         current.map((item) =>
           item.id === id
@@ -269,158 +291,12 @@ function getDefaultItems() {
   return initialActionItems.map((item) => normalizeActionItem({ ...item }));
 }
 
-function loadPersistedAppState(): PersistedAppState | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const rawState = window.localStorage.getItem(APP_STATE_STORAGE_KEY);
-
-    if (!rawState) {
-      return null;
-    }
-
-    const parsedState = JSON.parse(rawState) as Partial<PersistedAppState>;
-
-    if (!Array.isArray(parsedState.items) || !isIssueStatusMap(parsedState.issueStatuses)) {
-      return null;
-    }
-
-    const items = parsedState.items.filter(isActionItemRecord);
-
-    if (items.length !== parsedState.items.length) {
-      return null;
-    }
-
-    return {
-      items: items.map((item) => normalizeActionItem(item)),
-      issueStatuses: parsedState.issueStatuses
-    };
-  } catch {
-    return null;
-  }
-}
-
-function savePersistedAppState(state: PersistedAppState) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify(state));
-}
-
-export function clearPersistedAppState() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(APP_STATE_STORAGE_KEY);
-}
-
-function isActionItemRecord(value: unknown): value is ActionItem {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const item = value as Partial<ActionItem>;
-
-  return [
-    item.id,
-    item.title,
-    item.type,
-    item.workstream,
-    item.dueDate,
-    item.status,
-    item.owner,
-    item.waitingOn,
-    item.lastUpdated,
-    item.notes
-  ].every((field) => typeof field === "string") &&
-    (item.blocked === undefined || typeof item.blocked === "boolean") &&
-    (item.blockedBy === undefined || typeof item.blockedBy === "string") &&
-    (item.issue === undefined || typeof item.issue === "string") &&
-    (item.eventGroup === undefined || typeof item.eventGroup === "string");
-}
-
-function createAppStateSnapshot(
-  items: ActionItem[],
-  issueStatuses: Partial<Record<string, IssueStatus>>
-): AppStateSnapshot {
-  return {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    items: items.map((item) => ({ ...item })),
-    issueStatuses: { ...issueStatuses }
-  };
-}
-
-function isIssueStatusMap(
-  value: Partial<Record<string, IssueStatus>> | undefined
-): value is Partial<Record<string, IssueStatus>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  return Object.values(value).every(
-    (status) => status === "Planned" || status === "Open" || status === "Complete"
-  );
-}
-
 function normalizeActionItem<T extends Pick<ActionItem, "owner" | "workstream"> & Partial<Pick<ActionItem, "eventGroup">>>(item: T): T {
   return {
     ...item,
     owner: normalizeOwnerValue(item.owner),
     workstream: normalizeWorkstreamValue(item.workstream),
     eventGroup: normalizeEventGroupValue(item.eventGroup)
-  };
-}
-
-function migratePersistedItems(items: ActionItem[]) {
-  const legacySampleIds = new Set<string>(LEGACY_SAMPLE_ITEM_IDS);
-
-  if (items.length > 0 && items.every((item) => legacySampleIds.has(item.id))) {
-    return getDefaultItems();
-  }
-
-  return items.map((item) => normalizeActionItem(item));
-}
-
-function parseImportedAppState(value: unknown): (PersistedAppState & { usedLegacyFormat: boolean }) | null {
-  if (Array.isArray(value)) {
-    const items = value.filter(isActionItemRecord);
-
-    if (items.length !== value.length) {
-      return null;
-    }
-
-    return {
-      items,
-      issueStatuses: {},
-      usedLegacyFormat: true
-    };
-  }
-
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const snapshot = value as Partial<AppStateSnapshot>;
-
-  if (!Array.isArray(snapshot.items) || !isIssueStatusMap(snapshot.issueStatuses)) {
-    return null;
-  }
-
-  const items = snapshot.items.filter(isActionItemRecord);
-
-  if (items.length !== snapshot.items.length) {
-    return null;
-  }
-
-  return {
-    items,
-    issueStatuses: snapshot.issueStatuses,
-    usedLegacyFormat: false
   };
 }
 

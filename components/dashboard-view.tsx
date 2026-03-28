@@ -73,10 +73,17 @@ export function DashboardView() {
         </div>
       </button>
 
-      <button
+      <div
         className="card card--clickable"
         onClick={() => router.push("/action?filter=waiting")}
-        type="button"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            router.push("/action?filter=waiting");
+          }
+        }}
+        role="button"
+        tabIndex={0}
       >
         <div className="card__title">WHERE THINGS ARE STUCK</div>
         <div className="simple-list">
@@ -115,7 +122,7 @@ export function DashboardView() {
             <div className="muted">No waiting items</div>
           )}
         </div>
-      </button>
+      </div>
 
       <div className="card">
         <div className="card__title">PUBLICATIONS</div>
