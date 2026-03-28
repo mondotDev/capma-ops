@@ -13,9 +13,11 @@ import {
   type AppStateSnapshot
 } from "@/lib/app-transfer";
 import {
+  completePublicationIssue,
   generatePublicationIssueDeliverables,
   openPublicationIssue,
   setPublicationIssueStatus,
+  type CompletePublicationIssueResult,
   type GenerateDeliverablesResult
 } from "@/lib/publication-issue-actions";
 import {
@@ -39,6 +41,7 @@ export type { AppStateSnapshot };
 
 export type NewActionItem = NewActionItemInput;
 export type { GenerateDeliverablesResult };
+export type { CompletePublicationIssueResult };
 export type ImportAppStateResult = {
   itemCount: number;
   usedLegacyFormat: boolean;
@@ -50,14 +53,14 @@ type AppStateContextValue = {
   addItem: (item: NewActionItem) => void;
   bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => void;
   deleteItem: (id: string) => void;
-  completeIssue: (issue: string) => void;
+  completeIssue: (issue: string) => CompletePublicationIssueResult;
   exportAppStateSnapshot: () => AppStateSnapshot;
   generateMissingDeliverablesForIssue: (issue: string) => GenerateDeliverablesResult;
   generateIssueDeliverables: (issue: string) => GenerateDeliverablesResult;
   importAppStateSnapshot: (value: unknown) => ImportAppStateResult;
   openIssue: (issue: string) => GenerateDeliverablesResult;
   resetAppState: () => void;
-  setIssueStatus: (issue: string, status: IssueStatus) => void;
+  setIssueStatus: (issue: string, status: IssueStatus) => CompletePublicationIssueResult;
   updateItem: (id: string, updates: Partial<ActionItem>) => void;
 };
 
@@ -150,12 +153,33 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   function setIssueStatus(issue: string, status: IssueStatus) {
     enablePersistence();
+    if (status === "Complete") {
+      return completeIssue(issue);
+    }
+
     setIssueStatuses((current) => setPublicationIssueStatus(current, issue, status));
+
+    return {
+      issueStatuses,
+      blockedDeliverables: [],
+      completed: true
+    };
   }
 
   function completeIssue(issue: string) {
     enablePersistence();
-    setIssueStatuses((current) => setPublicationIssueStatus(current, issue, "Complete"));
+    let result: CompletePublicationIssueResult = {
+      issueStatuses,
+      blockedDeliverables: [],
+      completed: false
+    };
+
+    setIssueStatuses((current) => {
+      result = completePublicationIssue(items, current, issue);
+      return result.issueStatuses;
+    });
+
+    return result;
   }
 
   function resetAppState() {

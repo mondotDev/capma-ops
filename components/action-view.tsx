@@ -9,6 +9,7 @@ import {
   getActionEventGroupValue,
   getActionFilterValue,
   getActionFocusValue,
+  getActionLensValue,
   getActionQueryValue,
   getActionRowClassName,
   getVisibleActionItems,
@@ -17,6 +18,7 @@ import {
 import {
   type ActionFilter,
   type ActionFocus,
+  type ActionLens,
   DEFAULT_OWNER,
   EVENT_GROUP_OPTIONS,
   formatDueLabel,
@@ -46,6 +48,15 @@ const FILTER_OPTIONS: { label: string; value: ActionFilter }[] = [
   { label: "Mine", value: "mine" }
 ];
 
+const LENS_OPTIONS: { label: string; value: ActionLens }[] = [
+  { label: "All Work", value: "all" },
+  { label: "Execution Now", value: "executionNow" },
+  { label: "Planned Later", value: "plannedLater" },
+  { label: "Review: No Due Date", value: "reviewMissingDueDate" },
+  { label: "Review: Waiting Too Long", value: "reviewWaitingTooLong" },
+  { label: "Review: Stale", value: "reviewStale" }
+];
+
 const FOCUS_LABELS: Record<Exclude<ActionFocus, "all">, string> = {
   sponsor: "Sponsor items",
   production: "Production items"
@@ -56,6 +67,7 @@ export function ActionView({
   initialEventGroup,
   initialFilter,
   initialFocus,
+  initialLens,
   initialIssue,
   initialQuery
 }: {
@@ -63,6 +75,7 @@ export function ActionView({
   initialEventGroup?: string;
   initialFilter?: string;
   initialFocus?: string;
+  initialLens?: string;
   initialIssue?: string;
   initialQuery?: string;
 }) {
@@ -78,6 +91,7 @@ export function ActionView({
   const [bulkFeedback, setBulkFeedback] = useState("");
   const activeFilter = getActionFilterValue(initialFilter);
   const activeFocus = getActionFocusValue(initialFocus);
+  const activeLens = getActionLensValue(initialLens);
   const activeDueDate = getActionDueDateValue(initialDueDate);
   const activeEventGroup = getActionEventGroupValue(initialEventGroup);
   const activeQuery = getActionQueryValue(initialQuery);
@@ -100,11 +114,12 @@ export function ActionView({
         activeEventGroup,
         activeFilter,
         activeFocus,
+        activeLens,
         activeIssue,
         activeQuery,
         showCompleted
       }),
-    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeQuery, items, showCompleted]
+    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, activeQuery, items, showCompleted]
   );
 
   const sortedItems = useMemo(() => [...visibleItems].sort(sortByPriority), [visibleItems]);
@@ -113,6 +128,7 @@ export function ActionView({
   const selectedIssueRecord = selectedItem?.issue
     ? issues.find((issue) => issue.label === selectedItem.issue) ?? null
     : null;
+  const selectedItemIssueOptions = selectedItem ? getIssuesForWorkstream(selectedItem.workstream) : [];
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
     () => selectedItemIds.filter((id) => sortedItems.some((item) => item.id === id)),
@@ -156,6 +172,7 @@ export function ActionView({
   function updateQuery(
     nextFilter: ActionFilter,
     nextFocus: ActionFocus,
+    nextLens: ActionLens,
     nextEventGroup: string,
     nextDueDate: string,
     nextQuery: string
@@ -172,6 +189,12 @@ export function ActionView({
       params.delete("focus");
     } else {
       params.set("focus", nextFocus);
+    }
+
+    if (nextLens === "all") {
+      params.delete("lens");
+    } else {
+      params.set("lens", nextLens);
     }
 
     if (nextEventGroup === "all") {
@@ -197,15 +220,19 @@ export function ActionView({
   }
 
   function handleFilterChange(nextFilter: ActionFilter) {
-    updateQuery(nextFilter, activeFocus, activeEventGroup, activeDueDate, activeQuery);
+    updateQuery(nextFilter, activeFocus, activeLens, activeEventGroup, activeDueDate, activeQuery);
   }
 
   function clearFocus() {
-    updateQuery(activeFilter, "all", activeEventGroup, activeDueDate, activeQuery);
+    updateQuery(activeFilter, "all", activeLens, activeEventGroup, activeDueDate, activeQuery);
+  }
+
+  function handleLensChange(nextLens: ActionLens) {
+    updateQuery(activeFilter, activeFocus, nextLens, activeEventGroup, activeDueDate, activeQuery);
   }
 
   function handleEventGroupChange(nextEventGroup: string) {
-    updateQuery(activeFilter, activeFocus, nextEventGroup, activeDueDate, activeQuery);
+    updateQuery(activeFilter, activeFocus, activeLens, nextEventGroup, activeDueDate, activeQuery);
   }
 
   function clearIssueFilter() {
@@ -216,11 +243,11 @@ export function ActionView({
   }
 
   function clearDueDateFilter() {
-    updateQuery(activeFilter, activeFocus, activeEventGroup, "", activeQuery);
+    updateQuery(activeFilter, activeFocus, activeLens, activeEventGroup, "", activeQuery);
   }
 
   function clearSearchQuery() {
-    updateQuery(activeFilter, activeFocus, activeEventGroup, activeDueDate, "");
+    updateQuery(activeFilter, activeFocus, activeLens, activeEventGroup, activeDueDate, "");
   }
 
   function toggleGroup(groupLabel: string) {
@@ -280,6 +307,17 @@ export function ActionView({
         ) : null}
 
         <div className="filter-bar" aria-label="Action filters">
+          {LENS_OPTIONS.map((option) => (
+            <button
+              aria-pressed={activeLens === option.value}
+              className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+              key={option.value}
+              onClick={() => handleLensChange(option.value)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
           {FILTER_OPTIONS.map((option) => (
             <button
               aria-pressed={activeFilter === option.value}
@@ -412,6 +450,14 @@ export function ActionView({
                 Showing {getFilterLabel(activeFilter).toLowerCase()} items.{" "}
                 <button className="button-link button-link--inline" onClick={() => handleFilterChange("all")} type="button">
                   Reset
+                </button>
+              </p>
+            ) : null}
+            {activeLens !== "all" ? (
+              <p className="muted action-toolbar__filter">
+                Lens: {getLensLabel(activeLens)}.{" "}
+                <button className="button-link button-link--inline" onClick={() => handleLensChange("all")} type="button">
+                  Clear
                 </button>
               </p>
             ) : null}
@@ -690,9 +736,9 @@ export function ActionView({
                   <div className="field">
                     <label className="toggle" htmlFor="drawer-blocked">
                       <input
-                        checked={selectedItem.blocked ?? false}
+                        checked={selectedItem.isBlocked ?? false}
                         id="drawer-blocked"
-                        onChange={(event) => updateItem(selectedItem.id, { blocked: event.target.checked })}
+                        onChange={(event) => updateItem(selectedItem.id, { isBlocked: event.target.checked })}
                         type="checkbox"
                       />
                       <span>Blocked</span>
@@ -754,7 +800,7 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
-                  {selectedItem.issue ? (
+                  {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
                     <div className="field">
                       <label htmlFor="drawer-issue">Issue</label>
                       <select
@@ -774,7 +820,7 @@ export function ActionView({
                         value={selectedItem.issue ?? ""}
                       >
                         <option value="">None</option>
-                        {getIssuesForWorkstream(selectedItem.workstream).map((option) => (
+                        {selectedItemIssueOptions.map((option) => (
                           <option key={option} value={option}>
                             {option}
                           </option>
@@ -869,6 +915,10 @@ export function ActionView({
 
 function getFilterLabel(filter: ActionFilter) {
   return FILTER_OPTIONS.find((option) => option.value === filter)?.label ?? "All";
+}
+
+function getLensLabel(lens: ActionLens) {
+  return LENS_OPTIONS.find((option) => option.value === lens)?.label ?? "All Work";
 }
 
 function formatUrgencyBadge(item: ActionItem) {

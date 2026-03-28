@@ -114,7 +114,7 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     return false;
   }
 
-  const item = value as Partial<ActionItem>;
+  const item = value as Partial<ActionItem> & { blocked?: unknown };
 
   return [
     item.id,
@@ -128,6 +128,7 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     item.lastUpdated,
     item.notes
   ].every((field) => typeof field === "string") &&
+    (item.isBlocked === undefined || typeof item.isBlocked === "boolean") &&
     (item.blocked === undefined || typeof item.blocked === "boolean") &&
     (item.blockedBy === undefined || typeof item.blockedBy === "string") &&
     (item.issue === undefined || typeof item.issue === "string") &&

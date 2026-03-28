@@ -1,7 +1,7 @@
 import type { ActionItem } from "@/lib/sample-data";
 
 export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Complete"] as const;
-export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle"] as const;
+export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle", "External"] as const;
 export const WORKSTREAM_OPTIONS = [
   "Legislative Day",
   "Best Pest Expo",
@@ -38,6 +38,16 @@ export const OWNER_OPTIONS = [
 export const DEFAULT_OWNER = "Melissa";
 export type OwnerOption = (typeof OWNER_OPTIONS)[number];
 export type EventGroupOption = (typeof EVENT_GROUP_OPTIONS)[number];
+type LegacyBlockedFields = {
+  blocked?: boolean;
+};
+type ActionItemBlockedState = Pick<ActionItem, "isBlocked" | "blockedBy" | "status"> & LegacyBlockedFields;
+type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
+  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy">> &
+  LegacyBlockedFields;
+type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<T, "blocked" | "isBlocked" | "blockedBy"> &
+  Pick<ActionItem, "owner" | "workstream"> &
+  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy">>;
 
 const NEWSBRIEF_MONTHS = [
   "January",
@@ -71,6 +81,13 @@ const VOICE_ISSUE_CONFIG = {
 
 export type ActionFilter = "all" | "overdue" | "dueSoon" | "waiting" | "blocked" | "mine";
 export type ActionFocus = "all" | "sponsor" | "production";
+export type ActionLens =
+  | "all"
+  | "executionNow"
+  | "plannedLater"
+  | "reviewMissingDueDate"
+  | "reviewWaitingTooLong"
+  | "reviewStale";
 export type IssueStatus = "Planned" | "Open" | "Complete";
 export type IssueDefinition = {
   label: string;
@@ -140,8 +157,12 @@ export function isComplete(item: ActionItem) {
   return item.status === "Complete";
 }
 
-export function isDueSoonExcludedStatus(status: string) {
+export function isTerminalStatus(status: string) {
   return status === "Complete" || status === "Cut" || status === "Canceled";
+}
+
+export function isDueSoonExcludedStatus(status: string) {
+  return isTerminalStatus(status);
 }
 
 export function getActiveItems(items: ActionItem[]) {
@@ -161,6 +182,16 @@ export function daysUntil(dateValue: string) {
   }
 
   return Math.ceil((parsedDate.getTime() - getCurrentDate().getTime()) / (24 * 60 * 60 * 1000));
+}
+
+export function daysSince(dateValue: string) {
+  const parsedDate = parseDate(dateValue);
+
+  if (!parsedDate) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.floor((getCurrentDate().getTime() - parsedDate.getTime()) / (24 * 60 * 60 * 1000));
 }
 
 export function isOverdue(dueDate: string) {
@@ -201,12 +232,12 @@ export function isWaitingMissingReason(item: ActionItem) {
   return isWaitingIssue(item) && item.waitingOn.trim().length === 0;
 }
 
-export function isBlockedItem(item: Pick<ActionItem, "blocked" | "blockedBy" | "status">) {
+export function isBlockedItem(item: ActionItemBlockedState) {
   if (item.status === "Complete" || item.status === "Cut" || item.status === "Canceled") {
     return false;
   }
 
-  return Boolean(item.blocked || item.blockedBy?.trim());
+  return Boolean(item.isBlocked ?? item.blocked ?? item.blockedBy?.trim());
 }
 
 export function isPublicationWorkstream(workstream: string) {
@@ -282,15 +313,18 @@ export function getOwnerOptions(owner?: string) {
   return [normalizedOwner, ...OWNER_OPTIONS];
 }
 
-export function normalizeActionItemFields<
-  T extends Pick<ActionItem, "owner" | "workstream"> & Partial<Pick<ActionItem, "eventGroup">>
->(item: T): T {
+export function normalizeActionItemFields<T extends NormalizeActionItemInput>(item: T): NormalizeActionItemResult<T> {
+  const { blocked, blockedBy, isBlocked, ...rest } = item;
+  const normalizedBlockedBy = blockedBy?.trim();
+
   return {
-    ...item,
+    ...rest,
     owner: normalizeOwnerValue(item.owner),
     workstream: normalizeWorkstreamValue(item.workstream),
-    eventGroup: normalizeEventGroupValue(item.eventGroup)
-  };
+    eventGroup: normalizeEventGroupValue(item.eventGroup),
+    isBlocked: isBlocked ?? blocked ?? undefined,
+    blockedBy: normalizedBlockedBy ? normalizedBlockedBy : undefined
+  } as NormalizeActionItemResult<T>;
 }
 
 export function syncActionItemStatus<T extends Pick<ActionItem, "status" | "waitingOn">>(
@@ -739,6 +773,41 @@ export function matchesActionFocus(item: ActionItem, focus: ActionFocus) {
   }
 
   return true;
+}
+
+export function matchesActionLens(item: ActionItem, lens: ActionLens) {
+  if (lens === "all") {
+    return true;
+  }
+
+  if (isTerminalStatus(item.status)) {
+    return false;
+  }
+
+  if (lens === "reviewMissingDueDate") {
+    return !hasDueDate(item.dueDate);
+  }
+
+  if (lens === "reviewWaitingTooLong") {
+    return isWaitingIssue(item) && daysSince(item.lastUpdated) >= 7;
+  }
+
+  if (lens === "reviewStale") {
+    return !isWaitingIssue(item) && daysSince(item.lastUpdated) >= 14;
+  }
+
+  const needsAttention =
+    isBlockedItem(item) ||
+    isWaitingIssue(item) ||
+    isOverdue(item.dueDate) ||
+    isItemDueSoon(item) ||
+    item.status === "In Progress";
+
+  if (lens === "executionNow") {
+    return needsAttention;
+  }
+
+  return !needsAttention;
 }
 
 export function matchesEventGroup(item: ActionItem, eventGroup?: string) {

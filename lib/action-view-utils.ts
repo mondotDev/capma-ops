@@ -2,12 +2,14 @@ import type { ActionItem } from "@/lib/sample-data";
 import {
   type ActionFilter,
   type ActionFocus,
+  type ActionLens,
   formatDueLabel,
   isBlockedItem,
   isItemMissingDueDate,
   isWaitingIssue,
   matchesActionFilter,
   matchesActionFocus,
+  matchesActionLens,
   matchesEventGroup,
   matchesSearchQuery
 } from "@/lib/ops-utils";
@@ -17,6 +19,7 @@ export type ActionViewFilters = {
   activeEventGroup: string;
   activeFilter: ActionFilter;
   activeFocus: ActionFocus;
+  activeLens: ActionLens;
   activeIssue: string;
   activeQuery: string;
   showCompleted: boolean;
@@ -33,6 +36,20 @@ export function getActionFilterValue(filter?: string): ActionFilter {
 export function getActionFocusValue(focus?: string): ActionFocus {
   if (focus === "sponsor" || focus === "production") {
     return focus;
+  }
+
+  return "all";
+}
+
+export function getActionLensValue(lens?: string): ActionLens {
+  if (
+    lens === "executionNow" ||
+    lens === "plannedLater" ||
+    lens === "reviewMissingDueDate" ||
+    lens === "reviewWaitingTooLong" ||
+    lens === "reviewStale"
+  ) {
+    return lens;
   }
 
   return "all";
@@ -71,6 +88,7 @@ export function getVisibleActionItems(items: ActionItem[], filters: ActionViewFi
     return (
       matchesActionFilter(item, filters.activeFilter) &&
       matchesActionFocus(item, filters.activeFocus) &&
+      matchesActionLens(item, filters.activeLens) &&
       matchesEventGroup(item, filters.activeEventGroup) &&
       matchesSearchQuery(item, filters.activeQuery)
     );

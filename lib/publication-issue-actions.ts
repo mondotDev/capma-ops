@@ -1,11 +1,16 @@
 import { createActionItem } from "@/lib/action-item-mutations";
 import { getPublicationTemplates } from "@/lib/publication-templates";
 import type { ActionItem } from "@/lib/sample-data";
-import { getIssueDueDate, getWorkstreamForIssue, type IssueStatus } from "@/lib/ops-utils";
+import { getIssueDueDate, getWorkstreamForIssue, isTerminalStatus, type IssueStatus } from "@/lib/ops-utils";
 
 export type GenerateDeliverablesResult = {
   created: number;
   skipped: number;
+};
+export type CompletePublicationIssueResult = {
+  issueStatuses: Partial<Record<string, IssueStatus>>;
+  blockedDeliverables: string[];
+  completed: boolean;
 };
 
 export function generatePublicationIssueDeliverables(
@@ -65,9 +70,37 @@ export function setPublicationIssueStatus(
   issue: string,
   status: IssueStatus
 ): Partial<Record<string, IssueStatus>> {
+  if (status !== "Open") {
+    return {
+      ...issueStatuses,
+      [issue]: status
+    };
+  }
+
+  const workstream = getWorkstreamForIssue(issue);
+
+  if (!workstream) {
+    return {
+      ...issueStatuses,
+      [issue]: status
+    };
+  }
+
+  const nextStatuses = { ...issueStatuses };
+
+  for (const [candidateIssue, candidateStatus] of Object.entries(nextStatuses)) {
+    if (candidateIssue === issue || candidateStatus !== "Open") {
+      continue;
+    }
+
+    if (getWorkstreamForIssue(candidateIssue) === workstream) {
+      nextStatuses[candidateIssue] = "Planned";
+    }
+  }
+
   return {
-    ...issueStatuses,
-    [issue]: status
+    ...nextStatuses,
+    [issue]: "Open"
   };
 }
 
@@ -87,5 +120,29 @@ export function openPublicationIssue(
     items: generation.items,
     issueStatuses: nextIssueStatuses,
     result: generation.result
+  };
+}
+
+export function completePublicationIssue(
+  items: ActionItem[],
+  issueStatuses: Partial<Record<string, IssueStatus>>,
+  issue: string
+): CompletePublicationIssueResult {
+  const blockedDeliverables = items
+    .filter((item) => item.issue === issue && item.type === "Deliverable" && !isTerminalStatus(item.status))
+    .map((item) => item.title);
+
+  if (blockedDeliverables.length > 0) {
+    return {
+      issueStatuses,
+      blockedDeliverables,
+      completed: false
+    };
+  }
+
+  return {
+    issueStatuses: setPublicationIssueStatus(issueStatuses, issue, "Complete"),
+    blockedDeliverables: [],
+    completed: true
   };
 }

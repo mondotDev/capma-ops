@@ -32,6 +32,8 @@ type QuickAddFormState = {
   owner: string;
   status: string;
   waitingOn: string;
+  isBlocked: boolean;
+  blockedBy: string;
   notes: string;
 };
 
@@ -222,6 +224,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       owner: formState.owner,
       status: formState.status,
       waitingOn: formState.waitingOn,
+      isBlocked: formState.isBlocked || undefined,
+      blockedBy: formState.blockedBy,
       notes: formState.notes.trim()
     } satisfies NewActionItem);
 
@@ -450,6 +454,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </select>
                 </div>
 
+                <div className="field">
+                  <label className="toggle" htmlFor="quick-add-blocked">
+                    <input
+                      checked={formState.isBlocked}
+                      id="quick-add-blocked"
+                      onChange={(event) => updateField("isBlocked", event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Blocked</span>
+                  </label>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="quick-add-blocked-by">Blocked By</label>
+                  <input
+                    className="field-control"
+                    id="quick-add-blocked-by"
+                    onChange={(event) => updateField("blockedBy", event.target.value)}
+                    value={formState.blockedBy}
+                  />
+                </div>
+
                 <div className="field field--wide">
                   <label htmlFor="quick-add-notes">Notes</label>
                   <textarea
@@ -625,6 +651,8 @@ function createInitialFormState(): QuickAddFormState {
     owner: DEFAULT_OWNER,
     status: "Not Started",
     waitingOn: "",
+    isBlocked: false,
+    blockedBy: "",
     notes: ""
   };
 }

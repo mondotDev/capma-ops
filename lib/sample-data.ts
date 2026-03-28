@@ -6,7 +6,7 @@ export type ActionItem = {
   type: string;
   workstream: string;
   eventGroup?: string;
-  blocked?: boolean;
+  isBlocked?: boolean;
   blockedBy?: string;
   issue?: string;
   dueDate: string;

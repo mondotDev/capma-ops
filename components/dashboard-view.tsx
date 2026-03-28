@@ -199,8 +199,11 @@ export function DashboardView() {
                   onChange={(event) =>
                     {
                       const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
-                      setIssueStatus(issue.label, nextStatus);
+                      const result = setIssueStatus(issue.label, nextStatus);
                       setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
+                      if (nextStatus === "Complete" && !result.completed) {
+                        setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
+                      }
                     }
                   }
                   value={issue.status}
@@ -228,8 +231,13 @@ export function DashboardView() {
                       <button
                         className="button-danger"
                         onClick={() => {
-                          completeIssue(issue.label);
+                          const result = completeIssue(issue.label);
                           setIssuePendingCompletion(null);
+                          if (!result.completed) {
+                            setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
+                            return;
+                          }
+
                           setActivePublicationIssue(null);
                           setPublicationFeedback(`${issue.label} marked complete.`);
                         }}
@@ -386,6 +394,21 @@ function formatGenerateMissingFeedback(issue: string, created: number, skipped: 
   }
 
   return `${issue}: ${created} created, ${skipped} already existed.`;
+}
+
+function formatCompletionBlockedFeedback(issue: string, blockedDeliverables: string[]) {
+  if (blockedDeliverables.length === 0) {
+    return `${issue} cannot be completed yet.`;
+  }
+
+  const preview = blockedDeliverables.slice(0, 2).join(", ");
+  const remainder = blockedDeliverables.length - 2;
+
+  if (remainder > 0) {
+    return `${issue} cannot be completed. Open deliverables remain: ${preview}, plus ${remainder} more.`;
+  }
+
+  return `${issue} cannot be completed. Open deliverables remain: ${preview}.`;
 }
 
 function reorderVisibleIssues(
