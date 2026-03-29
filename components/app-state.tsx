@@ -28,6 +28,12 @@ import {
   updateActionItemById,
   type NewActionItemInput
 } from "@/lib/action-item-mutations";
+import {
+  initialLegDayCollateralItems,
+  initialLegDayCollateralProfile,
+  type CollateralItem,
+  type LegDayCollateralProfile
+} from "@/lib/collateral-data";
 import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
 import {
   type IssueRecord,
@@ -52,10 +58,14 @@ export type ImportAppStateResult = {
 type AppStateContextValue = {
   items: ActionItem[];
   issues: IssueRecord[];
+  collateralItems: CollateralItem[];
+  collateralProfile: LegDayCollateralProfile;
   workstreamSchedules: WorkstreamSchedule[];
   addItem: (item: NewActionItem) => void;
+  addCollateralItem: (item: Omit<CollateralItem, "id" | "lastUpdated">) => string;
   bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => void;
   deleteItem: (id: string) => void;
+  deleteCollateralItem: (id: string) => void;
   completeIssue: (issue: string) => CompletePublicationIssueResult;
   exportAppStateSnapshot: () => AppStateSnapshot;
   generateMissingDeliverablesForIssue: (issue: string) => GenerateDeliverablesResult;
@@ -63,8 +73,10 @@ type AppStateContextValue = {
   importAppStateSnapshot: (value: unknown) => ImportAppStateResult;
   openIssue: (issue: string) => GenerateDeliverablesResult;
   resetAppState: () => void;
+  setCollateralProfile: (profile: LegDayCollateralProfile) => void;
   setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => void;
   setIssueStatus: (issue: string, status: IssueStatus) => CompletePublicationIssueResult;
+  updateCollateralItem: (id: string, updates: Partial<CollateralItem>) => void;
   updateItem: (id: string, updates: Partial<ActionItem>) => void;
 };
 
@@ -73,6 +85,8 @@ const AppStateContext = createContext<AppStateContextValue | undefined>(undefine
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ActionItem[]>(getDefaultItems);
   const [issueStatuses, setIssueStatuses] = useState<Partial<Record<string, IssueStatus>>>({});
+  const [collateralItems, setCollateralItems] = useState<CollateralItem[]>(getDefaultCollateralItems);
+  const [collateralProfile, setCollateralProfileState] = useState<LegDayCollateralProfile>(getDefaultCollateralProfile);
   const [workstreamSchedules, setWorkstreamSchedulesState] = useState<WorkstreamSchedule[]>(getDefaultWorkstreamSchedules);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [shouldPersist, setShouldPersist] = useState(true);
@@ -89,6 +103,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         })
       );
       setIssueStatuses(loadResult.state.issueStatuses);
+      setCollateralItems(loadResult.state.collateralItems);
+      setCollateralProfileState(loadResult.state.collateralProfile);
       setWorkstreamSchedulesState(loadResult.state.workstreamSchedules);
     }
 
@@ -104,9 +120,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     savePersistedAppState({
       items,
       issueStatuses,
+      collateralItems,
+      collateralProfile,
       workstreamSchedules
     });
-  }, [hasHydrated, issueStatuses, items, shouldPersist, workstreamSchedules]);
+  }, [collateralItems, collateralProfile, hasHydrated, issueStatuses, items, shouldPersist, workstreamSchedules]);
 
   function enablePersistence() {
     setShouldPersist(true);
@@ -120,6 +138,41 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   function deleteItem(id: string) {
     enablePersistence();
     setItems((current) => deleteActionItemById(current, id));
+  }
+
+  function addCollateralItem(item: Omit<CollateralItem, "id" | "lastUpdated">) {
+    enablePersistence();
+    const nextId = `collateral-${crypto.randomUUID()}`;
+    setCollateralItems((current) => [
+      {
+        ...item,
+        id: nextId,
+        lastUpdated: new Date().toISOString().slice(0, 10)
+      },
+      ...current
+    ]);
+
+    return nextId;
+  }
+
+  function updateCollateralItem(id: string, updates: Partial<CollateralItem>) {
+    enablePersistence();
+    setCollateralItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...updates,
+              lastUpdated: new Date().toISOString().slice(0, 10)
+            }
+          : item
+      )
+    );
+  }
+
+  function deleteCollateralItem(id: string) {
+    enablePersistence();
+    setCollateralItems((current) => current.filter((item) => item.id !== id));
   }
 
   function generateIssueDeliverables(issue: string): GenerateDeliverablesResult {
@@ -194,6 +247,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     enablePersistence();
     setItems(getDefaultItems());
     setIssueStatuses({});
+    setCollateralItems(getDefaultCollateralItems());
+    setCollateralProfileState(getDefaultCollateralProfile());
     setWorkstreamSchedulesState(getDefaultWorkstreamSchedules());
   }
 
@@ -201,15 +256,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     () => ({
     items,
     issues: getGeneratedIssues(issueStatuses),
+    collateralItems,
+    collateralProfile,
     workstreamSchedules,
     addItem,
+    addCollateralItem,
     bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => {
       enablePersistence();
       setItems((current) => applyBulkActionItemUpdates(current, ids, updates));
     },
     deleteItem,
+    deleteCollateralItem,
     completeIssue,
-    exportAppStateSnapshot: () => createAppStateSnapshot(items, issueStatuses, workstreamSchedules),
+    exportAppStateSnapshot: () =>
+      createAppStateSnapshot(items, issueStatuses, collateralItems, collateralProfile, workstreamSchedules),
     generateMissingDeliverablesForIssue,
     generateIssueDeliverables,
     importAppStateSnapshot: (value: unknown) => {
@@ -222,6 +282,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       enablePersistence();
       setItems(normalizeActionItems(parsedState.items));
       setIssueStatuses(parsedState.issueStatuses);
+      setCollateralItems(parsedState.collateralItems);
+      setCollateralProfileState(parsedState.collateralProfile);
       setWorkstreamSchedulesState(parsedState.workstreamSchedules);
 
       return {
@@ -231,17 +293,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     },
     openIssue,
     resetAppState,
+    setCollateralProfile: (profile: LegDayCollateralProfile) => {
+      enablePersistence();
+      setCollateralProfileState(profile);
+    },
     setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => {
       enablePersistence();
       setWorkstreamSchedulesState(schedules);
     },
     setIssueStatus,
+    updateCollateralItem,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       enablePersistence();
       setItems((current) => updateActionItemById(current, id, updates));
     }
     }),
-    [issueStatuses, items, workstreamSchedules]
+    [collateralItems, collateralProfile, issueStatuses, items, workstreamSchedules]
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
@@ -259,4 +326,12 @@ export function useAppState() {
 
 function getDefaultItems() {
   return normalizeActionItems(initialActionItems);
+}
+
+function getDefaultCollateralItems() {
+  return initialLegDayCollateralItems.map((item) => ({ ...item }));
+}
+
+function getDefaultCollateralProfile() {
+  return { ...initialLegDayCollateralProfile };
 }

@@ -7,10 +7,17 @@ import {
   normalizeActionItems
 } from "../lib/action-item-mutations";
 import {
+  isCollateralDueSoon,
+  isCollateralOverdue,
+  normalizeCollateralWorkflowStatus,
+  type CollateralItem
+} from "../lib/collateral-data";
+import {
   completePublicationIssue,
   openPublicationIssue,
   setPublicationIssueStatus
 } from "../lib/publication-issue-actions";
+import { parseImportedAppState } from "../lib/app-transfer";
 import type { ActionItem } from "../lib/sample-data";
 import {
   getVisibleActionItems,
@@ -43,6 +50,7 @@ import {
   syncEventGroupWithWorkstream,
   validateActionItemInput
 } from "../lib/ops-utils";
+import { normalizeActionWorkflowStatus } from "../lib/workflow-status";
 
 function withMockedToday<T>(isoDateTime: string, callback: () => T) {
   const RealDate = Date;
@@ -79,6 +87,22 @@ function createItem(overrides: Partial<ActionItem> = {}): ActionItem {
     waitingOn: "",
     lastUpdated: "2026-03-28",
     noteEntries: [],
+    ...overrides
+  };
+}
+
+function createCollateralItem(overrides: Partial<CollateralItem> = {}): CollateralItem {
+  return {
+    id: "collateral-1",
+    subEvent: "Legislative Visits",
+    itemName: "Leave-behind",
+    status: "Backlog",
+    printer: "CAPMA",
+    printerDeadline: "2026-03-30",
+    quantity: "100",
+    updateType: "Full Redesign",
+    notes: "",
+    lastUpdated: "2026-03-28",
     ...overrides
   };
 }
@@ -140,6 +164,31 @@ test("getWorkstreamSummary returns workload rollups by workstream", () => {
       inProgress: 1
     });
   });
+});
+
+test("workflow status normalization keeps module-specific statuses mappable", () => {
+  assert.equal(normalizeActionWorkflowStatus("Waiting"), "waiting");
+  assert.equal(normalizeActionWorkflowStatus("Canceled"), "canceled");
+  assert.equal(normalizeCollateralWorkflowStatus("Ready for Print"), "ready");
+  assert.equal(normalizeCollateralWorkflowStatus("Cut"), "cut");
+});
+
+test("collateral deadline helpers ignore terminal records and respect printer deadlines", () => {
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    assert.equal(isCollateralDueSoon(createCollateralItem({ printerDeadline: "2026-03-30" })), true);
+    assert.equal(isCollateralOverdue(createCollateralItem({ printerDeadline: "2026-03-27" })), true);
+    assert.equal(isCollateralDueSoon(createCollateralItem({ printerDeadline: "2026-03-30", status: "Complete" })), false);
+    assert.equal(isCollateralOverdue(createCollateralItem({ printerDeadline: "2026-03-27", status: "Cut" })), false);
+  });
+});
+
+test("legacy imports restore action items without silently seeding collateral records", () => {
+  const parsed = parseImportedAppState([createItem()]);
+
+  assert.ok(parsed);
+  assert.equal(parsed.usedLegacyFormat, true);
+  assert.equal(parsed.items.length, 1);
+  assert.deepEqual(parsed.collateralItems, []);
 });
 
 test("normalizeWorkstreamSchedules preserves defaults and sorts multiple dates", () => {

@@ -1,3 +1,5 @@
+import type { CollateralItem, LegDayCollateralProfile } from "@/lib/collateral-data";
+import { initialLegDayCollateralItems, initialLegDayCollateralProfile } from "@/lib/collateral-data";
 import type { ActionItem } from "@/lib/sample-data";
 import { getDefaultWorkstreamSchedules, normalizeWorkstreamSchedules, type IssueStatus, type WorkstreamSchedule } from "@/lib/ops-utils";
 import type { AppStateSnapshot } from "@/lib/app-transfer";
@@ -5,6 +7,8 @@ import type { AppStateSnapshot } from "@/lib/app-transfer";
 export type PersistedAppState = {
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
+  collateralItems: CollateralItem[];
+  collateralProfile: LegDayCollateralProfile;
   workstreamSchedules: WorkstreamSchedule[];
 };
 
@@ -80,6 +84,8 @@ export function savePersistedAppState(state: PersistedAppState) {
 
   const serializedState = JSON.stringify({
     ...state,
+    collateralItems: state.collateralItems.map((item) => ({ ...item })),
+    collateralProfile: { ...state.collateralProfile },
     workstreamSchedules: normalizeWorkstreamSchedules(state.workstreamSchedules)
   });
 
@@ -140,6 +146,46 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     (item.eventGroup === undefined || typeof item.eventGroup === "string");
 }
 
+function isCollateralItemRecord(value: unknown): value is CollateralItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const item = value as Partial<CollateralItem>;
+
+  return [
+    item.id,
+    item.subEvent,
+    item.itemName,
+    item.status,
+    item.printer,
+    item.printerDeadline,
+    item.quantity,
+    item.updateType,
+    item.notes,
+    item.lastUpdated
+  ].every((field) => typeof field === "string");
+}
+
+function isCollateralProfileRecord(value: unknown): value is LegDayCollateralProfile {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const profile = value as Partial<LegDayCollateralProfile>;
+
+  return [
+    profile.eventStartDate,
+    profile.eventEndDate,
+    profile.roomBlockDeadline,
+    profile.roomBlockNote,
+    profile.logoDeadline,
+    profile.logoDeadlineNote,
+    profile.externalPrintingDue,
+    profile.internalPrintingStart
+  ].every((field) => typeof field === "string");
+}
+
 function isNoteEntryList(value: unknown) {
   return (
     Array.isArray(value) &&
@@ -198,8 +244,14 @@ function parseStoredAppState(
     }
 
     const items = parsedState.items.filter(isActionItemRecord);
+    const collateralItems = Array.isArray(parsedState.collateralItems)
+      ? parsedState.collateralItems.filter(isCollateralItemRecord)
+      : initialLegDayCollateralItems;
 
-    if (items.length !== parsedState.items.length) {
+    if (
+      items.length !== parsedState.items.length ||
+      (Array.isArray(parsedState.collateralItems) && collateralItems.length !== parsedState.collateralItems.length)
+    ) {
       return { status: "invalid" };
     }
 
@@ -208,6 +260,10 @@ function parseStoredAppState(
       state: {
         items: items.map((item) => normalizeItem(item)),
         issueStatuses: parsedState.issueStatuses,
+        collateralItems: collateralItems.map((item) => ({ ...item })),
+        collateralProfile: isCollateralProfileRecord(parsedState.collateralProfile)
+          ? { ...parsedState.collateralProfile }
+          : { ...initialLegDayCollateralProfile },
         workstreamSchedules: Array.isArray(parsedState.workstreamSchedules)
           ? normalizeWorkstreamSchedules(parsedState.workstreamSchedules)
           : getDefaultWorkstreamSchedules()

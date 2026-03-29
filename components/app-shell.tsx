@@ -156,7 +156,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const result = importAppStateSnapshot(pendingImportPayload);
       setSettingsFeedback(
         result.usedLegacyFormat
-          ? `Imported ${result.itemCount} items from a legacy export. Issue statuses were reset.`
+          ? `Imported ${result.itemCount} items from a legacy export. Issue statuses were reset, and collateral/settings used defaults.`
           : `Imported ${result.itemCount} items and restored issue statuses.`
       );
       setPendingImportPayload(null);
@@ -301,6 +301,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href="/action"
           >
             Action View
+          </Link>
+          <Link
+            className={pathname === "/collateral" ? "sidebar__link active" : "sidebar__link"}
+            href="/collateral"
+          >
+            Collateral
           </Link>
         </nav>
         <div className="sidebar__footer">

@@ -1,3 +1,9 @@
+import {
+  initialLegDayCollateralItems,
+  initialLegDayCollateralProfile,
+  type CollateralItem,
+  type LegDayCollateralProfile
+} from "@/lib/collateral-data";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getDefaultWorkstreamSchedules,
@@ -11,12 +17,16 @@ export type AppStateSnapshot = {
   exportedAt: string;
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
+  collateralItems: CollateralItem[];
+  collateralProfile: LegDayCollateralProfile;
   workstreamSchedules: WorkstreamSchedule[];
 };
 
 export function createAppStateSnapshot(
   items: ActionItem[],
   issueStatuses: Partial<Record<string, IssueStatus>>,
+  collateralItems: CollateralItem[],
+  collateralProfile: LegDayCollateralProfile,
   workstreamSchedules: WorkstreamSchedule[]
 ): AppStateSnapshot {
   return {
@@ -24,6 +34,8 @@ export function createAppStateSnapshot(
     exportedAt: new Date().toISOString(),
     items: items.map((item) => ({ ...item })),
     issueStatuses: { ...issueStatuses },
+    collateralItems: collateralItems.map((item) => ({ ...item })),
+    collateralProfile: { ...collateralProfile },
     workstreamSchedules: normalizeWorkstreamSchedules(workstreamSchedules)
   };
 }
@@ -33,6 +45,8 @@ export function parseImportedAppState(
 ): ({
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
+  collateralItems: CollateralItem[];
+  collateralProfile: LegDayCollateralProfile;
   workstreamSchedules: WorkstreamSchedule[];
 } & { usedLegacyFormat: boolean }) | null {
   if (Array.isArray(value)) {
@@ -45,6 +59,8 @@ export function parseImportedAppState(
     return {
       items,
       issueStatuses: {},
+      collateralItems: [],
+      collateralProfile: { ...initialLegDayCollateralProfile },
       workstreamSchedules: getDefaultWorkstreamSchedules(),
       usedLegacyFormat: true
     };
@@ -61,14 +77,24 @@ export function parseImportedAppState(
   }
 
   const items = snapshot.items.filter(isActionItemRecord);
+  const collateralItems = Array.isArray(snapshot.collateralItems)
+    ? snapshot.collateralItems.filter(isCollateralItemRecord)
+    : initialLegDayCollateralItems.map((item) => ({ ...item }));
 
-  if (items.length !== snapshot.items.length) {
+  if (
+    items.length !== snapshot.items.length ||
+    (Array.isArray(snapshot.collateralItems) && collateralItems.length !== snapshot.collateralItems.length)
+  ) {
     return null;
   }
 
   return {
     items,
     issueStatuses: snapshot.issueStatuses,
+    collateralItems,
+    collateralProfile: isCollateralProfileRecord(snapshot.collateralProfile)
+      ? snapshot.collateralProfile
+      : { ...initialLegDayCollateralProfile },
     workstreamSchedules: Array.isArray(snapshot.workstreamSchedules)
       ? normalizeWorkstreamSchedules(snapshot.workstreamSchedules)
       : getDefaultWorkstreamSchedules(),
@@ -101,6 +127,46 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     (item.blockedBy === undefined || typeof item.blockedBy === "string") &&
     (item.issue === undefined || typeof item.issue === "string") &&
     (item.eventGroup === undefined || typeof item.eventGroup === "string");
+}
+
+function isCollateralItemRecord(value: unknown): value is CollateralItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const item = value as Partial<CollateralItem>;
+
+  return [
+    item.id,
+    item.subEvent,
+    item.itemName,
+    item.status,
+    item.printer,
+    item.printerDeadline,
+    item.quantity,
+    item.updateType,
+    item.notes,
+    item.lastUpdated
+  ].every((field) => typeof field === "string");
+}
+
+function isCollateralProfileRecord(value: unknown): value is LegDayCollateralProfile {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const profile = value as Partial<LegDayCollateralProfile>;
+
+  return [
+    profile.eventStartDate,
+    profile.eventEndDate,
+    profile.roomBlockDeadline,
+    profile.roomBlockNote,
+    profile.logoDeadline,
+    profile.logoDeadlineNote,
+    profile.externalPrintingDue,
+    profile.internalPrintingStart
+  ].every((field) => typeof field === "string");
 }
 
 function isNoteEntryList(value: unknown) {
