@@ -1318,6 +1318,13 @@ tr.blocked-row {
   font-weight: 600;
 }
 
+.filter-pill--default-selected {
+  border-color: rgba(0, 59, 109, 0.2);
+  background: #f7fafc;
+  color: #496175;
+  font-weight: 600;
+}
+
 .summary-row {
   gap: 8px;
 }

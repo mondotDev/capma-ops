@@ -71,7 +71,12 @@ const FOCUS_LABELS: Record<Exclude<ActionFocus, "all">, string> = {
 const EXECUTION_LENS_OPTIONS = LENS_OPTIONS.slice(0, 3);
 const REVIEW_LENS_OPTIONS = LENS_OPTIONS.slice(3);
 const STATUS_FILTER_OPTIONS = FILTER_OPTIONS.filter(
-  (option) => option.value === "waiting" || option.value === "blocked" || option.value === "mine"
+  (option) =>
+    option.value === "overdue" ||
+    option.value === "dueSoon" ||
+    option.value === "waiting" ||
+    option.value === "blocked" ||
+    option.value === "mine"
 );
 
 export function ActionView({
@@ -376,7 +381,13 @@ export function ActionView({
                 {EXECUTION_LENS_OPTIONS.map((option) => (
                   <button
                     aria-pressed={activeLens === option.value}
-                    className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+                    className={
+                      activeLens === option.value
+                        ? option.value === "all"
+                          ? "filter-pill filter-pill--default-selected"
+                          : "filter-pill active"
+                        : "filter-pill"
+                    }
                     key={option.value}
                     onClick={() => handleLensChange(option.value)}
                     type="button"
