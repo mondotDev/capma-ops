@@ -165,6 +165,10 @@ export function DashboardView() {
                 const progressPercent =
                   issueProgress.total > 0 ? Math.round((issueProgress.complete / issueProgress.total) * 100) : 0;
                 const canCompleteIssue = issueProgress.total > 0 && issueProgress.complete === issueProgress.total;
+                const progressCopy =
+                  issueProgress.total > 0
+                    ? `${issueProgress.complete} of ${issueProgress.total} complete`
+                    : "No deliverables yet";
 
                 return (
                   <div
@@ -189,17 +193,12 @@ export function DashboardView() {
                         </div>
                         <div className="publication-row__status-line">
                           <span className="publication-row__status">{issue.status}</span>
-                          <span className="publication-row__progress-copy">
-                            {issueProgress.complete}/{issueProgress.total} complete
-                          </span>
+                          <span className="publication-row__progress-copy">{progressCopy}</span>
                         </div>
                       </div>
                       <div aria-hidden="true" className="publication-row__progress">
                         <span className="publication-row__progress-bar" style={{ width: `${progressPercent}%` }} />
                       </div>
-                      {issue.status === "Planned" && issueProgress.total === 0 ? (
-                        <div className="publication-row__meta">0 deliverables</div>
-                      ) : null}
                       {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
                     </div>
                     <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
@@ -244,36 +243,41 @@ export function DashboardView() {
                       ) : null}
                     </div>
                     <div className="publication-row__utility" onClick={(event) => event.stopPropagation()}>
-                      <select
-                        aria-label={`Issue status for ${issue.label}`}
-                        className="cell-select publication-row__status-select"
-                        onChange={(event) => {
-                          const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
-                          const result = setIssueStatus(issue.label, nextStatus);
-                          setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
-                          if (nextStatus === "Complete" && !result.completed) {
-                            setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
-                          }
-                        }}
-                        value={issue.status}
-                      >
-                        <option value="Planned">Planned</option>
-                        <option value="Open">Open</option>
-                        <option value="Complete">Complete</option>
-                      </select>
-                      {issue.status === "Open" && issuePendingCompletion !== issue.label ? (
-                        <button
-                          className={
-                            canCompleteIssue
-                              ? "button-link button-link--inline-secondary publication-row__complete publication-row__complete--ready"
-                              : "button-link button-link--inline-secondary publication-row__complete"
-                          }
-                          onClick={() => setIssuePendingCompletion(issue.label)}
-                          type="button"
+                      <div className="publication-row__utility-label">Manage issue</div>
+                      <div className="publication-row__utility-controls">
+                        <select
+                          aria-label={`Issue status for ${issue.label}`}
+                          className="cell-select publication-row__status-select"
+                          onChange={(event) => {
+                            const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
+                            const result = setIssueStatus(issue.label, nextStatus);
+                            setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
+                            if (nextStatus === "Complete" && !result.completed) {
+                              setPublicationFeedback(
+                                formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables)
+                              );
+                            }
+                          }}
+                          value={issue.status}
                         >
-                          Complete Issue
-                        </button>
-                      ) : null}
+                          <option value="Planned">Planned</option>
+                          <option value="Open">Open</option>
+                          <option value="Complete">Complete</option>
+                        </select>
+                        {issue.status === "Open" && issuePendingCompletion !== issue.label ? (
+                          <button
+                            className={
+                              canCompleteIssue
+                                ? "button-link button-link--inline-secondary publication-row__complete publication-row__complete--ready"
+                                : "button-link button-link--inline-secondary publication-row__complete"
+                            }
+                            onClick={() => setIssuePendingCompletion(issue.label)}
+                            type="button"
+                          >
+                            Complete Issue
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     {issue.status === "Open" ? (
                       issuePendingCompletion === issue.label ? (

@@ -761,8 +761,8 @@ textarea {
 
 .publication-row {
   display: grid;
-  gap: 10px;
-  padding: 10px 0;
+  gap: 12px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
   color: #5f6f7d;
 }
@@ -785,7 +785,7 @@ textarea {
 
 .publication-row__body {
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
 
 .publication-row__meta {
@@ -798,21 +798,21 @@ textarea {
 
 .publication-row__summary {
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
 .publication-row__title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.3;
-  color: #334155;
+  line-height: 1.28;
+  color: #314254;
 }
 
 .publication-row__status-line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .publication-row__status {
@@ -830,12 +830,13 @@ textarea {
 
 .publication-row__progress-copy {
   font-size: 12px;
-  color: #6b7a89;
+  font-weight: 500;
+  color: #627283;
 }
 
 .publication-row__progress {
   position: relative;
-  height: 6px;
+  height: 5px;
   overflow: hidden;
   border-radius: 999px;
   background: #e8edf3;
@@ -858,7 +859,7 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -871,27 +872,51 @@ textarea {
 }
 
 .publication-row__utility {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.publication-row__utility-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #95a1ae;
+}
+
+.publication-row__utility-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
 }
 
 .publication-row__status-select {
-  flex: 1 1 180px;
-  min-width: 180px;
+  width: 100%;
+  min-width: 0;
   background: #fcfdff;
   border-color: #e2e8f0;
   color: #516170;
+  min-height: 38px;
 }
 
 .publication-row__complete {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #d9e2ec;
+  border-radius: 12px;
+  background: #fbfdff;
   color: #5f6f7d;
 }
 
 .publication-row__complete--ready {
   border-color: rgba(0, 59, 109, 0.22);
   color: var(--accent);
+  background: rgba(0, 59, 109, 0.04);
 }
 
 .detail-row {
