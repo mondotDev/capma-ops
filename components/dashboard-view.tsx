@@ -22,17 +22,22 @@ export function DashboardView() {
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
   const dashboardMetrics = getDashboardMetrics(items);
-  const dailyLoad = getDailyLoad(items);
+  const extendedDailyLoad = getDailyLoad(items, 30);
   const workstreamSummary = getWorkstreamSummary(items);
   const waitingTooLongCount = items.filter((item) => isWaitingTooLong(item)).length;
-  const highestLoadCount = Math.max(...dailyLoad.map((entry) => entry.count), 0);
+  const highestLoadCount = Math.max(...extendedDailyLoad.map((entry) => entry.count), 0);
   const highlightedLoadDates = new Set(
-    [...dailyLoad]
+    [...extendedDailyLoad]
       .sort((a, b) => b.count - a.count || a.date.localeCompare(b.date))
       .filter((entry) => entry.count > 0)
       .slice(0, 3)
       .map((entry) => entry.date)
   );
+  const nearTermLoad = extendedDailyLoad.slice(0, 7);
+  const busiestUpcomingLoad = [...extendedDailyLoad]
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count || a.date.localeCompare(b.date))
+    .slice(0, 3);
   const visiblePublicationIssues = reorderVisibleIssues(
     getVisiblePublicationIssues(issues),
     activePublicationIssue
@@ -263,8 +268,43 @@ export function DashboardView() {
 
       <div className="card card--secondary">
         <div className="card__title">UPCOMING LOAD</div>
+        <div className="load-section-label">Next 30 Days</div>
+        <div className="load-strip" aria-label="Load over the next 30 days">
+          {extendedDailyLoad.map((entry, index) => {
+            const loadLevel =
+              entry.count === 0
+                ? "load-strip__cell--zero"
+                : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.75
+                  ? "load-strip__cell--high"
+                  : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.4
+                    ? "load-strip__cell--medium"
+                    : "load-strip__cell--low";
+            const showAnchorLabel =
+              index === 0 ||
+              index === 7 ||
+              index === 14 ||
+              index === 15 ||
+              index === 22 ||
+              index === extendedDailyLoad.length - 1;
+
+            return (
+              <button
+                aria-label={`${formatShortDate(entry.date)}: ${entry.count} ${entry.count === 1 ? "item" : "items"}`}
+                className={`load-strip__cell ${loadLevel}`}
+                disabled={entry.count === 0}
+                key={entry.date}
+                onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
+                type="button"
+              >
+                <span className="load-strip__swatch" />
+                {showAnchorLabel ? <span className="load-strip__label">{formatShortDate(entry.date)}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+        <div className="load-section-label">Next 7 Days</div>
         <div className="load-list">
-          {dailyLoad.map((entry) => (
+          {nearTermLoad.map((entry) => (
             <button
               className={
                 entry.count === 0
@@ -293,6 +333,24 @@ export function DashboardView() {
             </button>
           ))}
         </div>
+        {busiestUpcomingLoad.length > 0 ? (
+          <div className="load-peaks">
+            <div className="load-peaks__title">Busiest Upcoming</div>
+            <div className="load-peaks__list">
+              {busiestUpcomingLoad.map((entry, index) => (
+                <button
+                  className={index === 0 ? "load-peaks__row load-peaks__row--peak" : "load-peaks__row"}
+                  key={entry.date}
+                  onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
+                  type="button"
+                >
+                  <span className="load-peaks__date">{formatShortDate(entry.date)}</span>
+                  <span className="load-peaks__value">{entry.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <button
