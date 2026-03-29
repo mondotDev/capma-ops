@@ -2,6 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
+import {
+  CollateralProfileCard,
+  type CollateralProfileDeadlineFilter
+} from "@/components/collateral-profile-card";
+import {
+  CollateralSummaryStrip,
+  type CollateralSummaryFilter
+} from "@/components/collateral-summary-strip";
 import { useAppState, type CreateEventInstanceInput } from "@/components/app-state";
 import {
   COLLATERAL_STATUS_OPTIONS,
@@ -73,6 +81,9 @@ export function CollateralView() {
   const [draftCollateralItem, setDraftCollateralItem] = useState<CollateralItem | null>(null);
   const [setupFeedback, setSetupFeedback] = useState<string>("");
   const [noteDraft, setNoteDraft] = useState("");
+  const [activeSummaryFilter, setActiveSummaryFilter] = useState<CollateralSummaryFilter>("all");
+  const [activeProfileDeadlineFilter, setActiveProfileDeadlineFilter] =
+    useState<CollateralProfileDeadlineFilter>("none");
   const selectedEventInstance =
     eventInstances.find((instance) => instance.id === activeEventInstanceId) ?? eventInstances[0] ?? null;
   const currentEventType =
@@ -94,6 +105,11 @@ export function CollateralView() {
     setIsActionsMenuOpen(false);
     setIsDeleteConfirmOpen(false);
   }, [selectedId, activeEventInstanceId]);
+
+  useEffect(() => {
+    setActiveSummaryFilter("all");
+    setActiveProfileDeadlineFilter("none");
+  }, [activeEventInstanceId]);
 
   useEffect(() => {
     setNoteDraft("");
@@ -151,9 +167,17 @@ export function CollateralView() {
     () => instanceItems.filter((item) => !isCollateralTerminalStatus(item.status)),
     [instanceItems]
   );
+  const filteredVisibleItems = useMemo(
+    () =>
+      visibleInstanceItems.filter((item) =>
+        matchesCollateralSummaryFilter(item, activeSummaryFilter) &&
+        matchesCollateralProfileDeadlineFilter(item, activeProfile, activeProfileDeadlineFilter)
+      ),
+    [activeProfile, activeProfileDeadlineFilter, activeSummaryFilter, visibleInstanceItems]
+  );
   const groupedItems = useMemo(
-    () => groupCollateralItems(visibleInstanceItems, instanceSubEvents, subEventNameById),
-    [visibleInstanceItems, instanceSubEvents, subEventNameById]
+    () => groupCollateralItems(filteredVisibleItems, instanceSubEvents, subEventNameById),
+    [filteredVisibleItems, instanceSubEvents, subEventNameById]
   );
   const selectedItem = visibleInstanceItems.find((item) => item.id === selectedId) ?? null;
   const selectedEventDateRange =
@@ -165,9 +189,19 @@ export function CollateralView() {
   const summary = useMemo(
     () => ({
       active: activeItems.length,
-      overdue: activeItems.filter((item) => isCollateralOverdue(item)).length,
-      dueSoon: activeItems.filter((item) => isCollateralDueSoon(item)).length,
-      ready: activeItems.filter((item) => normalizeCollateralWorkflowStatus(item.status) === "ready").length
+      needsAttention: activeItems.filter(
+        (item) => item.status === "Blocked" || (isCollateralOverdue(item) && item.status !== "Sent to Printer")
+      ).length,
+      atPrinter: activeItems.filter((item) => item.status === "Sent to Printer").length,
+      atPrinterQuantity: activeItems.reduce((total, item) => {
+        if (item.status !== "Sent to Printer") {
+          return total;
+        }
+
+        const parsedQuantity = Number.parseInt(item.quantity, 10);
+        return Number.isFinite(parsedQuantity) ? total + parsedQuantity : total;
+      }, 0),
+      readyForPrint: activeItems.filter((item) => item.status === "Ready for Print").length
     }),
     [activeItems]
   );
@@ -194,6 +228,8 @@ export function CollateralView() {
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
   const hasAppliedTemplateItems = instanceItems.some((item) => Boolean(item.templateOriginId));
+  const activeFilterLabel = getCollateralSummaryFilterLabel(activeSummaryFilter);
+  const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
 
   function handleAddCollateralItem() {
     if (draftCollateralItem && draftCollateralItem.eventInstanceId === activeEventInstanceId) {
@@ -218,6 +254,14 @@ export function CollateralView() {
       lastUpdated: new Date().toISOString().slice(0, 10)
     });
     setSelectedId(DRAFT_COLLATERAL_ID);
+  }
+
+  function toggleSummaryFilter(nextFilter: CollateralSummaryFilter) {
+    setActiveSummaryFilter((current) => (current === nextFilter ? "all" : nextFilter));
+  }
+
+  function toggleProfileDeadlineFilter(nextFilter: CollateralProfileDeadlineFilter) {
+    setActiveProfileDeadlineFilter((current) => (current === nextFilter ? "none" : nextFilter));
   }
 
   function openCreateInstanceModal() {
@@ -334,6 +378,11 @@ export function CollateralView() {
     setSelectedId(nextId);
   }
 
+  function clearCollateralFilters() {
+    setActiveSummaryFilter("all");
+    setActiveProfileDeadlineFilter("none");
+  }
+
   return (
     <section className="collateral-page">
       <div className="collateral-page__header">
@@ -407,155 +456,26 @@ export function CollateralView() {
         </div>
       ) : null}
 
-      <div className="collateral-summary">
-        <div className="collateral-metric">
-          <span className="collateral-metric__label">Active</span>
-          <strong className="collateral-metric__value">{summary.active}</strong>
-        </div>
-        <div className="collateral-metric collateral-metric--overdue">
-          <span className="collateral-metric__label">Overdue</span>
-          <strong className="collateral-metric__value">{summary.overdue}</strong>
-        </div>
-        <div className="collateral-metric collateral-metric--due-soon">
-          <span className="collateral-metric__label">Due Soon</span>
-          <strong className="collateral-metric__value">{summary.dueSoon}</strong>
-        </div>
-        <div className="collateral-metric collateral-metric--ready">
-          <span className="collateral-metric__label">Ready for Print</span>
-          <strong className="collateral-metric__value">{summary.ready}</strong>
-        </div>
-      </div>
+      <CollateralSummaryStrip
+        activeSummaryFilter={activeSummaryFilter}
+        onToggleSummaryFilter={toggleSummaryFilter}
+        summary={summary}
+      />
 
       <div className="collateral-layout">
         <div className="collateral-main">
           {selectedEventInstance?.eventTypeId === "legislative-day" && activeProfile ? (
-            <div className="card card--secondary collateral-profile">
-              <div className="card__title">EVENT PROFILE</div>
-              <div className="collateral-profile__grid">
-                <div className="field">
-                  <label htmlFor="collateral-event-start">Event Start</label>
-                  <input
-                    className="field-control"
-                    id="collateral-event-start"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        eventStartDate: event.target.value
-                      })
-                    }
-                    type="date"
-                    value={activeProfile.eventStartDate}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="collateral-event-end">Event End</label>
-                  <input
-                    className="field-control"
-                    id="collateral-event-end"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        eventEndDate: event.target.value
-                      })
-                    }
-                    type="date"
-                    value={activeProfile.eventEndDate}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="collateral-room-block">Room Block Deadline</label>
-                  <input
-                    className="field-control"
-                    id="collateral-room-block"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        roomBlockDeadline: event.target.value
-                      })
-                    }
-                    type="date"
-                    value={activeProfile.roomBlockDeadline}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="collateral-logo-deadline">Logo Deadline</label>
-                  <input
-                    className="field-control"
-                    id="collateral-logo-deadline"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        logoDeadline: event.target.value
-                      })
-                    }
-                    type="date"
-                    value={activeProfile.logoDeadline}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="collateral-external-printing">External Printing Due</label>
-                  <input
-                    className="field-control"
-                    id="collateral-external-printing"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        externalPrintingDue: event.target.value
-                      })
-                    }
-                    type="date"
-                    value={activeProfile.externalPrintingDue}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="collateral-internal-printing">Start Internal Printing</label>
-                  <input
-                    className="field-control"
-                    id="collateral-internal-printing"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        internalPrintingStart: event.target.value
-                      })
-                    }
-                    type="date"
-                    value={activeProfile.internalPrintingStart}
-                  />
-                </div>
-              </div>
-              <div className="collateral-profile__notes">
-                <div className="field">
-                  <label htmlFor="collateral-room-block-note">Room Block Note</label>
-                  <textarea
-                    className="field-control"
-                    id="collateral-room-block-note"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        roomBlockNote: event.target.value
-                      })
-                    }
-                    rows={2}
-                    value={activeProfile.roomBlockNote}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="collateral-logo-note">Logo Deadline Note</label>
-                  <textarea
-                    className="field-control"
-                    id="collateral-logo-note"
-                    onChange={(event) =>
-                      setCollateralProfile(activeEventInstanceId, {
-                        ...activeProfile,
-                        logoDeadlineNote: event.target.value
-                      })
-                    }
-                    rows={2}
-                    value={activeProfile.logoDeadlineNote}
-                  />
-                </div>
-              </div>
-            </div>
+            <CollateralProfileCard
+              activeProfileDeadlineFilter={activeProfileDeadlineFilter}
+              onProfileChange={(updates) =>
+                setCollateralProfile(activeEventInstanceId, {
+                  ...activeProfile,
+                  ...updates
+                })
+              }
+              onToggleProfileDeadlineFilter={toggleProfileDeadlineFilter}
+              profile={activeProfile}
+            />
           ) : null}
 
           <div className="card card--secondary collateral-groups">
@@ -563,16 +483,42 @@ export function CollateralView() {
               COLLATERAL ITEMS
               {currentEventType ? <span className="collateral-card-context"> - {currentEventType.name}</span> : null}
             </div>
+            {activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none" ? (
+              <div className="collateral-filter-context">
+                <span>
+                  Showing:{" "}
+                  {[
+                    activeSummaryFilter !== "all" ? activeFilterLabel : null,
+                    activeProfileDeadlineFilter !== "none"
+                      ? `Due by ${activeProfileFilterLabel}`
+                      : null
+                  ]
+                    .filter(Boolean)
+                    .join(" • ")}
+                </span>
+                <button
+                  className="button-link button-link--inline-secondary"
+                  onClick={clearCollateralFilters}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
             {groupedItems.length === 0 ? (
               <div className="empty-state empty-state--actionable">
-                <div className="empty-state__title">This event instance is empty.</div>
+                <div className="empty-state__title">
+                  {activeSummaryFilter === "all" ? "This event instance is empty." : "No items match this view."}
+                </div>
                 <div className="empty-state__copy">
-                  {defaultTemplatePack
-                    ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
-                    : "Add your first collateral item manually to start tracking production work for this event instance."}
+                  {activeSummaryFilter === "all"
+                    ? defaultTemplatePack
+                      ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
+                      : "Add your first collateral item manually to start tracking production work for this event instance."
+                    : "Try a different summary view or clear the filter to return to the full collateral list."}
                 </div>
                 <div className="empty-state__actions">
-                  {defaultTemplatePack ? (
+                  {activeSummaryFilter === "all" && defaultTemplatePack ? (
                     <button
                       className="topbar__button"
                       onClick={() => applyDefaultTemplateToInstance(activeEventInstanceId)}
@@ -581,9 +527,19 @@ export function CollateralView() {
                       Apply Default Template
                     </button>
                   ) : null}
-                  <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
-                    Add First Collateral Item
-                  </button>
+                  {activeSummaryFilter === "all" && activeProfileDeadlineFilter === "none" ? (
+                    <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
+                      Add First Collateral Item
+                    </button>
+                  ) : (
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={clearCollateralFilters}
+                      type="button"
+                    >
+                      Clear Filter
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1256,4 +1212,105 @@ function getCollateralStatusClassName(item: CollateralItem) {
   }
 
   return "collateral-status";
+}
+
+function matchesCollateralSummaryFilter(item: CollateralItem, filter: CollateralSummaryFilter) {
+  if (filter === "all") {
+    return true;
+  }
+
+  if (filter === "active") {
+    return !isCollateralTerminalStatus(item.status);
+  }
+
+  if (filter === "needsAttention") {
+    return item.status === "Blocked" || (isCollateralOverdue(item) && item.status !== "Sent to Printer");
+  }
+
+  if (filter === "atPrinter") {
+    return item.status === "Sent to Printer";
+  }
+
+  if (filter === "readyForPrint") {
+    return item.status === "Ready for Print";
+  }
+
+  return true;
+}
+
+function getCollateralSummaryFilterLabel(filter: CollateralSummaryFilter) {
+  if (filter === "active") {
+    return "Active";
+  }
+
+  if (filter === "needsAttention") {
+    return "Needs Attention";
+  }
+
+  if (filter === "atPrinter") {
+    return "At Printer";
+  }
+
+  if (filter === "readyForPrint") {
+    return "Ready for Print";
+  }
+
+  return "All";
+}
+
+function matchesCollateralProfileDeadlineFilter(
+  item: CollateralItem,
+  profile: LegDayCollateralProfile | null,
+  filter: CollateralProfileDeadlineFilter
+) {
+  if (filter === "none") {
+    return true;
+  }
+
+  if (isCollateralTerminalStatus(item.status) || item.dueDate.length === 0 || !profile) {
+    return false;
+  }
+
+  const targetDate = getProfileDeadlineDate(profile, filter);
+
+  if (!targetDate) {
+    return false;
+  }
+
+  return item.dueDate <= targetDate;
+}
+
+function getProfileDeadlineDate(
+  profile: LegDayCollateralProfile,
+  filter: CollateralProfileDeadlineFilter
+) {
+  if (filter === "logoDeadline") {
+    return profile.logoDeadline;
+  }
+
+  if (filter === "externalPrintingDue") {
+    return profile.externalPrintingDue;
+  }
+
+  if (filter === "internalPrintingStart") {
+    return profile.internalPrintingStart;
+  }
+
+  return "";
+}
+
+function getCollateralProfileDeadlineFilterLabel(filter: CollateralProfileDeadlineFilter) {
+  if (filter === "logoDeadline") {
+    return "Logo Deadline";
+  }
+
+  if (filter === "externalPrintingDue") {
+    return "External Printing Due";
+  }
+
+  if (filter === "internalPrintingStart") {
+    return "Start Internal Printing";
+  }
+
+  return "";
 }
