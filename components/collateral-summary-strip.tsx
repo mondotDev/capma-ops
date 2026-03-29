@@ -11,7 +11,7 @@ export type CollateralSummaryMetrics = {
   active: number;
   needsAttention: number;
   atPrinter: number;
-  atPrinterQuantity: number;
+  atPrinterQuantity: number | null;
   readyForPrint: number;
 };
 
@@ -54,13 +54,13 @@ export function CollateralSummaryStrip({
         )}
         onClick={() => onToggleSummaryFilter("atPrinter")}
         type="button"
-      >
-        <span className="collateral-metric__label">At Printer</span>
-        <strong className="collateral-metric__value">{summary.atPrinter}</strong>
-        {summary.atPrinterQuantity > 0 ? (
-          <span className="collateral-metric__subvalue">{summary.atPrinterQuantity} qty in production</span>
-        ) : null}
-      </button>
+        >
+          <span className="collateral-metric__label">At Printer</span>
+          <strong className="collateral-metric__value">{summary.atPrinter}</strong>
+          {summary.atPrinterQuantity !== null ? (
+            <span className="collateral-metric__subvalue">{summary.atPrinterQuantity} qty in production</span>
+          ) : null}
+        </button>
       <button
         className={getCollateralMetricClassName(
           activeSummaryFilter === "readyForPrint",

@@ -7,6 +7,7 @@ import {
   normalizeActionItems
 } from "../lib/action-item-mutations";
 import {
+  isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
   normalizeCollateralItem,
@@ -177,13 +178,27 @@ test("workflow status normalization keeps module-specific statuses mappable", ()
   assert.equal(normalizeCollateralWorkflowStatus("Cut"), "cut");
 });
 
-test("collateral deadline helpers ignore terminal records and respect printer deadlines", () => {
+test("collateral deadline helpers ignore terminal and printer-sent records for urgency", () => {
   withMockedToday("2026-03-28T00:00:00.000Z", () => {
     assert.equal(isCollateralDueSoon(createCollateralItem({ dueDate: "2026-03-30" })), true);
     assert.equal(isCollateralOverdue(createCollateralItem({ dueDate: "2026-03-27" })), true);
+    assert.equal(
+      isCollateralDueSoon(createCollateralItem({ dueDate: "2026-03-30", status: "Sent to Printer" })),
+      false
+    );
+    assert.equal(
+      isCollateralOverdue(createCollateralItem({ dueDate: "2026-03-27", status: "Sent to Printer" })),
+      false
+    );
     assert.equal(isCollateralDueSoon(createCollateralItem({ dueDate: "2026-03-30", status: "Complete" })), false);
     assert.equal(isCollateralOverdue(createCollateralItem({ dueDate: "2026-03-27", status: "Cut" })), false);
   });
+});
+
+test("collateral blocked helper treats status and blockedBy as the same blocked signal", () => {
+  assert.equal(isCollateralBlocked(createCollateralItem({ status: "Blocked", blockedBy: "" })), true);
+  assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "Vendor proof" })), true);
+  assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "" })), false);
 });
 
 test("legacy imports restore action items without silently seeding collateral records", () => {

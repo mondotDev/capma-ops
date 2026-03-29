@@ -14,6 +14,7 @@ import { useAppState, type CreateEventInstanceInput } from "@/components/app-sta
 import {
   COLLATERAL_STATUS_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
+  isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
   isCollateralTerminalStatus,
@@ -183,22 +184,31 @@ export function CollateralView() {
         : `${formatShortDate(selectedEventInstance.startDate)} - ${formatShortDate(selectedEventInstance.endDate)}`
       : "";
   const summary = useMemo(
-    () => ({
-      active: activeItems.length,
-      needsAttention: activeItems.filter(
-        (item) => item.status === "Blocked" || (isCollateralOverdue(item) && item.status !== "Sent to Printer")
-      ).length,
-      atPrinter: activeItems.filter((item) => item.status === "Sent to Printer").length,
-      atPrinterQuantity: activeItems.reduce((total, item) => {
-        if (item.status !== "Sent to Printer") {
-          return total;
+    () => {
+      const atPrinterItems = activeItems.filter((item) => item.status === "Sent to Printer");
+      const parsedAtPrinterQuantities = atPrinterItems.map((item) => {
+        const trimmedQuantity = item.quantity.trim();
+        if (!trimmedQuantity || !/^\d+$/.test(trimmedQuantity)) {
+          return null;
         }
 
-        const parsedQuantity = Number.parseInt(item.quantity, 10);
-        return Number.isFinite(parsedQuantity) ? total + parsedQuantity : total;
-      }, 0),
-      readyForPrint: activeItems.filter((item) => item.status === "Ready for Print").length
-    }),
+        return Number.parseInt(trimmedQuantity, 10);
+      });
+      const canShowAtPrinterQuantity =
+        atPrinterItems.length > 0 && parsedAtPrinterQuantities.every((quantity) => quantity !== null);
+
+      return {
+        active: activeItems.length,
+        needsAttention: activeItems.filter(
+          (item) => isCollateralBlocked(item) || isCollateralOverdue(item)
+        ).length,
+        atPrinter: atPrinterItems.length,
+        atPrinterQuantity: canShowAtPrinterQuantity
+          ? parsedAtPrinterQuantities.reduce((total, quantity) => total + (quantity ?? 0), 0)
+          : null,
+        readyForPrint: activeItems.filter((item) => item.status === "Ready for Print").length
+      };
+    },
     [activeItems]
   );
   const eventInstancesByType = useMemo(() => {
@@ -224,6 +234,8 @@ export function CollateralView() {
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
   const hasAppliedTemplateItems = instanceItems.some((item) => Boolean(item.templateOriginId));
+  const hasActiveCollateralFilters =
+    activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none";
   const activeFilterLabel = getCollateralSummaryFilterLabel(activeSummaryFilter);
   const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
 
@@ -479,7 +491,7 @@ export function CollateralView() {
               COLLATERAL ITEMS
               {currentEventType ? <span className="collateral-card-context"> - {currentEventType.name}</span> : null}
             </div>
-            {activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none" ? (
+            {hasActiveCollateralFilters ? (
               <div className="collateral-filter-context">
                 <span>
                   Showing:{" "}
@@ -504,17 +516,17 @@ export function CollateralView() {
             {groupedItems.length === 0 ? (
               <div className="empty-state empty-state--actionable">
                 <div className="empty-state__title">
-                  {activeSummaryFilter === "all" ? "This event instance is empty." : "No items match this view."}
+                  {hasActiveCollateralFilters ? "No items match this view." : "This event instance is empty."}
                 </div>
                 <div className="empty-state__copy">
-                  {activeSummaryFilter === "all"
+                  {!hasActiveCollateralFilters
                     ? defaultTemplatePack
                       ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
                       : "Add your first collateral item manually to start tracking production work for this event instance."
                     : "Try a different summary view or clear the filter to return to the full collateral list."}
                 </div>
                 <div className="empty-state__actions">
-                  {activeSummaryFilter === "all" && defaultTemplatePack ? (
+                  {!hasActiveCollateralFilters && defaultTemplatePack ? (
                     <button
                       className="topbar__button"
                       onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
@@ -523,7 +535,7 @@ export function CollateralView() {
                       Apply Default Template
                     </button>
                   ) : null}
-                  {activeSummaryFilter === "all" && activeProfileDeadlineFilter === "none" ? (
+                  {!hasActiveCollateralFilters ? (
                     <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
                       Add First Collateral Item
                     </button>
@@ -1173,7 +1185,7 @@ function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
     classNames.push("collateral-row--due-soon");
   }
 
-  if (item.blockedBy.trim()) {
+  if (isCollateralBlocked(item)) {
     classNames.push("collateral-row--blocked");
   }
 
@@ -1191,7 +1203,7 @@ function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
 function getCollateralStatusClassName(item: CollateralItem) {
   const normalizedStatus = normalizeCollateralWorkflowStatus(item.status);
 
-  if (item.blockedBy.trim()) {
+  if (isCollateralBlocked(item)) {
     return "collateral-status collateral-status--blocked";
   }
 
@@ -1220,7 +1232,7 @@ function matchesCollateralSummaryFilter(item: CollateralItem, filter: Collateral
   }
 
   if (filter === "needsAttention") {
-    return item.status === "Blocked" || (isCollateralOverdue(item) && item.status !== "Sent to Printer");
+    return isCollateralBlocked(item) || isCollateralOverdue(item);
   }
 
   if (filter === "atPrinter") {

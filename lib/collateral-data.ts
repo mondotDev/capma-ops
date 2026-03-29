@@ -139,12 +139,26 @@ export function isCollateralTerminalStatus(status: string) {
   return isNormalizedTerminalStatus(normalizeCollateralWorkflowStatus(status));
 }
 
+export function isCollateralBlocked(item: Pick<CollateralItem, "status" | "blockedBy">) {
+  return item.status === "Blocked" || item.blockedBy.trim().length > 0;
+}
+
 export function isCollateralOverdue(item: Pick<CollateralItem, "dueDate" | "status">) {
-  return !isCollateralTerminalStatus(item.status) && hasDueDate(item.dueDate) && isOverdue(item.dueDate);
+  return (
+    !isCollateralTerminalStatus(item.status) &&
+    item.status !== "Sent to Printer" &&
+    hasDueDate(item.dueDate) &&
+    isOverdue(item.dueDate)
+  );
 }
 
 export function isCollateralDueSoon(item: Pick<CollateralItem, "dueDate" | "status">) {
-  if (isCollateralTerminalStatus(item.status) || !hasDueDate(item.dueDate) || isOverdue(item.dueDate)) {
+  if (
+    isCollateralTerminalStatus(item.status) ||
+    item.status === "Sent to Printer" ||
+    !hasDueDate(item.dueDate) ||
+    isOverdue(item.dueDate)
+  ) {
     return false;
   }
 
