@@ -1,4 +1,4 @@
-import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
+﻿import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
 
 export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Canceled", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle", "External"] as const;
@@ -861,7 +861,12 @@ export function getWorkstreamDateContext(
     };
   }
 
-  if (schedule.mode === "range" && schedule.startDate && schedule.endDate && daysUntil(schedule.startDate) >= 0) {
+  if (
+    schedule.mode === "range" &&
+    schedule.startDate &&
+    schedule.endDate &&
+    daysUntil(schedule.endDate) >= 0
+  ) {
     return {
       dateText: `${formatShortDate(schedule.startDate)} - ${formatShortDate(schedule.endDate)}`,
       countdownText: formatCountdownText(schedule.startDate)
@@ -913,7 +918,7 @@ export function formatRelativeDueLabel(item: ActionItem) {
 }
 
 export function formatDashboardItem(item: ActionItem) {
-  return `${item.title} — ${item.issue ?? item.workstream} — ${formatRelativeDueLabel(item)}`;
+  return `${item.title} - ${item.issue ?? item.workstream} - ${formatRelativeDueLabel(item)}`;
 }
 
 export function getImmediateRiskPreview(item: ActionItem) {
@@ -922,7 +927,7 @@ export function getImmediateRiskPreview(item: ActionItem) {
   if (isItemMissingDueDate(item) || !hasDueDate(item.dueDate)) {
     return {
       title,
-      meta: `Needs date • ${item.workstream}`
+      meta: `Needs date - ${item.workstream}`
     };
   }
 
@@ -932,20 +937,20 @@ export function getImmediateRiskPreview(item: ActionItem) {
   if (days < 0) {
     return {
       title,
-      meta: `Overdue ${Math.abs(days)}d • ${dueText} • ${item.workstream}`
+      meta: `Overdue ${Math.abs(days)}d - ${dueText} - ${item.workstream}`
     };
   }
 
   if (days === 0) {
     return {
       title,
-      meta: `Due today • ${dueText} • ${item.workstream}`
+      meta: `Due today - ${dueText} - ${item.workstream}`
     };
   }
 
   return {
     title,
-    meta: `Due in ${days}d • ${dueText} • ${item.workstream}`
+    meta: `Due in ${days}d - ${dueText} - ${item.workstream}`
   };
 }
 
@@ -1008,7 +1013,7 @@ function formatCountdownText(dateValue: string) {
 }
 
 export function formatItemWithWorkstream(item: ActionItem) {
-  return `${item.title} — ${item.workstream}`;
+  return `${item.title} - ${item.workstream}`;
 }
 
 export function formatDueLabel(item: ActionItem) {
@@ -1447,3 +1452,4 @@ function compareIssuesByUpcomingOrder(a: IssueRecord, b: IssueRecord) {
 
   return a.label.localeCompare(b.label);
 }
+

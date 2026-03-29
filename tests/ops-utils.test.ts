@@ -193,6 +193,37 @@ test("getWorkstreamDateContext uses schedules for event workstreams and issues f
   });
 });
 
+test("getWorkstreamDateContext keeps range schedules visible while the event is in progress", () => {
+  withMockedToday("2026-04-22T00:00:00.000Z", () => {
+    const schedules = normalizeWorkstreamSchedules([
+      {
+        workstream: "Legislative Day",
+        mode: "range",
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ]);
+
+    assert.deepEqual(getWorkstreamDateContext("Legislative Day", schedules, getGeneratedIssues({})), {
+      dateText: "Apr 21 - Apr 23",
+      countdownText: "today"
+    });
+  });
+
+  withMockedToday("2026-04-24T00:00:00.000Z", () => {
+    const schedules = normalizeWorkstreamSchedules([
+      {
+        workstream: "Legislative Day",
+        mode: "range",
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ]);
+
+    assert.equal(getWorkstreamDateContext("Legislative Day", schedules, getGeneratedIssues({})), null);
+  });
+});
+
 test("getDashboardMetrics separates immediate risk from unblocking counts", () => {
   withMockedToday("2026-03-28T00:00:00.000Z", () => {
     const metrics = getDashboardMetrics([
@@ -261,7 +292,7 @@ test("getImmediateRiskPreview separates title from time-risk meta", () => {
       ),
       {
         title: "Door Prize",
-        meta: "Overdue 2d ? due Mar 26 ? Legislative Day"
+        meta: "Overdue 2d - due Mar 26 - Legislative Day"
       }
     );
 
@@ -277,7 +308,7 @@ test("getImmediateRiskPreview separates title from time-risk meta", () => {
       ),
       {
         title: "County Ag offices list",
-        meta: "Due in 1d ? due Mar 29 ? General Operations"
+        meta: "Due in 1d - due Mar 29 - General Operations"
       }
     );
 
@@ -291,7 +322,7 @@ test("getImmediateRiskPreview separates title from time-risk meta", () => {
       ),
       {
         title: "Board packet",
-        meta: "Due today ? due Mar 28 ? General Operations"
+        meta: "Due today - due Mar 28 - General Operations"
       }
     );
   });

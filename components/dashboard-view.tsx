@@ -106,7 +106,7 @@ export function DashboardView() {
                 const preview = getImmediateRiskPreview(item);
 
                 return (
-                  <div className="risk-preview" key={item.id} title={`${preview.title} â€” ${preview.meta}`}>
+                  <div className="risk-preview" key={item.id} title={`${preview.title} - ${preview.meta}`}>
                     <div className="risk-preview__title">{preview.title}</div>
                     <div className="risk-preview__meta">{preview.meta}</div>
                   </div>
@@ -469,14 +469,14 @@ function formatPublicationFeedback(issue: string, created: number, skipped: numb
   }
 
   if (skipped === 0) {
-    return `${issue} opened â€” ${created} deliverables created.`;
+    return `${issue} opened - ${created} deliverables created.`;
   }
 
   if (created === 0) {
-    return `${issue} opened â€” all deliverables already existed.`;
+    return `${issue} opened - all deliverables already existed.`;
   }
 
-  return `${issue} opened â€” ${created} created, ${skipped} skipped.`;
+  return `${issue} opened - ${created} created, ${skipped} skipped.`;
 }
 
 function formatGenerateMissingFeedback(issue: string, created: number, skipped: number) {
@@ -534,5 +534,6 @@ function reorderVisibleIssues(
     return a.label.localeCompare(b.label);
   });
 }
+
 
 

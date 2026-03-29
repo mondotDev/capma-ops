@@ -183,10 +183,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     workstream: WorkstreamSchedule["workstream"],
     mode: WorkstreamScheduleMode
   ) {
-    updateWorkstreamSchedule(workstream, () => ({
-      workstream,
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
       mode,
-      ...(mode === "multiple" ? { dates: [""] } : {})
+      ...(mode === "multiple" && (!schedule.dates || schedule.dates.length === 0) ? { dates: [""] } : {})
     }));
   }
 
