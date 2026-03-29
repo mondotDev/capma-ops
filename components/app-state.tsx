@@ -60,6 +60,7 @@ import {
   DEFAULT_OWNER,
   getDefaultWorkstreamSchedules,
   getGeneratedIssues,
+  normalizeNoteEntries,
   normalizeActionItemFields
 } from "@/lib/ops-utils";
 
@@ -343,7 +344,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           printer: templateItem.defaultPrinter,
           quantity: templateItem.defaultQuantity,
           updateType: normalizeCollateralUpdateType(templateItem.defaultUpdateType),
-          notes: templateItem.defaultNotes,
+          noteEntries: normalizeNoteEntries(undefined, templateItem.defaultNotes, new Date().toISOString()),
           lastUpdated: new Date().toISOString().slice(0, 10)
         }));
 

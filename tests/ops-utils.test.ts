@@ -104,8 +104,8 @@ function createCollateralItem(overrides: Partial<CollateralItem> = {}): Collater
     dueDate: "2026-03-30",
     printer: "CAPMA",
     quantity: "100",
-    updateType: "Full Redesign",
-    notes: "",
+    updateType: "Net New",
+    noteEntries: [],
     lastUpdated: "2026-03-28",
     ...overrides
   };
@@ -203,6 +203,18 @@ test("normalizeCollateralItem preserves template origin metadata", () => {
 
   assert.ok(normalized);
   assert.equal(normalized?.templateOriginId, "legislative-template-item");
+});
+
+test("normalizeCollateralItem migrates legacy note text into timestamped note entries", () => {
+  const normalized = normalizeCollateralItem({
+    ...createCollateralItem(),
+    noteEntries: undefined,
+    notes: "Vendor asked for final logo by Friday."
+  });
+
+  assert.ok(normalized);
+  assert.equal(normalized?.noteEntries.length, 1);
+  assert.equal(normalized?.noteEntries[0]?.text, "Vendor asked for final logo by Friday.");
 });
 
 test("normalizeWorkstreamSchedules preserves defaults and sorts multiple dates", () => {

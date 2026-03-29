@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState, type CreateEventInstanceInput } from "@/components/app-state";
 import {
   COLLATERAL_STATUS_OPTIONS,
@@ -18,7 +19,12 @@ import {
   deriveEventDateRange,
   type EventDateMode
 } from "@/lib/event-instances";
-import { formatShortDate, getOwnerOptions } from "@/lib/ops-utils";
+import {
+  createActionNoteEntry,
+  formatShortDate,
+  getOwnerOptions,
+  LOCAL_FALLBACK_NOTE_AUTHOR
+} from "@/lib/ops-utils";
 
 type CreateInstanceFormState = {
   eventTypeId: string;
@@ -37,6 +43,8 @@ const INITIAL_INSTANCE_FORM: CreateInstanceFormState = {
   location: "",
   notes: ""
 };
+
+const DRAFT_COLLATERAL_ID = "__draft-collateral__";
 
 export function CollateralView() {
   const {
@@ -62,11 +70,16 @@ export function CollateralView() {
   const [hasEditedInstanceName, setHasEditedInstanceName] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [pendingNewCollateralId, setPendingNewCollateralId] = useState<string | null>(null);
+  const [draftCollateralItem, setDraftCollateralItem] = useState<CollateralItem | null>(null);
+  const [setupFeedback, setSetupFeedback] = useState<string>("");
+  const [noteDraft, setNoteDraft] = useState("");
   const selectedEventInstance =
     eventInstances.find((instance) => instance.id === activeEventInstanceId) ?? eventInstances[0] ?? null;
   const currentEventType =
     eventTypes.find((eventType) => eventType.id === selectedEventInstance?.eventTypeId) ?? null;
+  const defaultTemplatePack = selectedEventInstance
+    ? getDefaultTemplatePackForEventType(selectedEventInstance.eventTypeId)
+    : null;
   const activeProfile =
     collateralProfiles[activeEventInstanceId] ??
     (selectedEventInstance?.eventTypeId === "legislative-day" ? getDefaultLegDayProfile(selectedEventInstance) : null);
@@ -81,6 +94,16 @@ export function CollateralView() {
     setIsActionsMenuOpen(false);
     setIsDeleteConfirmOpen(false);
   }, [selectedId, activeEventInstanceId]);
+
+  useEffect(() => {
+    setNoteDraft("");
+  }, [selectedId]);
+
+  useEffect(() => {
+    setDraftCollateralItem((current) =>
+      current && current.eventInstanceId !== activeEventInstanceId ? null : current
+    );
+  }, [activeEventInstanceId]);
 
   useEffect(() => {
     if (hasEditedInstanceName) {
@@ -113,6 +136,13 @@ export function CollateralView() {
     () => collateralItems.filter((item) => item.eventInstanceId === activeEventInstanceId),
     [activeEventInstanceId, collateralItems]
   );
+  const visibleInstanceItems = useMemo(() => {
+    if (!draftCollateralItem || draftCollateralItem.eventInstanceId !== activeEventInstanceId) {
+      return instanceItems;
+    }
+
+    return [draftCollateralItem, ...instanceItems];
+  }, [activeEventInstanceId, draftCollateralItem, instanceItems]);
   const subEventNameById = useMemo(
     () => new Map(instanceSubEvents.map((subEvent) => [subEvent.id, subEvent.name])),
     [instanceSubEvents]
@@ -122,10 +152,10 @@ export function CollateralView() {
     [instanceItems]
   );
   const groupedItems = useMemo(
-    () => groupCollateralItems(instanceItems, instanceSubEvents, subEventNameById),
-    [instanceItems, instanceSubEvents, subEventNameById]
+    () => groupCollateralItems(visibleInstanceItems, instanceSubEvents, subEventNameById),
+    [visibleInstanceItems, instanceSubEvents, subEventNameById]
   );
-  const selectedItem = instanceItems.find((item) => item.id === selectedId) ?? null;
+  const selectedItem = visibleInstanceItems.find((item) => item.id === selectedId) ?? null;
   const selectedEventDateRange =
     selectedEventInstance && selectedEventInstance.startDate && selectedEventInstance.endDate
       ? selectedEventInstance.startDate === selectedEventInstance.endDate
@@ -163,10 +193,17 @@ export function CollateralView() {
     pendingTemplateInstanceId
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
+  const hasAppliedTemplateItems = instanceItems.some((item) => Boolean(item.templateOriginId));
 
   function handleAddCollateralItem() {
+    if (draftCollateralItem && draftCollateralItem.eventInstanceId === activeEventInstanceId) {
+      setSelectedId(draftCollateralItem.id);
+      return;
+    }
+
     const fallbackSubEventId = instanceSubEvents[0]?.id ?? "__unassigned__";
-    const nextId = addCollateralItem({
+    setDraftCollateralItem({
+      id: DRAFT_COLLATERAL_ID,
       eventInstanceId: activeEventInstanceId,
       subEventId: fallbackSubEventId,
       itemName: "New collateral item",
@@ -177,16 +214,16 @@ export function CollateralView() {
       printer: "",
       quantity: "",
       updateType: "",
-      notes: ""
+      noteEntries: [],
+      lastUpdated: new Date().toISOString().slice(0, 10)
     });
-
-    setPendingNewCollateralId(nextId);
-    setSelectedId(nextId);
+    setSelectedId(DRAFT_COLLATERAL_ID);
   }
 
   function openCreateInstanceModal() {
     setHasEditedInstanceName(false);
     setInstanceFormState(INITIAL_INSTANCE_FORM);
+    setSetupFeedback("");
     setIsCreateInstanceOpen(true);
   }
 
@@ -213,9 +250,12 @@ export function CollateralView() {
 
     setSelectedId(null);
     closeCreateInstanceModal();
+    setSetupFeedback(`${instanceFormState.instanceName.trim()} created. Choose whether to start with the default template or an empty instance.`);
 
     if (getDefaultTemplatePackForEventType(instanceFormState.eventTypeId)) {
       setPendingTemplateInstanceId(nextId);
+    } else {
+      setSetupFeedback(`${instanceFormState.instanceName.trim()} created and set as the active event instance.`);
     }
   }
 
@@ -225,11 +265,73 @@ export function CollateralView() {
     }
 
     applyDefaultTemplateToInstance(pendingTemplateInstanceId);
+    setSetupFeedback(`${pendingTemplateInstance?.name ?? "Event instance"} is ready with its default template applied.`);
     setPendingTemplateInstanceId(null);
   }
 
   function handleSkipTemplateApply() {
+    setSetupFeedback(`${pendingTemplateInstance?.name ?? "Event instance"} is active and ready to start empty.`);
     setPendingTemplateInstanceId(null);
+  }
+
+  function addNote(item: CollateralItem) {
+    const nextEntry = createActionNoteEntry(noteDraft, { author: LOCAL_FALLBACK_NOTE_AUTHOR });
+
+    if (!nextEntry) {
+      return;
+    }
+
+    patchCollateralItem(item.id, { noteEntries: [nextEntry, ...item.noteEntries] });
+    setNoteDraft("");
+  }
+
+  function patchCollateralItem(id: string, updates: Partial<CollateralItem>) {
+    if (draftCollateralItem && id === draftCollateralItem.id) {
+      setDraftCollateralItem((current) =>
+        current
+          ? {
+              ...current,
+              ...updates,
+              lastUpdated: new Date().toISOString().slice(0, 10)
+            }
+          : current
+      );
+      return;
+    }
+
+    updateCollateralItem(id, updates);
+  }
+
+  function discardDraftCollateralItem() {
+    setDraftCollateralItem(null);
+    setSelectedId(null);
+    setNoteDraft("");
+  }
+
+  function saveDraftCollateralItem() {
+    if (!draftCollateralItem) {
+      return;
+    }
+
+    const nextId = addCollateralItem({
+      eventInstanceId: draftCollateralItem.eventInstanceId,
+      subEventId: draftCollateralItem.subEventId,
+      templateOriginId: draftCollateralItem.templateOriginId,
+      itemName: draftCollateralItem.itemName,
+      status: draftCollateralItem.status,
+      owner: draftCollateralItem.owner,
+      blockedBy: draftCollateralItem.blockedBy,
+      dueDate: draftCollateralItem.dueDate,
+      printer: draftCollateralItem.printer,
+      quantity: draftCollateralItem.quantity,
+      updateType: draftCollateralItem.updateType,
+      noteEntries: draftCollateralItem.noteEntries,
+      notes: draftCollateralItem.notes,
+      fileLink: draftCollateralItem.fileLink
+    });
+
+    setDraftCollateralItem(null);
+    setSelectedId(nextId);
   }
 
   return (
@@ -274,6 +376,36 @@ export function CollateralView() {
           </button>
         </div>
       </div>
+
+      {selectedEventInstance ? (
+        <div className="collateral-context card card--secondary">
+          <div className="collateral-context__primary">
+            <div className="collateral-context__label">Current Event Context</div>
+            <div className="collateral-context__title-row">
+              <strong className="collateral-context__title">{selectedEventInstance.name}</strong>
+              {currentEventType ? <span className="collateral-context__chip">{currentEventType.name}</span> : null}
+            </div>
+          </div>
+          <div className="collateral-context__meta">
+            {selectedEventDateRange ? <span>{selectedEventDateRange}</span> : null}
+            {selectedEventInstance.location ? <span>{selectedEventInstance.location}</span> : null}
+            {defaultTemplatePack ? (
+              <span>{hasAppliedTemplateItems ? "Default template applied" : "Default template available"}</span>
+            ) : (
+              <span>No default template configured</span>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {setupFeedback ? (
+        <div className="collateral-setup-banner" role="status">
+          <span>{setupFeedback}</span>
+          <button className="button-link button-link--inline-secondary" onClick={() => setSetupFeedback("")} type="button">
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <div className="collateral-summary">
         <div className="collateral-metric">
@@ -432,8 +564,27 @@ export function CollateralView() {
               {currentEventType ? <span className="collateral-card-context"> - {currentEventType.name}</span> : null}
             </div>
             {groupedItems.length === 0 ? (
-              <div className="empty-state">
-                No collateral items yet for this event instance. Create one manually or apply a template pack.
+              <div className="empty-state empty-state--actionable">
+                <div className="empty-state__title">This event instance is empty.</div>
+                <div className="empty-state__copy">
+                  {defaultTemplatePack
+                    ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
+                    : "Add your first collateral item manually to start tracking production work for this event instance."}
+                </div>
+                <div className="empty-state__actions">
+                  {defaultTemplatePack ? (
+                    <button
+                      className="topbar__button"
+                      onClick={() => applyDefaultTemplateToInstance(activeEventInstanceId)}
+                      type="button"
+                    >
+                      Apply Default Template
+                    </button>
+                  ) : null}
+                  <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
+                    Add First Collateral Item
+                  </button>
+                </div>
               </div>
             ) : (
               groupedItems.map(([subEvent, items]) => (
@@ -445,20 +596,10 @@ export function CollateralView() {
                   <div className="collateral-list">
                     {items.map((item) => {
                       const isSelected = item.id === selectedId;
-                      const isOverdue = isCollateralOverdue(item);
-                      const isDueSoon = isCollateralDueSoon(item);
 
                       return (
                         <button
-                          className={
-                            isSelected
-                              ? "collateral-row collateral-row--selected"
-                              : isOverdue
-                                ? "collateral-row collateral-row--overdue"
-                                : isDueSoon
-                                  ? "collateral-row collateral-row--due-soon"
-                                  : "collateral-row"
-                          }
+                          className={getCollateralRowClassName(item, isSelected)}
                           key={item.id}
                           onClick={() => setSelectedId(item.id)}
                           type="button"
@@ -466,15 +607,25 @@ export function CollateralView() {
                           <div className="collateral-row__main">
                             <div className="collateral-row__title">{item.itemName}</div>
                             <div className="collateral-row__meta">
-                              <span>{item.owner || "No owner assigned"}</span>
+                              {item.owner ? (
+                                <span>{item.owner}</span>
+                              ) : (
+                                <span className="collateral-row__meta-flag collateral-row__meta-flag--unassigned">
+                                  No owner assigned
+                                </span>
+                              )}
                               <span>{item.dueDate ? formatShortDate(item.dueDate) : "No due date"}</span>
-                              {item.blockedBy ? <span>Blocked by {item.blockedBy}</span> : null}
+                              {item.blockedBy ? (
+                                <span className="collateral-row__meta-flag collateral-row__meta-flag--blocked">
+                                  Blocked by {item.blockedBy}
+                                </span>
+                              ) : null}
                               <span>{item.printer || "No printer assigned"}</span>
                               {item.quantity ? <span>Qty {item.quantity}</span> : null}
                             </div>
                           </div>
                           <div className="collateral-row__signals">
-                            <span className="collateral-status">{item.status}</span>
+                            <span className={getCollateralStatusClassName(item)}>{item.status}</span>
                           </div>
                         </button>
                       );
@@ -495,6 +646,10 @@ export function CollateralView() {
                   <span className="drawer__workstream">
                     {subEventNameById.get(selectedItem.subEventId) ?? "Unassigned sub-event"}
                   </span>
+                  <span className={getCollateralStatusClassName(selectedItem)}>{selectedItem.status}</span>
+                  {draftCollateralItem?.id === selectedItem.id ? (
+                    <span className="drawer__status-chip drawer__status-chip--new">New item</span>
+                  ) : null}
                 </div>
               </div>
               <div className="drawer__header-actions">
@@ -533,124 +688,138 @@ export function CollateralView() {
 
             <div className="drawer__sections">
               <section className="drawer-section drawer-section--form collateral-drawer">
-                <div className="drawer__grid drawer__grid--form">
-                  <div className="field field--priority">
-                    <label htmlFor="collateral-item-name">Collateral Item</label>
-                    <input
-                      id="collateral-item-name"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { itemName: event.target.value })}
-                      value={selectedItem.itemName}
-                    />
-                  </div>
-                  <div className="field field--secondary">
-                    <label htmlFor="collateral-sub-event">Sub-Event</label>
-                    <select
-                      id="collateral-sub-event"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { subEventId: event.target.value })}
-                      value={selectedItem.subEventId}
-                    >
-                      {instanceSubEvents.length === 0 ? (
-                        <option value="__unassigned__">Unassigned</option>
-                      ) : null}
-                      {instanceSubEvents.map((subEvent) => (
-                        <option key={subEvent.id} value={subEvent.id}>
-                          {subEvent.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field field--priority">
-                    <label htmlFor="collateral-status">Status</label>
-                    <select
-                      id="collateral-status"
-                      onChange={(event) =>
-                        updateCollateralItem(selectedItem.id, {
-                          status: event.target.value as CollateralItem["status"]
-                        })
-                      }
-                      value={selectedItem.status}
-                    >
-                      {COLLATERAL_STATUS_OPTIONS.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="collateral-owner">Owner</label>
-                    <select
-                      id="collateral-owner"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { owner: event.target.value })}
-                      value={selectedItem.owner}
-                    >
-                      <option value="">No owner assigned</option>
-                      {getOwnerOptions(selectedItem.owner || defaultOwnerForNewItems).map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field field--priority">
-                    <label htmlFor="collateral-due-date">Due Date</label>
-                    <input
-                      id="collateral-due-date"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { dueDate: event.target.value })}
-                      type="date"
-                      value={selectedItem.dueDate}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="collateral-blocked-by">Blocked By</label>
-                    <input
-                      id="collateral-blocked-by"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { blockedBy: event.target.value })}
-                      placeholder="Optional blocker"
-                      value={selectedItem.blockedBy}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="collateral-printer">Printer</label>
-                    <input
-                      id="collateral-printer"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { printer: event.target.value })}
-                      value={selectedItem.printer}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="collateral-quantity">Qty</label>
-                    <input
-                      id="collateral-quantity"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { quantity: event.target.value })}
-                      value={selectedItem.quantity}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="collateral-update-type">Update Type</label>
-                    <select
-                      id="collateral-update-type"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { updateType: event.target.value })}
-                      value={selectedItem.updateType}
-                    >
-                      <option value="">Select update type</option>
-                      {COLLATERAL_UPDATE_TYPE_OPTIONS.filter((option) => option.length > 0).map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field field--wide">
-                    <label htmlFor="collateral-notes">Notes</label>
-                    <textarea
-                      id="collateral-notes"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { notes: event.target.value })}
-                      value={selectedItem.notes}
-                    />
+                <div className="collateral-drawer__group">
+                  <div className="drawer__panel-title">Identity</div>
+                  <div className="drawer__grid drawer__grid--form">
+                    <div className="field field--priority">
+                      <label htmlFor="collateral-item-name">Collateral Item</label>
+                      <input
+                        id="collateral-item-name"
+                        onChange={(event) => updateCollateralItem(selectedItem.id, { itemName: event.target.value })}
+                        value={selectedItem.itemName}
+                      />
+                    </div>
+                    <div className="field field--secondary">
+                      <label htmlFor="collateral-sub-event">Sub-Event</label>
+                      <select
+                        id="collateral-sub-event"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { subEventId: event.target.value })}
+                        value={selectedItem.subEventId}
+                      >
+                        {instanceSubEvents.length === 0 ? (
+                          <option value="__unassigned__">Unassigned</option>
+                        ) : null}
+                        {instanceSubEvents.map((subEvent) => (
+                          <option key={subEvent.id} value={subEvent.id}>
+                            {subEvent.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field field--priority">
+                      <label htmlFor="collateral-status">Status</label>
+                      <select
+                        id="collateral-status"
+                        onChange={(event) =>
+                          patchCollateralItem(selectedItem.id, {
+                            status: event.target.value as CollateralItem["status"]
+                          })
+                        }
+                        value={selectedItem.status}
+                      >
+                        {COLLATERAL_STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
+
+                <div className="collateral-drawer__group">
+                  <div className="drawer__panel-title">Execution</div>
+                  <div className="drawer__grid drawer__grid--form">
+                    <div className="field">
+                      <label htmlFor="collateral-owner">Owner</label>
+                      <select
+                        id="collateral-owner"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { owner: event.target.value })}
+                        value={selectedItem.owner}
+                      >
+                        <option value="">No owner assigned</option>
+                        {getOwnerOptions(selectedItem.owner || defaultOwnerForNewItems).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field field--priority">
+                      <label htmlFor="collateral-due-date">Due Date</label>
+                      <input
+                        id="collateral-due-date"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { dueDate: event.target.value })}
+                        type="date"
+                        value={selectedItem.dueDate}
+                      />
+                    </div>
+                    <div className="field field--wide">
+                      <label htmlFor="collateral-blocked-by">Blocked By</label>
+                      <input
+                        id="collateral-blocked-by"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { blockedBy: event.target.value })}
+                        placeholder="Optional blocker"
+                        value={selectedItem.blockedBy}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="collateral-drawer__group">
+                  <div className="drawer__panel-title">Production</div>
+                  <div className="drawer__grid drawer__grid--form">
+                    <div className="field">
+                      <label htmlFor="collateral-printer">Printer</label>
+                      <input
+                        id="collateral-printer"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { printer: event.target.value })}
+                        value={selectedItem.printer}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="collateral-quantity">Qty</label>
+                      <input
+                        id="collateral-quantity"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { quantity: event.target.value })}
+                        value={selectedItem.quantity}
+                      />
+                    </div>
+                    <div className="field field--wide">
+                      <label htmlFor="collateral-update-type">Update Type</label>
+                      <select
+                        id="collateral-update-type"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { updateType: event.target.value })}
+                        value={selectedItem.updateType}
+                      >
+                        <option value="">Select update type</option>
+                        {COLLATERAL_UPDATE_TYPE_OPTIONS.filter((option) => option.length > 0).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
               </section>
+              <ActionItemNotesPanel
+                noteDraft={noteDraft}
+                noteEntries={selectedItem.noteEntries}
+                onAddNote={() => addNote(selectedItem)}
+                onNoteDraftChange={setNoteDraft}
+              />
             </div>
             {isDeleteConfirmOpen ? (
               <div className="drawer__confirm-bar">
@@ -670,6 +839,12 @@ export function CollateralView() {
                     <button
                       className="button-danger"
                       onClick={() => {
+                        if (draftCollateralItem?.id === selectedItem.id) {
+                          discardDraftCollateralItem();
+                          setIsDeleteConfirmOpen(false);
+                          return;
+                        }
+
                         deleteCollateralItem(selectedItem.id);
                         setIsDeleteConfirmOpen(false);
                         setSelectedId(null);
@@ -682,7 +857,7 @@ export function CollateralView() {
                 </div>
               </div>
             ) : null}
-            {pendingNewCollateralId === selectedItem.id ? (
+            {draftCollateralItem?.id === selectedItem.id ? (
               <div className="drawer__confirm-bar">
                 <div className="confirm-delete confirm-delete--neutral">
                   <div className="confirm-delete__title">Save this new collateral item?</div>
@@ -692,21 +867,14 @@ export function CollateralView() {
                   <div className="confirm-delete__actions">
                     <button
                       className="button-link button-link--inline-secondary"
-                      onClick={() => {
-                        deleteCollateralItem(selectedItem.id);
-                        setPendingNewCollateralId(null);
-                        setSelectedId(null);
-                      }}
+                      onClick={discardDraftCollateralItem}
                       type="button"
                     >
                       Cancel
                     </button>
                     <button
                       className="topbar__button"
-                      onClick={() => {
-                        setPendingNewCollateralId(null);
-                        setSelectedId(null);
-                      }}
+                      onClick={saveDraftCollateralItem}
                       type="button"
                     >
                       Save
@@ -728,7 +896,7 @@ export function CollateralView() {
                 <h2 className="quick-add-modal__title" id="create-instance-title">
                   New Event Instance
                 </h2>
-                <p className="quick-add-modal__subtitle">Create the event instance first, then optionally apply its default collateral template.</p>
+                <p className="quick-add-modal__subtitle">Step 1 of setup: create the event instance. If a default template exists, you can apply it immediately after this step.</p>
               </div>
               <button className="button-link" onClick={closeCreateInstanceModal} type="button">
                 Close
@@ -931,7 +1099,7 @@ export function CollateralView() {
                   onClick={handleCreateInstance}
                   type="button"
                 >
-                  Create Instance
+                  Create and Continue
                 </button>
               </div>
             </div>
@@ -949,17 +1117,17 @@ export function CollateralView() {
                   Apply template?
                 </h2>
                 <p className="quick-add-modal__subtitle">
-                  {pendingTemplateInstance.name} is ready. Apply its default template pack now, or start from an empty instance.
+                  Step 2 of setup: {pendingTemplateInstance.name} is ready. Apply its default collateral template now, or start from an empty instance.
                 </p>
               </div>
             </div>
             <div className="confirm-delete">
               <div className="confirm-delete__actions">
                 <button className="button-link button-link--inline-secondary" onClick={handleSkipTemplateApply} type="button">
-                  Skip
+                  Start Empty
                 </button>
                 <button className="topbar__button" onClick={handleConfirmTemplateApply} type="button">
-                  Apply Template
+                  Apply Default Template
                 </button>
               </div>
             </div>
@@ -1038,4 +1206,54 @@ function getDefaultLegDayProfile(instance: { startDate: string; endDate: string 
     externalPrintingDue: "",
     internalPrintingStart: ""
   };
+}
+
+function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
+  const classNames = ["collateral-row"];
+
+  if (isSelected) {
+    classNames.push("collateral-row--selected");
+  }
+
+  if (isCollateralOverdue(item)) {
+    classNames.push("collateral-row--overdue");
+  } else if (isCollateralDueSoon(item)) {
+    classNames.push("collateral-row--due-soon");
+  }
+
+  if (item.blockedBy.trim()) {
+    classNames.push("collateral-row--blocked");
+  }
+
+  if (normalizeCollateralWorkflowStatus(item.status) === "ready") {
+    classNames.push("collateral-row--ready");
+  }
+
+  if (!item.owner.trim()) {
+    classNames.push("collateral-row--unassigned");
+  }
+
+  return classNames.join(" ");
+}
+
+function getCollateralStatusClassName(item: CollateralItem) {
+  const normalizedStatus = normalizeCollateralWorkflowStatus(item.status);
+
+  if (item.blockedBy.trim()) {
+    return "collateral-status collateral-status--blocked";
+  }
+
+  if (normalizedStatus === "waiting") {
+    return "collateral-status collateral-status--waiting";
+  }
+
+  if (normalizedStatus === "ready") {
+    return "collateral-status collateral-status--ready";
+  }
+
+  if (normalizedStatus === "complete" || normalizedStatus === "cut") {
+    return "collateral-status collateral-status--terminal";
+  }
+
+  return "collateral-status";
 }

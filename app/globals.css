@@ -426,6 +426,72 @@ textarea {
   color: var(--muted);
 }
 
+.collateral-context {
+  display: grid;
+  gap: 10px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+}
+
+.collateral-context__primary {
+  display: grid;
+  gap: 6px;
+}
+
+.collateral-context__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6d7b88;
+}
+
+.collateral-context__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.collateral-context__title {
+  font-size: 20px;
+  line-height: 1.1;
+  color: #243240;
+}
+
+.collateral-context__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eaf1f6;
+  color: #526273;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.collateral-context__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: #6f7e8c;
+}
+
+.collateral-setup-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 59, 109, 0.14);
+  border-radius: 12px;
+  background: #f5f9fd;
+  color: #385067;
+  font-size: 13px;
+}
+
 .collateral-card-context {
   color: #7a8794;
   font-size: 12px;
@@ -588,6 +654,18 @@ textarea {
   background: #fffaf1;
 }
 
+.collateral-row--blocked {
+  box-shadow: inset 4px 0 0 #9a5b24;
+}
+
+.collateral-row--ready {
+  background: #f8fcf8;
+}
+
+.collateral-row--unassigned {
+  border-style: dashed;
+}
+
 .collateral-row__main {
   display: grid;
   gap: 6px;
@@ -610,6 +688,26 @@ textarea {
   gap: 8px 12px;
   font-size: 12px;
   color: #718090;
+}
+
+.collateral-row__meta-flag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.collateral-row__meta-flag--unassigned {
+  background: #f7f1de;
+  color: #8a6508;
+}
+
+.collateral-row__meta-flag--blocked {
+  background: #fff1e3;
+  color: #8a4b12;
 }
 
 .collateral-row__signals {
@@ -635,8 +733,49 @@ textarea {
   color: #4d5d6d;
 }
 
+.collateral-status--blocked {
+  background: #fff1e3;
+  color: #8a4b12;
+}
+
+.collateral-status--waiting {
+  background: #fff7ea;
+  color: #9a5408;
+}
+
+.collateral-status--ready {
+  background: #edf8ef;
+  color: #367145;
+}
+
+.collateral-status--terminal {
+  background: #edf1f5;
+  color: #617182;
+}
+
 .collateral-drawer .field textarea {
   min-height: 160px;
+}
+
+.collateral-drawer__group {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.collateral-drawer__group:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.collateral-drawer__group--notes .field textarea {
+  min-height: 180px;
+}
+
+.drawer__status-chip--new {
+  background: #edf4ff;
+  color: #345d8d;
 }
 
 .collateral-profile .field textarea {
@@ -2383,6 +2522,33 @@ textarea,
 .empty-state {
   padding: 32px 24px;
   color: var(--muted);
+}
+
+.empty-state--actionable {
+  display: grid;
+  gap: 12px;
+  padding: 24px 20px;
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.empty-state__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #243240;
+}
+
+.empty-state__copy {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #6b7a89;
+}
+
+.empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .confirm-delete {

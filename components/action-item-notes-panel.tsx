@@ -1,10 +1,10 @@
 "use client";
 
-import type { ActionItem } from "@/lib/sample-data";
+import type { ActionNoteEntry } from "@/lib/sample-data";
 import { formatNoteEntryTimestamp, sortNoteEntriesNewestFirst } from "@/lib/ops-utils";
 
 type ActionItemNotesPanelProps = {
-  noteEntries: ActionItem["noteEntries"];
+  noteEntries: ActionNoteEntry[];
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onAddNote: () => void;

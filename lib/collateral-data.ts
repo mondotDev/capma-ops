@@ -1,10 +1,11 @@
+import type { ActionNoteEntry } from "@/lib/sample-data";
 import { type NormalizedWorkflowStatus, isNormalizedTerminalStatus } from "@/lib/workflow-status";
 import {
   LEGISLATIVE_DAY_2026_INSTANCE_ID,
   getInitialLegDaySubEventIdByName,
   initialEventSubEvents
 } from "@/lib/event-instances";
-import { DEFAULT_OWNER, hasDueDate, isOverdue, daysUntil } from "@/lib/ops-utils";
+import { DEFAULT_OWNER, hasDueDate, isOverdue, daysUntil, normalizeNoteEntries } from "@/lib/ops-utils";
 
 export const COLLATERAL_STATUS_OPTIONS = [
   "Backlog",
@@ -40,7 +41,8 @@ export type CollateralItem = {
   printer: string;
   quantity: string;
   updateType: string;
-  notes: string;
+  noteEntries: ActionNoteEntry[];
+  notes?: string;
   fileLink?: string;
   lastUpdated: string;
 };
@@ -160,7 +162,6 @@ export function normalizeCollateralItem(
     typeof item.printer !== "string" ||
     typeof item.quantity !== "string" ||
     typeof item.updateType !== "string" ||
-    typeof item.notes !== "string" ||
     typeof item.lastUpdated !== "string"
   ) {
     return null;
@@ -198,7 +199,8 @@ export function normalizeCollateralItem(
     printer: item.printer,
     quantity: item.quantity,
     updateType: normalizeCollateralUpdateType(item.updateType),
-    notes: item.notes,
+    noteEntries: normalizeNoteEntries(item.noteEntries, typeof item.notes === "string" ? item.notes : "", item.lastUpdated),
+    notes: undefined,
     fileLink: typeof item.fileLink === "string" ? item.fileLink : undefined,
     lastUpdated: item.lastUpdated
   };
@@ -231,7 +233,8 @@ function createSeedItem(
     printer,
     quantity,
     updateType: normalizeCollateralUpdateType(updateType),
-    notes,
+    noteEntries: normalizeNoteEntries(undefined, notes, "2026-03-28"),
+    notes: undefined,
     lastUpdated: "2026-03-28"
   };
 }
