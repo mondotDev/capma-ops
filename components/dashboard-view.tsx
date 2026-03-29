@@ -11,7 +11,11 @@ import {
   getDailyLoad,
   getDashboardMetrics,
   getWorkstreamSummary,
-  getVisiblePublicationIssues
+  getVisiblePublicationIssues,
+  isBlockedItem,
+  isItemDueSoon,
+  isOverdue,
+  isWaitingIssue
 } from "@/lib/ops-utils";
 
 export function DashboardView() {
@@ -22,21 +26,22 @@ export function DashboardView() {
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
   const dashboardMetrics = getDashboardMetrics(items);
-  const extendedDailyLoad = getDailyLoad(items, 30);
+  const extendedDailyLoad = getDailyLoad(items, 14);
   const workstreamSummary = getWorkstreamSummary(items);
   const highestLoadCount = Math.max(...extendedDailyLoad.map((entry) => entry.count), 0);
-  const highlightedLoadDates = new Set(
-    [...extendedDailyLoad]
-      .sort((a, b) => b.count - a.count || a.date.localeCompare(b.date))
-      .filter((entry) => entry.count > 0)
-      .slice(0, 3)
-      .map((entry) => entry.date)
-  );
-  const nearTermLoad = extendedDailyLoad.slice(0, 7);
-  const busiestUpcomingLoad = [...extendedDailyLoad]
-    .filter((entry) => entry.count > 0)
-    .sort((a, b) => b.count - a.count || a.date.localeCompare(b.date))
-    .slice(0, 3);
+  const overviewLoadRows = [extendedDailyLoad.slice(0, 7), extendedDailyLoad.slice(7, 14)];
+  const sponsorRiskCounts = {
+    total: dashboardMetrics.sponsorRiskItems.length,
+    overdue: dashboardMetrics.sponsorRiskItems.filter((item) => isOverdue(item.dueDate)).length,
+    dueSoon: dashboardMetrics.sponsorRiskItems.filter((item) => isItemDueSoon(item)).length,
+    waiting: dashboardMetrics.sponsorRiskItems.filter((item) => isWaitingIssue(item)).length
+  };
+  const productionRiskCounts = {
+    total: dashboardMetrics.productionRiskItems.length,
+    blocked: dashboardMetrics.productionRiskItems.filter((item) => isBlockedItem(item)).length,
+    dueSoon: dashboardMetrics.productionRiskItems.filter((item) => isItemDueSoon(item)).length,
+    waiting: dashboardMetrics.productionRiskItems.filter((item) => isWaitingIssue(item) && !isBlockedItem(item)).length
+  };
   const visiblePublicationIssues = reorderVisibleIssues(
     getVisiblePublicationIssues(issues),
     activePublicationIssue
@@ -113,329 +118,333 @@ export function DashboardView() {
         </div>
       </section>
 
-      <DashboardStuckCard
-        blockedCount={dashboardMetrics.blockedCount}
-        onOpenBlocked={() => router.push("/action?filter=blocked")}
-        onOpenWaiting={() => router.push("/action?filter=waiting")}
-        stuckReasonCounts={dashboardMetrics.stuckReasonCounts}
-        waitingCount={dashboardMetrics.waiting}
-      />
+      <section className="dashboard-main-grid">
+        <div className="dashboard-main-column dashboard-main-column--left">
+          <DashboardStuckCard
+            blockedCount={dashboardMetrics.blockedCount}
+            onOpenBlocked={() => router.push("/action?filter=blocked")}
+            onOpenWaiting={() => router.push("/action?filter=waiting")}
+            stuckReasonCounts={dashboardMetrics.stuckReasonCounts}
+            waitingCount={dashboardMetrics.waiting}
+          />
 
-      <div className="card card--secondary">
-        <div className="card__title">PUBLICATIONS</div>
-        <div className="simple-list simple-list--tight">
-          {visiblePublicationIssues.map((issue) => {
-            const issueProgress = dashboardMetrics.issueProgress[issue.label] ?? { complete: 0, total: 0 };
-            const progressPercent =
-              issueProgress.total > 0 ? Math.round((issueProgress.complete / issueProgress.total) * 100) : 0;
-            const canCompleteIssue = issueProgress.total > 0 && issueProgress.complete === issueProgress.total;
-
-            return (
-              <div
-                className={
-                  issue.label === activePublicationIssue
-                    ? "publication-row publication-row--active"
-                    : issue.status === "Planned"
-                      ? "publication-row publication-row--planned"
-                      : "publication-row"
-                }
-                key={issue.label}
-              >
-                <div className="publication-row__body">
-                  {issue.status === "Planned" ? (
-                    <div className="publication-row__meta">Next up</div>
-                  ) : issue.status === "Open" ? (
-                    <div className="publication-row__meta">Current issue</div>
-                  ) : null}
-                  <div className="publication-row__summary">
-                    <div className="publication-row__title" title={issue.label}>
-                      {issue.label}
-                    </div>
-                    <div className="publication-row__status-line">
-                      <span className="publication-row__status">{issue.status}</span>
-                      <span className="publication-row__progress-copy">
-                        {issueProgress.complete}/{issueProgress.total} complete
-                      </span>
-                    </div>
-                  </div>
-                  <div aria-hidden="true" className="publication-row__progress">
-                    <span className="publication-row__progress-bar" style={{ width: `${progressPercent}%` }} />
-                  </div>
-                  {issue.status === "Planned" && issueProgress.total === 0 ? (
-                    <div className="publication-row__meta">0 deliverables</div>
-                  ) : null}
-                  {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
-                </div>
-                <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
-                  {issue.status === "Planned" ? (
-                    <button
-                      className="button-link publication-row__button publication-row__button--primary"
-                      onClick={() => {
-                        const result = openIssue(issue.label);
-                        setActivePublicationIssue(issue.label);
-                        router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
-                        setPublicationFeedback(formatPublicationFeedback(issue.label, result.created, result.skipped));
-                      }}
-                      type="button"
-                    >
-                      Open Issue
-                    </button>
-                  ) : null}
-                  {issue.status === "Open" ? (
-                    <button
-                      className="button-link publication-row__button publication-row__button--primary"
-                      onClick={() => {
-                        setActivePublicationIssue(issue.label);
-                        router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
-                      }}
-                      type="button"
-                    >
-                      Go to Issue
-                    </button>
-                  ) : null}
-                  {issue.status === "Open" ? (
-                    <button
-                      className="button-link button-link--inline-secondary publication-row__button publication-row__button--secondary"
-                      onClick={() => {
-                        const result = generateMissingDeliverablesForIssue(issue.label);
-                        setActivePublicationIssue(issue.label);
-                        setPublicationFeedback(formatGenerateMissingFeedback(issue.label, result.created, result.skipped));
-                      }}
-                      type="button"
-                    >
-                      Generate Missing
-                    </button>
-                  ) : null}
-                </div>
-                <div className="publication-row__utility" onClick={(event) => event.stopPropagation()}>
-                  <select
-                    aria-label={`Issue status for ${issue.label}`}
-                    className="cell-select publication-row__status-select"
-                    onChange={(event) => {
-                      const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
-                      const result = setIssueStatus(issue.label, nextStatus);
-                      setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
-                      if (nextStatus === "Complete" && !result.completed) {
-                        setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
-                      }
-                    }}
-                    value={issue.status}
+          <div className="card card--secondary card--muted">
+            <div className="card__title">WORKSTREAM SUMMARY</div>
+            <div className="workstream-summary">
+              {workstreamSummary.length > 0 ? (
+                workstreamSummary.slice(0, 5).map((entry) => (
+                  <div
+                    className="workstream-row"
+                    key={entry.workstream}
+                    title={`${entry.workstream}: ${entry.total} total, ${entry.overdue} overdue, ${entry.dueSoon} due soon, ${entry.inProgress} in progress`}
                   >
-                    <option value="Planned">Planned</option>
-                    <option value="Open">Open</option>
-                    <option value="Complete">Complete</option>
-                  </select>
-                  {issue.status === "Open" && issuePendingCompletion !== issue.label ? (
-                    <button
-                      className={
-                        canCompleteIssue
-                          ? "button-link button-link--inline-secondary publication-row__complete publication-row__complete--ready"
-                          : "button-link button-link--inline-secondary publication-row__complete"
-                      }
-                      onClick={() => setIssuePendingCompletion(issue.label)}
-                      type="button"
-                    >
-                      Complete Issue
-                    </button>
-                  ) : null}
-                </div>
-                {issue.status === "Open" ? (
-                  issuePendingCompletion === issue.label ? (
-                    <div className="confirm-delete publication-confirm">
-                      <div className="confirm-delete__title">Complete this issue?</div>
-                      <div className="confirm-delete__copy">
-                        This will mark the issue complete but keep all related items in local state.
+                    <div className="workstream-row__top">
+                      <span className="workstream-row__name">{entry.workstream}</span>
+                      <strong className="workstream-row__total">{entry.total}</strong>
+                    </div>
+                    <div className="workstream-row__signals">
+                      <span className="workstream-signal workstream-signal--overdue">{entry.overdue} overdue</span>
+                      <span className="workstream-signal workstream-signal--due-soon">{entry.dueSoon} due soon</span>
+                      <span className="workstream-signal">{entry.inProgress} in progress</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="muted">No active workstreams</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="dashboard-card-slot dashboard-card-slot--publications">
+          <div className="card card--secondary">
+            <div className="card__title">PUBLICATIONS</div>
+            <div className="simple-list simple-list--tight">
+              {visiblePublicationIssues.map((issue) => {
+                const issueProgress = dashboardMetrics.issueProgress[issue.label] ?? { complete: 0, total: 0 };
+                const progressPercent =
+                  issueProgress.total > 0 ? Math.round((issueProgress.complete / issueProgress.total) * 100) : 0;
+                const canCompleteIssue = issueProgress.total > 0 && issueProgress.complete === issueProgress.total;
+
+                return (
+                  <div
+                    className={
+                      issue.label === activePublicationIssue
+                        ? "publication-row publication-row--active"
+                        : issue.status === "Planned"
+                          ? "publication-row publication-row--planned"
+                          : "publication-row"
+                    }
+                    key={issue.label}
+                  >
+                    <div className="publication-row__body">
+                      {issue.status === "Planned" ? (
+                        <div className="publication-row__meta">Next up</div>
+                      ) : issue.status === "Open" ? (
+                        <div className="publication-row__meta">Current issue</div>
+                      ) : null}
+                      <div className="publication-row__summary">
+                        <div className="publication-row__title" title={issue.label}>
+                          {issue.label}
+                        </div>
+                        <div className="publication-row__status-line">
+                          <span className="publication-row__status">{issue.status}</span>
+                          <span className="publication-row__progress-copy">
+                            {issueProgress.complete}/{issueProgress.total} complete
+                          </span>
+                        </div>
                       </div>
-                      <div className="confirm-delete__actions">
+                      <div aria-hidden="true" className="publication-row__progress">
+                        <span className="publication-row__progress-bar" style={{ width: `${progressPercent}%` }} />
+                      </div>
+                      {issue.status === "Planned" && issueProgress.total === 0 ? (
+                        <div className="publication-row__meta">0 deliverables</div>
+                      ) : null}
+                      {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
+                    </div>
+                    <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
+                      {issue.status === "Planned" ? (
                         <button
-                          className="button-link button-link--inline-secondary"
-                          onClick={() => setIssuePendingCompletion(null)}
+                          className="button-link publication-row__button publication-row__button--primary"
+                          onClick={() => {
+                            const result = openIssue(issue.label);
+                            setActivePublicationIssue(issue.label);
+                            router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
+                            setPublicationFeedback(formatPublicationFeedback(issue.label, result.created, result.skipped));
+                          }}
                           type="button"
                         >
-                          Cancel
+                          Open Issue
                         </button>
+                      ) : null}
+                      {issue.status === "Open" ? (
                         <button
-                          className="button-danger"
+                          className="button-link publication-row__button publication-row__button--primary"
                           onClick={() => {
-                            const result = completeIssue(issue.label);
-                            setIssuePendingCompletion(null);
-                            if (!result.completed) {
-                              setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
-                              return;
-                            }
-
-                            setActivePublicationIssue(null);
-                            setPublicationFeedback(`${issue.label} marked complete.`);
+                            setActivePublicationIssue(issue.label);
+                            router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
                           }}
+                          type="button"
+                        >
+                          Go to Issue
+                        </button>
+                      ) : null}
+                      {issue.status === "Open" ? (
+                        <button
+                          className="button-link button-link--inline-secondary publication-row__button publication-row__button--secondary"
+                          onClick={() => {
+                            const result = generateMissingDeliverablesForIssue(issue.label);
+                            setActivePublicationIssue(issue.label);
+                            setPublicationFeedback(formatGenerateMissingFeedback(issue.label, result.created, result.skipped));
+                          }}
+                          type="button"
+                        >
+                          Generate Missing
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="publication-row__utility" onClick={(event) => event.stopPropagation()}>
+                      <select
+                        aria-label={`Issue status for ${issue.label}`}
+                        className="cell-select publication-row__status-select"
+                        onChange={(event) => {
+                          const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
+                          const result = setIssueStatus(issue.label, nextStatus);
+                          setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
+                          if (nextStatus === "Complete" && !result.completed) {
+                            setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
+                          }
+                        }}
+                        value={issue.status}
+                      >
+                        <option value="Planned">Planned</option>
+                        <option value="Open">Open</option>
+                        <option value="Complete">Complete</option>
+                      </select>
+                      {issue.status === "Open" && issuePendingCompletion !== issue.label ? (
+                        <button
+                          className={
+                            canCompleteIssue
+                              ? "button-link button-link--inline-secondary publication-row__complete publication-row__complete--ready"
+                              : "button-link button-link--inline-secondary publication-row__complete"
+                          }
+                          onClick={() => setIssuePendingCompletion(issue.label)}
                           type="button"
                         >
                           Complete Issue
                         </button>
-                      </div>
+                      ) : null}
                     </div>
-                  ) : null
-                ) : null}
-              </div>
-            );
-          })}
-          {publicationFeedback ? <div className="card__subhead">{publicationFeedback}</div> : null}
-        </div>
-      </div>
+                    {issue.status === "Open" ? (
+                      issuePendingCompletion === issue.label ? (
+                        <div className="confirm-delete publication-confirm">
+                          <div className="confirm-delete__title">Complete this issue?</div>
+                          <div className="confirm-delete__copy">
+                            This will mark the issue complete but keep all related items in local state.
+                          </div>
+                          <div className="confirm-delete__actions">
+                            <button
+                              className="button-link button-link--inline-secondary"
+                              onClick={() => setIssuePendingCompletion(null)}
+                              type="button"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="button-danger"
+                              onClick={() => {
+                                const result = completeIssue(issue.label);
+                                setIssuePendingCompletion(null);
+                                if (!result.completed) {
+                                  setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
+                                  return;
+                                }
 
-      <div className="card card--secondary">
-        <div className="card__title">UPCOMING LOAD</div>
-        <div className="load-section-label">Next 30 Days</div>
-        <div className="load-strip" aria-label="Load over the next 30 days">
-          {extendedDailyLoad.map((entry, index) => {
-            const loadLevel =
-              entry.count === 0
-                ? "load-strip__cell--zero"
-                : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.75
-                  ? "load-strip__cell--high"
-                  : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.4
-                    ? "load-strip__cell--medium"
-                    : "load-strip__cell--low";
-            const showAnchorLabel =
-              index === 0 ||
-              index === 7 ||
-              index === 14 ||
-              index === 15 ||
-              index === 22 ||
-              index === extendedDailyLoad.length - 1;
+                                setActivePublicationIssue(null);
+                                setPublicationFeedback(`${issue.label} marked complete.`);
+                              }}
+                              type="button"
+                            >
+                              Complete Issue
+                            </button>
+                          </div>
+                        </div>
+                      ) : null
+                    ) : null}
+                  </div>
+                );
+              })}
+              {publicationFeedback ? <div className="card__subhead">{publicationFeedback}</div> : null}
+            </div>
+          </div>
+        </div>
 
-            return (
-              <button
-                aria-label={`${formatShortDate(entry.date)}: ${entry.count} ${entry.count === 1 ? "item" : "items"}`}
-                className={`load-strip__cell ${loadLevel}`}
-                disabled={entry.count === 0}
-                key={entry.date}
-                onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
-                type="button"
-              >
-                <span className="load-strip__swatch" />
-                {showAnchorLabel ? <span className="load-strip__label">{formatShortDate(entry.date)}</span> : null}
-              </button>
-            );
-          })}
-        </div>
-        <div className="load-section-label">Next 7 Days</div>
-        <div className="load-list">
-          {nearTermLoad.map((entry) => (
-            <button
-              className={
-                entry.count === 0
-                  ? "load-row load-row--disabled"
-                  : highlightedLoadDates.has(entry.date)
-                    ? "load-row load-row--highlight"
-                    : "load-row"
-              }
-              disabled={entry.count === 0}
-              key={entry.date}
-              onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
-              type="button"
-            >
-              <div className="load-row__meta">
-                <span>{formatShortDate(entry.date)}</span>
-                <strong>{entry.count}</strong>
-              </div>
-              <div className="load-bar-track" aria-hidden="true">
-                <div
-                  className="load-bar-fill"
-                  style={{
-                    width: highestLoadCount > 0 ? `${(entry.count / highestLoadCount) * 100}%` : "0%"
-                  }}
-                />
-              </div>
-            </button>
-          ))}
-        </div>
-        {busiestUpcomingLoad.length > 0 ? (
-          <div className="load-peaks">
-            <div className="load-peaks__title">Busiest Upcoming</div>
-            <div className="load-peaks__list">
-              {busiestUpcomingLoad.map((entry, index) => (
-                <button
-                  className={index === 0 ? "load-peaks__row load-peaks__row--peak" : "load-peaks__row"}
-                  key={entry.date}
-                  onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
-                  type="button"
-                >
-                  <span className="load-peaks__date">{formatShortDate(entry.date)}</span>
-                  <span className="load-peaks__value">{entry.count}</span>
-                </button>
+        <div className="dashboard-card-slot dashboard-card-slot--load">
+          <div className="card card--secondary">
+            <div className="card__title">UPCOMING LOAD</div>
+            <div className="load-section-label">Next 14 Days</div>
+            <div className="load-grid" aria-label="Load over the next 14 days">
+              {overviewLoadRows.map((row, rowIndex) => (
+                <div className="load-grid__row" key={`row-${rowIndex}`}>
+                  <div className="load-grid__track">
+                    {row.map((entry) => {
+                      const loadLevel =
+                        entry.count === 0
+                          ? "load-grid__cell--zero"
+                          : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.75
+                            ? "load-grid__cell--high"
+                            : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.4
+                              ? "load-grid__cell--medium"
+                              : "load-grid__cell--low";
+
+                      return (
+                        <button
+                          aria-label={`${formatShortDate(entry.date)}: ${entry.count} ${entry.count === 1 ? "item" : "items"}`}
+                          className={`load-grid__cell ${loadLevel}`}
+                          disabled={entry.count === 0}
+                          key={entry.date}
+                          onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
+                          type="button"
+                        >
+                          <span className="load-grid__swatch" />
+                          {entry.count > 0 ? (
+                            <span className="load-grid__tooltip" role="tooltip">
+                              {formatShortDate(entry.date)} • {entry.count} {entry.count === 1 ? "task" : "tasks"}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="load-grid__anchors" aria-hidden="true">
+                    <span>{formatShortDate(row[0]?.date ?? "")}</span>
+                    <span>{formatShortDate(row[row.length - 1]?.date ?? "")}</span>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        ) : null}
-      </div>
-
-      <button
-        className="card card--clickable card--secondary"
-        onClick={() =>
-          router.push(
-            dashboardMetrics.sponsorRiskItems.length > 0 ? "/action?focus=sponsor" : "/action?filter=waiting"
-          )
-        }
-        type="button"
-      >
-        <div className="card__title">SPONSOR RISK</div>
-        <div className="detail-list detail-list--tight">
-          {dashboardMetrics.sponsorRiskItems.length > 0 ? (
-            dashboardMetrics.sponsorRiskItems.map((item) => (
-              <div className="detail-row detail-row--truncate" key={item.id} title={formatDashboardItem(item)}>
-                {formatDashboardItem(item)}
-              </div>
-            ))
-          ) : (
-            <div className="muted">No sponsor risks flagged</div>
-          )}
         </div>
-      </button>
+      </section>
 
-      <button
-        className="card card--clickable card--secondary"
-        onClick={() =>
-          router.push(
-            dashboardMetrics.productionRiskItems.length > 0
-              ? "/action?focus=production"
-              : "/action?filter=dueSoon"
-          )
-        }
-        type="button"
-      >
-        <div className="card__title">PRODUCTION RISK</div>
-        <div className="detail-list detail-list--tight">
-          {dashboardMetrics.productionRiskItems.length > 0 ? (
-            dashboardMetrics.productionRiskItems.map((item) => (
-              <div className="detail-row detail-row--truncate" key={item.id} title={formatDashboardItem(item)}>
-                {formatDashboardItem(item)}
-              </div>
-            ))
-          ) : (
-            <div className="muted">No production risks flagged</div>
-          )}
+      <section className="dashboard-support-grid">
+        <div className="dashboard-card-slot dashboard-card-slot--sponsor">
+          <button
+            className="card card--clickable card--secondary"
+            onClick={() =>
+              router.push(
+                dashboardMetrics.sponsorRiskItems.length > 0 ? "/action?focus=sponsor" : "/action?filter=waiting"
+              )
+            }
+            type="button"
+          >
+            <div className="card__title">SPONSOR RISK</div>
+            <div className="risk-summary">
+              {sponsorRiskCounts.total > 0 ? (
+                <>
+                  <div className="risk-summary__top">
+                    <strong className="risk-summary__total">{sponsorRiskCounts.total}</strong>
+                    <span className="risk-summary__label">Sponsor items at risk</span>
+                  </div>
+                  <div className="risk-summary__signals">
+                    <span className="risk-chip risk-chip--waiting">{sponsorRiskCounts.waiting} waiting</span>
+                    <span className="risk-chip risk-chip--due-soon">{sponsorRiskCounts.dueSoon} due soon</span>
+                    <span className="risk-chip risk-chip--overdue">{sponsorRiskCounts.overdue} overdue</span>
+                  </div>
+                  <div
+                    className="risk-summary__example detail-row--truncate"
+                    title={formatDashboardItem(dashboardMetrics.sponsorRiskItems[0])}
+                  >
+                    {formatDashboardItem(dashboardMetrics.sponsorRiskItems[0])}
+                  </div>
+                </>
+              ) : (
+                <div className="muted">No sponsor risks flagged</div>
+              )}
+            </div>
+          </button>
         </div>
-      </button>
 
-      <div className="card card--secondary card--muted">
-        <div className="card__title">WORKSTREAM SUMMARY</div>
-        <div className="simple-list simple-list--tight">
-          {workstreamSummary.length > 0 ? (
-            workstreamSummary.slice(0, 5).map((entry) => (
-              <div
-                className="detail-row detail-row--truncate"
-                key={entry.workstream}
-                title={`${entry.workstream}: ${entry.total} total, ${entry.overdue} overdue, ${entry.dueSoon} due soon, ${entry.inProgress} in progress`}
-              >
-                {entry.workstream}: {entry.total} total, {entry.overdue} overdue, {entry.dueSoon} due soon,{" "}
-                {entry.inProgress} in progress
-              </div>
-            ))
-          ) : (
-            <div className="muted">No active workstreams</div>
-          )}
+        <div className="dashboard-card-slot dashboard-card-slot--production">
+          <button
+            className="card card--clickable card--secondary"
+            onClick={() =>
+              router.push(
+                dashboardMetrics.productionRiskItems.length > 0
+                  ? "/action?focus=production"
+                  : "/action?filter=dueSoon"
+              )
+            }
+            type="button"
+          >
+            <div className="card__title">PRODUCTION RISK</div>
+            <div className="risk-summary">
+              {productionRiskCounts.total > 0 ? (
+                <>
+                  <div className="risk-summary__top">
+                    <strong className="risk-summary__total">{productionRiskCounts.total}</strong>
+                    <span className="risk-summary__label">Production items at risk</span>
+                  </div>
+                  <div className="risk-summary__signals">
+                    <span className="risk-chip risk-chip--blocked">{productionRiskCounts.blocked} blocked</span>
+                    <span className="risk-chip risk-chip--waiting">{productionRiskCounts.waiting} waiting</span>
+                    <span className="risk-chip risk-chip--due-soon">{productionRiskCounts.dueSoon} due soon</span>
+                  </div>
+                  <div
+                    className="risk-summary__example detail-row--truncate"
+                    title={formatDashboardItem(dashboardMetrics.productionRiskItems[0])}
+                  >
+                    {formatDashboardItem(dashboardMetrics.productionRiskItems[0])}
+                  </div>
+                </>
+              ) : (
+                <div className="muted">No production risks flagged</div>
+              )}
+            </div>
+          </button>
         </div>
-      </div>
+
+      </section>
     </section>
   );
 }
