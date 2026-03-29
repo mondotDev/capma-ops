@@ -797,6 +797,39 @@ export function formatDashboardItem(item: ActionItem) {
   return `${item.title} — ${item.issue ?? item.workstream} — ${formatRelativeDueLabel(item)}`;
 }
 
+export function getImmediateRiskPreview(item: ActionItem) {
+  const title = item.title;
+
+  if (isItemMissingDueDate(item) || !hasDueDate(item.dueDate)) {
+    return {
+      title,
+      meta: `Needs date • ${item.workstream}`
+    };
+  }
+
+  const days = daysUntil(item.dueDate);
+  const dueText = `due ${formatShortDate(item.dueDate)}`;
+
+  if (days < 0) {
+    return {
+      title,
+      meta: `Overdue ${Math.abs(days)}d • ${dueText} • ${item.workstream}`
+    };
+  }
+
+  if (days === 0) {
+    return {
+      title,
+      meta: `Due today • ${dueText} • ${item.workstream}`
+    };
+  }
+
+  return {
+    title,
+    meta: `Due in ${days}d • ${dueText} • ${item.workstream}`
+  };
+}
+
 export function formatItemWithWorkstream(item: ActionItem) {
   return `${item.title} — ${item.workstream}`;
 }

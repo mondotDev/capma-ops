@@ -19,6 +19,7 @@ import {
   matchesActionLens,
   matchesActionFilter,
   createActionNoteEntry,
+  getImmediateRiskPreview,
   getDashboardMetrics,
   getOwnerOptions,
   getDailyLoad,
@@ -188,6 +189,56 @@ test("getDashboardMetrics separates immediate risk from unblocking counts", () =
       { label: "External", count: 1, source: "waiting" },
       { label: "Unspecified", count: 1, source: "mixed" }
     ]);
+  });
+});
+
+test("getImmediateRiskPreview separates title from time-risk meta", () => {
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    assert.deepEqual(
+      getImmediateRiskPreview(
+        createItem({
+          title: "Door Prize",
+          workstream: "Legislative Day",
+          dueDate: "2026-03-26",
+          status: "Waiting",
+          waitingOn: "External"
+        })
+      ),
+      {
+        title: "Door Prize",
+        meta: "Overdue 2d ? due Mar 26 ? Legislative Day"
+      }
+    );
+
+    assert.deepEqual(
+      getImmediateRiskPreview(
+        createItem({
+          title: "County Ag offices list",
+          workstream: "General Operations",
+          dueDate: "2026-03-29",
+          status: "Waiting",
+          waitingOn: "External"
+        })
+      ),
+      {
+        title: "County Ag offices list",
+        meta: "Due in 1d ? due Mar 29 ? General Operations"
+      }
+    );
+
+    assert.deepEqual(
+      getImmediateRiskPreview(
+        createItem({
+          title: "Board packet",
+          workstream: "General Operations",
+          dueDate: "2026-03-28"
+        })
+      ),
+      {
+        title: "Board packet",
+        meta: "Due today ? due Mar 28 ? General Operations"
+      }
+    );
   });
 });
 

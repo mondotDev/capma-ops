@@ -6,6 +6,7 @@ import { useAppState } from "@/components/app-state";
 import { DashboardStuckCard } from "@/components/dashboard-stuck-card";
 import {
   formatDashboardItem,
+  getImmediateRiskPreview,
   formatShortDate,
   getDailyLoad,
   getDashboardMetrics,
@@ -96,11 +97,12 @@ export function DashboardView() {
           <div className="command-zone__list">
             {dashboardMetrics.urgentItems.length > 0 ? (
               dashboardMetrics.urgentItems.slice(0, 2).map((item) => {
-                const label = formatDashboardItem(item);
+                const preview = getImmediateRiskPreview(item);
 
                 return (
-                  <div className="detail-row detail-row--truncate" key={item.id} title={label}>
-                    {label}
+                  <div className="risk-preview" key={item.id} title={`${preview.title} — ${preview.meta}`}>
+                    <div className="risk-preview__title">{preview.title}</div>
+                    <div className="risk-preview__meta">{preview.meta}</div>
                   </div>
                 );
               })
