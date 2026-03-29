@@ -1,5 +1,20 @@
 import type { CollateralItem, LegDayCollateralProfile } from "@/lib/collateral-data";
-import { initialLegDayCollateralItems, initialLegDayCollateralProfile } from "@/lib/collateral-data";
+import {
+  initialLegDayCollateralItems,
+  initialLegDayCollateralProfile,
+  normalizeCollateralItem
+} from "@/lib/collateral-data";
+import {
+  normalizeEventInstance,
+  initialEventFamilies,
+  initialEventInstances,
+  initialEventSubEvents,
+  initialEventTypes,
+  type EventFamily,
+  type EventInstance,
+  type EventSubEvent,
+  type EventType
+} from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import { getDefaultWorkstreamSchedules, normalizeWorkstreamSchedules, type IssueStatus, type WorkstreamSchedule } from "@/lib/ops-utils";
 import type { AppStateSnapshot } from "@/lib/app-transfer";
@@ -8,7 +23,13 @@ export type PersistedAppState = {
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
-  collateralProfile: LegDayCollateralProfile;
+  collateralProfiles: Record<string, LegDayCollateralProfile>;
+  activeEventInstanceId: string;
+  defaultOwnerForNewItems: string;
+  eventFamilies: EventFamily[];
+  eventTypes: EventType[];
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
   workstreamSchedules: WorkstreamSchedule[];
 };
 
@@ -85,7 +106,15 @@ export function savePersistedAppState(state: PersistedAppState) {
   const serializedState = JSON.stringify({
     ...state,
     collateralItems: state.collateralItems.map((item) => ({ ...item })),
-    collateralProfile: { ...state.collateralProfile },
+    collateralProfiles: Object.fromEntries(
+      Object.entries(state.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+    ),
+    activeEventInstanceId: state.activeEventInstanceId,
+    defaultOwnerForNewItems: state.defaultOwnerForNewItems,
+    eventFamilies: state.eventFamilies.map((family) => ({ ...family })),
+    eventTypes: state.eventTypes.map((eventType) => ({ ...eventType })),
+    eventInstances: state.eventInstances.map((instance) => ({ ...instance })),
+    eventSubEvents: state.eventSubEvents.map((subEvent) => ({ ...subEvent })),
     workstreamSchedules: normalizeWorkstreamSchedules(state.workstreamSchedules)
   });
 
@@ -146,27 +175,6 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     (item.eventGroup === undefined || typeof item.eventGroup === "string");
 }
 
-function isCollateralItemRecord(value: unknown): value is CollateralItem {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const item = value as Partial<CollateralItem>;
-
-  return [
-    item.id,
-    item.subEvent,
-    item.itemName,
-    item.status,
-    item.printer,
-    item.printerDeadline,
-    item.quantity,
-    item.updateType,
-    item.notes,
-    item.lastUpdated
-  ].every((field) => typeof field === "string");
-}
-
 function isCollateralProfileRecord(value: unknown): value is LegDayCollateralProfile {
   if (!value || typeof value !== "object") {
     return false;
@@ -184,6 +192,56 @@ function isCollateralProfileRecord(value: unknown): value is LegDayCollateralPro
     profile.externalPrintingDue,
     profile.internalPrintingStart
   ].every((field) => typeof field === "string");
+}
+
+function isCollateralProfileMap(
+  value: Record<string, LegDayCollateralProfile> | undefined
+): value is Record<string, LegDayCollateralProfile> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((profile) => isCollateralProfileRecord(profile));
+}
+
+function isEventFamilyRecord(value: unknown): value is EventFamily {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const family = value as Partial<EventFamily>;
+  return typeof family.id === "string" && typeof family.name === "string";
+}
+
+function isEventTypeRecord(value: unknown): value is EventType {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const eventType = value as Partial<EventType>;
+  return (
+    typeof eventType.id === "string" &&
+    typeof eventType.name === "string" &&
+    typeof eventType.familyId === "string"
+  );
+}
+
+function isEventInstanceRecord(value: unknown): value is EventInstance {
+  return !!value && typeof value === "object" && normalizeEventInstance(value as Partial<EventInstance>) !== null;
+}
+
+function isEventSubEventRecord(value: unknown): value is EventSubEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const subEvent = value as Partial<EventSubEvent>;
+  return (
+    typeof subEvent.id === "string" &&
+    typeof subEvent.eventInstanceId === "string" &&
+    typeof subEvent.name === "string" &&
+    typeof subEvent.sortOrder === "number"
+  );
 }
 
 function isNoteEntryList(value: unknown) {
@@ -237,7 +295,7 @@ function parseStoredAppState(
   }
 
   try {
-    const parsedState = JSON.parse(rawState) as Partial<PersistedAppState>;
+    const parsedState = JSON.parse(rawState) as Partial<PersistedAppState> & { collateralProfile?: unknown };
 
     if (!Array.isArray(parsedState.items) || !isIssueStatusMap(parsedState.issueStatuses)) {
       return { status: "invalid" };
@@ -245,7 +303,9 @@ function parseStoredAppState(
 
     const items = parsedState.items.filter(isActionItemRecord);
     const collateralItems = Array.isArray(parsedState.collateralItems)
-      ? parsedState.collateralItems.filter(isCollateralItemRecord)
+      ? parsedState.collateralItems
+          .map((item) => (item && typeof item === "object" ? normalizeCollateralItem(item as Partial<CollateralItem> & { subEvent?: unknown }) : null))
+          .filter((item): item is CollateralItem => item !== null)
       : initialLegDayCollateralItems;
 
     if (
@@ -261,9 +321,43 @@ function parseStoredAppState(
         items: items.map((item) => normalizeItem(item)),
         issueStatuses: parsedState.issueStatuses,
         collateralItems: collateralItems.map((item) => ({ ...item })),
-        collateralProfile: isCollateralProfileRecord(parsedState.collateralProfile)
-          ? { ...parsedState.collateralProfile }
-          : { ...initialLegDayCollateralProfile },
+        collateralProfiles: isCollateralProfileMap(parsedState.collateralProfiles)
+          ? Object.fromEntries(
+              Object.entries(parsedState.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+            )
+          : parsedState.collateralProfile && isCollateralProfileRecord(parsedState.collateralProfile)
+            ? { [initialEventInstances[0].id]: { ...parsedState.collateralProfile } }
+            : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+        activeEventInstanceId:
+          typeof parsedState.activeEventInstanceId === "string" && parsedState.activeEventInstanceId.length > 0
+            ? parsedState.activeEventInstanceId
+            : initialEventInstances[0].id,
+        defaultOwnerForNewItems:
+          typeof parsedState.defaultOwnerForNewItems === "string"
+            ? parsedState.defaultOwnerForNewItems
+            : "Melissa",
+        eventFamilies: Array.isArray(parsedState.eventFamilies)
+          ? parsedState.eventFamilies.filter(isEventFamilyRecord).map((family) => ({ ...family }))
+          : initialEventFamilies.map((family) => ({ ...family })),
+        eventTypes: Array.isArray(parsedState.eventTypes)
+          ? parsedState.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
+          : initialEventTypes.map((eventType) => ({ ...eventType })),
+        eventInstances: Array.isArray(parsedState.eventInstances)
+          ? parsedState.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
+              if (isEventInstanceRecord(instance)) {
+                const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
+
+                if (normalizedInstance) {
+                  accumulator.push(normalizedInstance);
+                }
+              }
+
+              return accumulator;
+            }, [])
+          : initialEventInstances.map((instance) => ({ ...instance })),
+        eventSubEvents: Array.isArray(parsedState.eventSubEvents)
+          ? parsedState.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
+          : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
         workstreamSchedules: Array.isArray(parsedState.workstreamSchedules)
           ? normalizeWorkstreamSchedules(parsedState.workstreamSchedules)
           : getDefaultWorkstreamSchedules()

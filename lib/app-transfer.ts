@@ -1,9 +1,21 @@
 import {
   initialLegDayCollateralItems,
   initialLegDayCollateralProfile,
+  normalizeCollateralItem,
   type CollateralItem,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
+import {
+  normalizeEventInstance,
+  initialEventFamilies,
+  initialEventInstances,
+  initialEventSubEvents,
+  initialEventTypes,
+  type EventFamily,
+  type EventInstance,
+  type EventSubEvent,
+  type EventType
+} from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getDefaultWorkstreamSchedules,
@@ -18,7 +30,13 @@ export type AppStateSnapshot = {
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
-  collateralProfile: LegDayCollateralProfile;
+  collateralProfiles: Record<string, LegDayCollateralProfile>;
+  activeEventInstanceId: string;
+  defaultOwnerForNewItems: string;
+  eventFamilies: EventFamily[];
+  eventTypes: EventType[];
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
   workstreamSchedules: WorkstreamSchedule[];
 };
 
@@ -26,7 +44,13 @@ export function createAppStateSnapshot(
   items: ActionItem[],
   issueStatuses: Partial<Record<string, IssueStatus>>,
   collateralItems: CollateralItem[],
-  collateralProfile: LegDayCollateralProfile,
+  collateralProfiles: Record<string, LegDayCollateralProfile>,
+  activeEventInstanceId: string,
+  defaultOwnerForNewItems: string,
+  eventFamilies: EventFamily[],
+  eventTypes: EventType[],
+  eventInstances: EventInstance[],
+  eventSubEvents: EventSubEvent[],
   workstreamSchedules: WorkstreamSchedule[]
 ): AppStateSnapshot {
   return {
@@ -35,7 +59,15 @@ export function createAppStateSnapshot(
     items: items.map((item) => ({ ...item })),
     issueStatuses: { ...issueStatuses },
     collateralItems: collateralItems.map((item) => ({ ...item })),
-    collateralProfile: { ...collateralProfile },
+    collateralProfiles: Object.fromEntries(
+      Object.entries(collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+    ),
+    activeEventInstanceId,
+    defaultOwnerForNewItems,
+    eventFamilies: eventFamilies.map((family) => ({ ...family })),
+    eventTypes: eventTypes.map((eventType) => ({ ...eventType })),
+    eventInstances: eventInstances.map((instance) => ({ ...instance })),
+    eventSubEvents: eventSubEvents.map((subEvent) => ({ ...subEvent })),
     workstreamSchedules: normalizeWorkstreamSchedules(workstreamSchedules)
   };
 }
@@ -46,7 +78,13 @@ export function parseImportedAppState(
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
-  collateralProfile: LegDayCollateralProfile;
+  collateralProfiles: Record<string, LegDayCollateralProfile>;
+  activeEventInstanceId: string;
+  defaultOwnerForNewItems: string;
+  eventFamilies: EventFamily[];
+  eventTypes: EventType[];
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
   workstreamSchedules: WorkstreamSchedule[];
 } & { usedLegacyFormat: boolean }) | null {
   if (Array.isArray(value)) {
@@ -60,7 +98,13 @@ export function parseImportedAppState(
       items,
       issueStatuses: {},
       collateralItems: [],
-      collateralProfile: { ...initialLegDayCollateralProfile },
+      collateralProfiles: { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+      activeEventInstanceId: initialEventInstances[0].id,
+      defaultOwnerForNewItems: "Melissa",
+      eventFamilies: initialEventFamilies.map((family) => ({ ...family })),
+      eventTypes: initialEventTypes.map((eventType) => ({ ...eventType })),
+      eventInstances: initialEventInstances.map((instance) => ({ ...instance })),
+      eventSubEvents: initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
       workstreamSchedules: getDefaultWorkstreamSchedules(),
       usedLegacyFormat: true
     };
@@ -70,7 +114,7 @@ export function parseImportedAppState(
     return null;
   }
 
-  const snapshot = value as Partial<AppStateSnapshot>;
+  const snapshot = value as Partial<AppStateSnapshot> & { collateralProfile?: unknown };
 
   if (!Array.isArray(snapshot.items) || !isIssueStatusMap(snapshot.issueStatuses)) {
     return null;
@@ -78,7 +122,9 @@ export function parseImportedAppState(
 
   const items = snapshot.items.filter(isActionItemRecord);
   const collateralItems = Array.isArray(snapshot.collateralItems)
-    ? snapshot.collateralItems.filter(isCollateralItemRecord)
+    ? snapshot.collateralItems
+        .map((item) => (item && typeof item === "object" ? normalizeCollateralItem(item as Partial<CollateralItem> & { subEvent?: unknown }) : null))
+        .filter((item): item is CollateralItem => item !== null)
     : initialLegDayCollateralItems.map((item) => ({ ...item }));
 
   if (
@@ -92,9 +138,41 @@ export function parseImportedAppState(
     items,
     issueStatuses: snapshot.issueStatuses,
     collateralItems,
-    collateralProfile: isCollateralProfileRecord(snapshot.collateralProfile)
-      ? snapshot.collateralProfile
-      : { ...initialLegDayCollateralProfile },
+    collateralProfiles: isCollateralProfileMap(snapshot.collateralProfiles)
+      ? Object.fromEntries(
+          Object.entries(snapshot.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+        )
+      : snapshot.collateralProfile && isCollateralProfileRecord(snapshot.collateralProfile)
+        ? { [initialEventInstances[0].id]: { ...snapshot.collateralProfile } }
+        : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+    activeEventInstanceId:
+      typeof snapshot.activeEventInstanceId === "string" && snapshot.activeEventInstanceId.length > 0
+        ? snapshot.activeEventInstanceId
+        : initialEventInstances[0].id,
+    defaultOwnerForNewItems:
+      typeof snapshot.defaultOwnerForNewItems === "string" ? snapshot.defaultOwnerForNewItems : "Melissa",
+    eventFamilies: Array.isArray(snapshot.eventFamilies)
+      ? snapshot.eventFamilies.filter(isEventFamilyRecord).map((family) => ({ ...family }))
+      : initialEventFamilies.map((family) => ({ ...family })),
+    eventTypes: Array.isArray(snapshot.eventTypes)
+      ? snapshot.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
+      : initialEventTypes.map((eventType) => ({ ...eventType })),
+    eventInstances: Array.isArray(snapshot.eventInstances)
+      ? snapshot.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
+          if (isEventInstanceRecord(instance)) {
+            const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
+
+            if (normalizedInstance) {
+              accumulator.push(normalizedInstance);
+            }
+          }
+
+          return accumulator;
+        }, [])
+      : initialEventInstances.map((instance) => ({ ...instance })),
+    eventSubEvents: Array.isArray(snapshot.eventSubEvents)
+      ? snapshot.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
+      : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
     workstreamSchedules: Array.isArray(snapshot.workstreamSchedules)
       ? normalizeWorkstreamSchedules(snapshot.workstreamSchedules)
       : getDefaultWorkstreamSchedules(),
@@ -129,27 +207,6 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     (item.eventGroup === undefined || typeof item.eventGroup === "string");
 }
 
-function isCollateralItemRecord(value: unknown): value is CollateralItem {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const item = value as Partial<CollateralItem>;
-
-  return [
-    item.id,
-    item.subEvent,
-    item.itemName,
-    item.status,
-    item.printer,
-    item.printerDeadline,
-    item.quantity,
-    item.updateType,
-    item.notes,
-    item.lastUpdated
-  ].every((field) => typeof field === "string");
-}
-
 function isCollateralProfileRecord(value: unknown): value is LegDayCollateralProfile {
   if (!value || typeof value !== "object") {
     return false;
@@ -167,6 +224,56 @@ function isCollateralProfileRecord(value: unknown): value is LegDayCollateralPro
     profile.externalPrintingDue,
     profile.internalPrintingStart
   ].every((field) => typeof field === "string");
+}
+
+function isCollateralProfileMap(
+  value: Record<string, LegDayCollateralProfile> | undefined
+): value is Record<string, LegDayCollateralProfile> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((profile) => isCollateralProfileRecord(profile));
+}
+
+function isEventFamilyRecord(value: unknown): value is EventFamily {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const family = value as Partial<EventFamily>;
+  return typeof family.id === "string" && typeof family.name === "string";
+}
+
+function isEventTypeRecord(value: unknown): value is EventType {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const eventType = value as Partial<EventType>;
+  return (
+    typeof eventType.id === "string" &&
+    typeof eventType.name === "string" &&
+    typeof eventType.familyId === "string"
+  );
+}
+
+function isEventInstanceRecord(value: unknown): value is EventInstance {
+  return !!value && typeof value === "object" && normalizeEventInstance(value as Partial<EventInstance>) !== null;
+}
+
+function isEventSubEventRecord(value: unknown): value is EventSubEvent {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const subEvent = value as Partial<EventSubEvent>;
+  return (
+    typeof subEvent.id === "string" &&
+    typeof subEvent.eventInstanceId === "string" &&
+    typeof subEvent.name === "string" &&
+    typeof subEvent.sortOrder === "number"
+  );
 }
 
 function isNoteEntryList(value: unknown) {

@@ -9,6 +9,7 @@ import {
 import {
   isCollateralDueSoon,
   isCollateralOverdue,
+  normalizeCollateralItem,
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
@@ -94,11 +95,14 @@ function createItem(overrides: Partial<ActionItem> = {}): ActionItem {
 function createCollateralItem(overrides: Partial<CollateralItem> = {}): CollateralItem {
   return {
     id: "collateral-1",
-    subEvent: "Legislative Visits",
+    eventInstanceId: "legislative-day-2026",
+    subEventId: "leg-day-legislative-visits",
     itemName: "Leave-behind",
     status: "Backlog",
+    owner: "Melissa",
+    blockedBy: "",
+    dueDate: "2026-03-30",
     printer: "CAPMA",
-    printerDeadline: "2026-03-30",
     quantity: "100",
     updateType: "Full Redesign",
     notes: "",
@@ -175,10 +179,10 @@ test("workflow status normalization keeps module-specific statuses mappable", ()
 
 test("collateral deadline helpers ignore terminal records and respect printer deadlines", () => {
   withMockedToday("2026-03-28T00:00:00.000Z", () => {
-    assert.equal(isCollateralDueSoon(createCollateralItem({ printerDeadline: "2026-03-30" })), true);
-    assert.equal(isCollateralOverdue(createCollateralItem({ printerDeadline: "2026-03-27" })), true);
-    assert.equal(isCollateralDueSoon(createCollateralItem({ printerDeadline: "2026-03-30", status: "Complete" })), false);
-    assert.equal(isCollateralOverdue(createCollateralItem({ printerDeadline: "2026-03-27", status: "Cut" })), false);
+    assert.equal(isCollateralDueSoon(createCollateralItem({ dueDate: "2026-03-30" })), true);
+    assert.equal(isCollateralOverdue(createCollateralItem({ dueDate: "2026-03-27" })), true);
+    assert.equal(isCollateralDueSoon(createCollateralItem({ dueDate: "2026-03-30", status: "Complete" })), false);
+    assert.equal(isCollateralOverdue(createCollateralItem({ dueDate: "2026-03-27", status: "Cut" })), false);
   });
 });
 
@@ -189,6 +193,16 @@ test("legacy imports restore action items without silently seeding collateral re
   assert.equal(parsed.usedLegacyFormat, true);
   assert.equal(parsed.items.length, 1);
   assert.deepEqual(parsed.collateralItems, []);
+});
+
+test("normalizeCollateralItem preserves template origin metadata", () => {
+  const normalized = normalizeCollateralItem({
+    ...createCollateralItem(),
+    templateOriginId: "legislative-template-item"
+  });
+
+  assert.ok(normalized);
+  assert.equal(normalized?.templateOriginId, "legislative-template-item");
 });
 
 test("normalizeWorkstreamSchedules preserves defaults and sorts multiple dates", () => {

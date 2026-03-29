@@ -13,6 +13,7 @@ import {
   createActionNoteEntry,
   DEFAULT_OWNER,
   getIssuesForWorkstream,
+  getOwnerOptions,
   LOCAL_FALLBACK_NOTE_AUTHOR,
   syncActionItemIssue,
   syncActionItemStatus,
@@ -23,12 +24,14 @@ import {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const {
+    defaultOwnerForNewItems,
     addItem,
     exportAppStateSnapshot,
     generateIssueDeliverables,
     importAppStateSnapshot,
     issues,
     resetAppState,
+    setDefaultOwnerForNewItems,
     setWorkstreamSchedules,
     workstreamSchedules
   } = useAppState();
@@ -405,6 +408,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
 
               {settingsFeedback ? <div className="field-hint">{settingsFeedback}</div> : null}
+            </div>
+
+            <div className="settings-section">
+              <div className="settings-section__header">
+                <h3 className="drawer-section__title">Defaults</h3>
+                <p className="field-hint">Set lightweight defaults used for newly created or template-applied collateral items.</p>
+              </div>
+
+              <div className="field">
+                <label htmlFor="default-owner-for-new-items">Default Owner for New Items</label>
+                <select
+                  className="field-control"
+                  id="default-owner-for-new-items"
+                  onChange={(event) => setDefaultOwnerForNewItems(event.target.value)}
+                  value={defaultOwnerForNewItems}
+                >
+                  <option value="">No default owner</option>
+                  {getOwnerOptions(defaultOwnerForNewItems || DEFAULT_OWNER).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="settings-section">

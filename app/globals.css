@@ -402,6 +402,14 @@ textarea {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.collateral-page__actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .collateral-page__title {
@@ -416,6 +424,12 @@ textarea {
   margin: 8px 0 0;
   font-size: 14px;
   color: var(--muted);
+}
+
+.collateral-card-context {
+  color: #7a8794;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .collateral-summary {
@@ -479,6 +493,24 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 14px;
+}
+
+.collateral-instance-range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.collateral-instance-multiple {
+  display: grid;
+  gap: 10px;
+}
+
+.collateral-instance-multiple__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
 }
 
 .collateral-groups {
@@ -2362,6 +2394,11 @@ textarea,
   background: #fff8f7;
 }
 
+.confirm-delete--neutral {
+  border-color: var(--border);
+  background: #fbfcfd;
+}
+
 .confirm-delete__title {
   font-weight: 700;
 }
@@ -2556,6 +2593,11 @@ textarea,
   }
 
   .quick-add-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .collateral-instance-range,
+  .collateral-instance-multiple__row {
     grid-template-columns: 1fr;
   }
 

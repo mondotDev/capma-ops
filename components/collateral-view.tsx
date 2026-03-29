@@ -1,34 +1,137 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useAppState } from "@/components/app-state";
+import { useEffect, useMemo, useState } from "react";
+import { useAppState, type CreateEventInstanceInput } from "@/components/app-state";
 import {
   COLLATERAL_STATUS_OPTIONS,
-  LEG_DAY_SUB_EVENT_OPTIONS,
+  COLLATERAL_UPDATE_TYPE_OPTIONS,
   isCollateralDueSoon,
   isCollateralOverdue,
   isCollateralTerminalStatus,
   normalizeCollateralWorkflowStatus,
-  type CollateralItem
+  type CollateralItem,
+  type LegDayCollateralProfile
 } from "@/lib/collateral-data";
-import { formatShortDate } from "@/lib/ops-utils";
+import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
+import {
+  createSuggestedEventInstanceName,
+  deriveEventDateRange,
+  type EventDateMode
+} from "@/lib/event-instances";
+import { formatShortDate, getOwnerOptions } from "@/lib/ops-utils";
+
+type CreateInstanceFormState = {
+  eventTypeId: string;
+  instanceName: string;
+  dateMode: EventDateMode;
+  dates: string[];
+  location: string;
+  notes: string;
+};
+
+const INITIAL_INSTANCE_FORM: CreateInstanceFormState = {
+  eventTypeId: "legislative-day",
+  instanceName: "Legislative Day 2027",
+  dateMode: "range",
+  dates: ["", ""],
+  location: "",
+  notes: ""
+};
 
 export function CollateralView() {
   const {
+    activeEventInstanceId,
     addCollateralItem,
+    applyDefaultTemplateToInstance,
     collateralItems,
-    collateralProfile,
+    collateralProfiles,
+    createEventInstance,
+    defaultOwnerForNewItems,
     deleteCollateralItem,
+    eventInstances,
+    eventSubEvents,
+    eventTypes,
+    setActiveEventInstanceId,
     setCollateralProfile,
     updateCollateralItem
   } = useAppState();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const activeItems = useMemo(
-    () => collateralItems.filter((item) => !isCollateralTerminalStatus(item.status)),
-    [collateralItems]
+  const [isCreateInstanceOpen, setIsCreateInstanceOpen] = useState(false);
+  const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
+  const [instanceFormState, setInstanceFormState] = useState<CreateInstanceFormState>(INITIAL_INSTANCE_FORM);
+  const [hasEditedInstanceName, setHasEditedInstanceName] = useState(false);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [pendingNewCollateralId, setPendingNewCollateralId] = useState<string | null>(null);
+  const selectedEventInstance =
+    eventInstances.find((instance) => instance.id === activeEventInstanceId) ?? eventInstances[0] ?? null;
+  const currentEventType =
+    eventTypes.find((eventType) => eventType.id === selectedEventInstance?.eventTypeId) ?? null;
+  const activeProfile =
+    collateralProfiles[activeEventInstanceId] ??
+    (selectedEventInstance?.eventTypeId === "legislative-day" ? getDefaultLegDayProfile(selectedEventInstance) : null);
+
+  useEffect(() => {
+    if (!selectedEventInstance && eventInstances[0]) {
+      setActiveEventInstanceId(eventInstances[0].id);
+    }
+  }, [eventInstances, selectedEventInstance, setActiveEventInstanceId]);
+
+  useEffect(() => {
+    setIsActionsMenuOpen(false);
+    setIsDeleteConfirmOpen(false);
+  }, [selectedId, activeEventInstanceId]);
+
+  useEffect(() => {
+    if (hasEditedInstanceName) {
+      return;
+    }
+
+    const selectedEventType =
+      eventTypes.find((eventType) => eventType.id === instanceFormState.eventTypeId) ?? eventTypes[0] ?? null;
+
+    if (!selectedEventType) {
+      return;
+    }
+
+    setInstanceFormState((current) => ({
+      ...current,
+      instanceName: createSuggestedEventInstanceName(
+        selectedEventType.name,
+        current.dateMode,
+        current.dates,
+        current.location
+      )
+    }));
+  }, [eventTypes, hasEditedInstanceName, instanceFormState.dateMode, instanceFormState.dates, instanceFormState.eventTypeId, instanceFormState.location]);
+
+  const instanceSubEvents = useMemo(
+    () => eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === activeEventInstanceId),
+    [activeEventInstanceId, eventSubEvents]
   );
-  const groupedItems = useMemo(() => groupCollateralItems(collateralItems), [collateralItems]);
-  const selectedItem = collateralItems.find((item) => item.id === selectedId) ?? null;
+  const instanceItems = useMemo(
+    () => collateralItems.filter((item) => item.eventInstanceId === activeEventInstanceId),
+    [activeEventInstanceId, collateralItems]
+  );
+  const subEventNameById = useMemo(
+    () => new Map(instanceSubEvents.map((subEvent) => [subEvent.id, subEvent.name])),
+    [instanceSubEvents]
+  );
+  const activeItems = useMemo(
+    () => instanceItems.filter((item) => !isCollateralTerminalStatus(item.status)),
+    [instanceItems]
+  );
+  const groupedItems = useMemo(
+    () => groupCollateralItems(instanceItems, instanceSubEvents, subEventNameById),
+    [instanceItems, instanceSubEvents, subEventNameById]
+  );
+  const selectedItem = instanceItems.find((item) => item.id === selectedId) ?? null;
+  const selectedEventDateRange =
+    selectedEventInstance && selectedEventInstance.startDate && selectedEventInstance.endDate
+      ? selectedEventInstance.startDate === selectedEventInstance.endDate
+        ? formatShortDate(selectedEventInstance.startDate)
+        : `${formatShortDate(selectedEventInstance.startDate)} - ${formatShortDate(selectedEventInstance.endDate)}`
+      : "";
   const summary = useMemo(
     () => ({
       active: activeItems.length,
@@ -38,32 +141,138 @@ export function CollateralView() {
     }),
     [activeItems]
   );
+  const eventInstancesByType = useMemo(() => {
+    const instancesByType = new Map<string, typeof eventInstances>();
+
+    for (const instance of [...eventInstances].sort((a, b) => a.startDate.localeCompare(b.startDate))) {
+      if (!instancesByType.has(instance.eventTypeId)) {
+        instancesByType.set(instance.eventTypeId, []);
+      }
+
+      instancesByType.get(instance.eventTypeId)!.push(instance);
+    }
+
+    return eventTypes
+      .map((eventType) => ({
+        eventType,
+        instances: instancesByType.get(eventType.id) ?? []
+      }))
+      .filter((group) => group.instances.length > 0);
+  }, [eventInstances, eventTypes]);
+  const pendingTemplateInstance =
+    pendingTemplateInstanceId
+      ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
+      : null;
 
   function handleAddCollateralItem() {
+    const fallbackSubEventId = instanceSubEvents[0]?.id ?? "__unassigned__";
     const nextId = addCollateralItem({
-      subEvent: LEG_DAY_SUB_EVENT_OPTIONS[0] ?? "Legislative Visits",
+      eventInstanceId: activeEventInstanceId,
+      subEventId: fallbackSubEventId,
       itemName: "New collateral item",
       status: "Backlog",
+      owner: defaultOwnerForNewItems,
+      blockedBy: "",
+      dueDate: "",
       printer: "",
-      printerDeadline: "",
       quantity: "",
       updateType: "",
       notes: ""
     });
 
+    setPendingNewCollateralId(nextId);
     setSelectedId(nextId);
+  }
+
+  function openCreateInstanceModal() {
+    setHasEditedInstanceName(false);
+    setInstanceFormState(INITIAL_INSTANCE_FORM);
+    setIsCreateInstanceOpen(true);
+  }
+
+  function closeCreateInstanceModal() {
+    setIsCreateInstanceOpen(false);
+    setHasEditedInstanceName(false);
+  }
+
+  function handleCreateInstance() {
+    const normalizedDates = instanceFormState.dates.filter((date) => date.length > 0);
+
+    if (!instanceFormState.eventTypeId || !instanceFormState.instanceName.trim() || normalizedDates.length === 0) {
+      return;
+    }
+
+    const nextId = createEventInstance({
+      eventTypeId: instanceFormState.eventTypeId,
+      instanceName: instanceFormState.instanceName.trim(),
+      dateMode: instanceFormState.dateMode,
+      dates: normalizedDates,
+      location: instanceFormState.location.trim(),
+      notes: instanceFormState.notes.trim()
+    } satisfies CreateEventInstanceInput);
+
+    setSelectedId(null);
+    closeCreateInstanceModal();
+
+    if (getDefaultTemplatePackForEventType(instanceFormState.eventTypeId)) {
+      setPendingTemplateInstanceId(nextId);
+    }
+  }
+
+  function handleConfirmTemplateApply() {
+    if (!pendingTemplateInstanceId) {
+      return;
+    }
+
+    applyDefaultTemplateToInstance(pendingTemplateInstanceId);
+    setPendingTemplateInstanceId(null);
+  }
+
+  function handleSkipTemplateApply() {
+    setPendingTemplateInstanceId(null);
   }
 
   return (
     <section className="collateral-page">
       <div className="collateral-page__header">
         <div>
-          <h1 className="collateral-page__title">Legislative Day Collateral</h1>
-          <p className="collateral-page__subtitle">Production tracking for signage, print pieces, decks, and event materials.</p>
+          <h1 className="collateral-page__title">{selectedEventInstance?.name ?? "Collateral"}</h1>
+          <p className="collateral-page__subtitle">
+            {selectedEventDateRange
+              ? `${selectedEventDateRange} - production tracking for signage, print pieces, decks, and event materials.`
+              : "Production tracking for signage, print pieces, decks, and event materials."}
+          </p>
         </div>
-        <button className="topbar__button" onClick={handleAddCollateralItem} type="button">
-          + Add Collateral
-        </button>
+        <div className="collateral-page__actions">
+          <div className="field">
+            <label htmlFor="collateral-event-instance">Event Instance</label>
+            <select
+              className="field-control"
+              id="collateral-event-instance"
+              onChange={(event) => {
+                setActiveEventInstanceId(event.target.value);
+                setSelectedId(null);
+              }}
+              value={activeEventInstanceId}
+            >
+              {eventInstancesByType.map(({ eventType, instances }) => (
+                <optgroup key={eventType.id} label={eventType.name}>
+                  {instances.map((instance) => (
+                    <option key={instance.id} value={instance.id}>
+                      {instance.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
+            New Event Instance
+          </button>
+          <button className="topbar__button" onClick={handleAddCollateralItem} type="button">
+            + Add Collateral
+          </button>
+        </div>
       </div>
 
       <div className="collateral-summary">
@@ -87,156 +296,193 @@ export function CollateralView() {
 
       <div className="collateral-layout">
         <div className="collateral-main">
-          <div className="card card--secondary collateral-profile">
-            <div className="card__title">LEG DAY PROFILE</div>
-            <div className="collateral-profile__grid">
-              <div className="field">
-                <label htmlFor="collateral-event-start">Event Start</label>
-                <input
-                  className="field-control"
-                  id="collateral-event-start"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, eventStartDate: event.target.value })
-                  }
-                  type="date"
-                  value={collateralProfile.eventStartDate}
-                />
+          {selectedEventInstance?.eventTypeId === "legislative-day" && activeProfile ? (
+            <div className="card card--secondary collateral-profile">
+              <div className="card__title">EVENT PROFILE</div>
+              <div className="collateral-profile__grid">
+                <div className="field">
+                  <label htmlFor="collateral-event-start">Event Start</label>
+                  <input
+                    className="field-control"
+                    id="collateral-event-start"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        eventStartDate: event.target.value
+                      })
+                    }
+                    type="date"
+                    value={activeProfile.eventStartDate}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="collateral-event-end">Event End</label>
+                  <input
+                    className="field-control"
+                    id="collateral-event-end"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        eventEndDate: event.target.value
+                      })
+                    }
+                    type="date"
+                    value={activeProfile.eventEndDate}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="collateral-room-block">Room Block Deadline</label>
+                  <input
+                    className="field-control"
+                    id="collateral-room-block"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        roomBlockDeadline: event.target.value
+                      })
+                    }
+                    type="date"
+                    value={activeProfile.roomBlockDeadline}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="collateral-logo-deadline">Logo Deadline</label>
+                  <input
+                    className="field-control"
+                    id="collateral-logo-deadline"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        logoDeadline: event.target.value
+                      })
+                    }
+                    type="date"
+                    value={activeProfile.logoDeadline}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="collateral-external-printing">External Printing Due</label>
+                  <input
+                    className="field-control"
+                    id="collateral-external-printing"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        externalPrintingDue: event.target.value
+                      })
+                    }
+                    type="date"
+                    value={activeProfile.externalPrintingDue}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="collateral-internal-printing">Start Internal Printing</label>
+                  <input
+                    className="field-control"
+                    id="collateral-internal-printing"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        internalPrintingStart: event.target.value
+                      })
+                    }
+                    type="date"
+                    value={activeProfile.internalPrintingStart}
+                  />
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="collateral-event-end">Event End</label>
-                <input
-                  className="field-control"
-                  id="collateral-event-end"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, eventEndDate: event.target.value })
-                  }
-                  type="date"
-                  value={collateralProfile.eventEndDate}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="collateral-room-block">Room Block Deadline</label>
-                <input
-                  className="field-control"
-                  id="collateral-room-block"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, roomBlockDeadline: event.target.value })
-                  }
-                  type="date"
-                  value={collateralProfile.roomBlockDeadline}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="collateral-logo-deadline">Logo Deadline</label>
-                <input
-                  className="field-control"
-                  id="collateral-logo-deadline"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, logoDeadline: event.target.value })
-                  }
-                  type="date"
-                  value={collateralProfile.logoDeadline}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="collateral-external-printing">External Printing Due</label>
-                <input
-                  className="field-control"
-                  id="collateral-external-printing"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, externalPrintingDue: event.target.value })
-                  }
-                  type="date"
-                  value={collateralProfile.externalPrintingDue}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="collateral-internal-printing">Start Internal Printing</label>
-                <input
-                  className="field-control"
-                  id="collateral-internal-printing"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, internalPrintingStart: event.target.value })
-                  }
-                  type="date"
-                  value={collateralProfile.internalPrintingStart}
-                />
+              <div className="collateral-profile__notes">
+                <div className="field">
+                  <label htmlFor="collateral-room-block-note">Room Block Note</label>
+                  <textarea
+                    className="field-control"
+                    id="collateral-room-block-note"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        roomBlockNote: event.target.value
+                      })
+                    }
+                    rows={2}
+                    value={activeProfile.roomBlockNote}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="collateral-logo-note">Logo Deadline Note</label>
+                  <textarea
+                    className="field-control"
+                    id="collateral-logo-note"
+                    onChange={(event) =>
+                      setCollateralProfile(activeEventInstanceId, {
+                        ...activeProfile,
+                        logoDeadlineNote: event.target.value
+                      })
+                    }
+                    rows={2}
+                    value={activeProfile.logoDeadlineNote}
+                  />
+                </div>
               </div>
             </div>
-            <div className="collateral-profile__notes">
-              <div className="field">
-                <label htmlFor="collateral-room-block-note">Room Block Note</label>
-                <textarea
-                  className="field-control"
-                  id="collateral-room-block-note"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, roomBlockNote: event.target.value })
-                  }
-                  rows={2}
-                  value={collateralProfile.roomBlockNote}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="collateral-logo-note">Logo Deadline Note</label>
-                <textarea
-                  className="field-control"
-                  id="collateral-logo-note"
-                  onChange={(event) =>
-                    setCollateralProfile({ ...collateralProfile, logoDeadlineNote: event.target.value })
-                  }
-                  rows={2}
-                  value={collateralProfile.logoDeadlineNote}
-                />
-              </div>
-            </div>
-          </div>
+          ) : null}
 
           <div className="card card--secondary collateral-groups">
-            <div className="card__title">COLLATERAL ITEMS</div>
-            {groupedItems.map(([subEvent, items]) => (
-              <section className="collateral-group" key={subEvent}>
-                <div className="collateral-group__header">
-                  <h2 className="collateral-group__title">{subEvent}</h2>
-                  <span className="collateral-group__count">{items.length}</span>
-                </div>
-                <div className="collateral-list">
-                  {items.map((item) => {
-                    const isSelected = item.id === selectedId;
-                    const isOverdue = isCollateralOverdue(item);
-                    const isDueSoon = isCollateralDueSoon(item);
+            <div className="card__title">
+              COLLATERAL ITEMS
+              {currentEventType ? <span className="collateral-card-context"> - {currentEventType.name}</span> : null}
+            </div>
+            {groupedItems.length === 0 ? (
+              <div className="empty-state">
+                No collateral items yet for this event instance. Create one manually or apply a template pack.
+              </div>
+            ) : (
+              groupedItems.map(([subEvent, items]) => (
+                <section className="collateral-group" key={subEvent}>
+                  <div className="collateral-group__header">
+                    <h2 className="collateral-group__title">{subEvent}</h2>
+                    <span className="collateral-group__count">{items.length}</span>
+                  </div>
+                  <div className="collateral-list">
+                    {items.map((item) => {
+                      const isSelected = item.id === selectedId;
+                      const isOverdue = isCollateralOverdue(item);
+                      const isDueSoon = isCollateralDueSoon(item);
 
-                    return (
-                      <button
-                        className={
-                          isSelected
-                            ? "collateral-row collateral-row--selected"
-                            : isOverdue
-                              ? "collateral-row collateral-row--overdue"
-                              : isDueSoon
-                                ? "collateral-row collateral-row--due-soon"
-                                : "collateral-row"
-                        }
-                        key={item.id}
-                        onClick={() => setSelectedId(item.id)}
-                        type="button"
-                      >
-                        <div className="collateral-row__main">
-                          <div className="collateral-row__title">{item.itemName}</div>
-                          <div className="collateral-row__meta">
-                            <span>{item.printer || "No printer assigned"}</span>
-                            <span>{item.printerDeadline ? formatShortDate(item.printerDeadline) : "No printer deadline"}</span>
-                            {item.quantity ? <span>Qty {item.quantity}</span> : null}
+                      return (
+                        <button
+                          className={
+                            isSelected
+                              ? "collateral-row collateral-row--selected"
+                              : isOverdue
+                                ? "collateral-row collateral-row--overdue"
+                                : isDueSoon
+                                  ? "collateral-row collateral-row--due-soon"
+                                  : "collateral-row"
+                          }
+                          key={item.id}
+                          onClick={() => setSelectedId(item.id)}
+                          type="button"
+                        >
+                          <div className="collateral-row__main">
+                            <div className="collateral-row__title">{item.itemName}</div>
+                            <div className="collateral-row__meta">
+                              <span>{item.owner || "No owner assigned"}</span>
+                              <span>{item.dueDate ? formatShortDate(item.dueDate) : "No due date"}</span>
+                              {item.blockedBy ? <span>Blocked by {item.blockedBy}</span> : null}
+                              <span>{item.printer || "No printer assigned"}</span>
+                              {item.quantity ? <span>Qty {item.quantity}</span> : null}
+                            </div>
                           </div>
-                        </div>
-                        <div className="collateral-row__signals">
-                          <span className="collateral-status">{item.status}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+                          <div className="collateral-row__signals">
+                            <span className="collateral-status">{item.status}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))
+            )}
           </div>
         </div>
 
@@ -246,20 +492,39 @@ export function CollateralView() {
               <div className="drawer__header-text">
                 <h2 className="drawer__title">{selectedItem.itemName}</h2>
                 <div className="drawer__header-meta">
-                  <span className="drawer__workstream">{selectedItem.subEvent}</span>
+                  <span className="drawer__workstream">
+                    {subEventNameById.get(selectedItem.subEventId) ?? "Unassigned sub-event"}
+                  </span>
                 </div>
               </div>
               <div className="drawer__header-actions">
-                <button
-                  className="button-link button-link--inline-secondary"
-                  onClick={() => {
-                    deleteCollateralItem(selectedItem.id);
-                    setSelectedId(null);
-                  }}
-                  type="button"
-                >
-                  Delete
-                </button>
+                <div className="drawer__actions-menu">
+                  <button
+                    aria-expanded={isActionsMenuOpen}
+                    aria-haspopup="menu"
+                    className="drawer__actions-trigger"
+                    onClick={() => setIsActionsMenuOpen((current) => !current)}
+                    type="button"
+                  >
+                    <span aria-hidden="true">⚙</span>
+                    <span className="sr-only">Open collateral item actions</span>
+                  </button>
+                  {isActionsMenuOpen ? (
+                    <div className="drawer__actions-popover" role="menu">
+                      <button
+                        className="drawer__actions-item drawer__actions-item--danger"
+                        onClick={() => {
+                          setIsActionsMenuOpen(false);
+                          setIsDeleteConfirmOpen(true);
+                        }}
+                        role="menuitem"
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
                 <button className="button-link" onClick={() => setSelectedId(null)} type="button">
                   Close
                 </button>
@@ -281,12 +546,15 @@ export function CollateralView() {
                     <label htmlFor="collateral-sub-event">Sub-Event</label>
                     <select
                       id="collateral-sub-event"
-                      onChange={(event) => updateCollateralItem(selectedItem.id, { subEvent: event.target.value })}
-                      value={selectedItem.subEvent}
+                      onChange={(event) => updateCollateralItem(selectedItem.id, { subEventId: event.target.value })}
+                      value={selectedItem.subEventId}
                     >
-                      {LEG_DAY_SUB_EVENT_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
+                      {instanceSubEvents.length === 0 ? (
+                        <option value="__unassigned__">Unassigned</option>
+                      ) : null}
+                      {instanceSubEvents.map((subEvent) => (
+                        <option key={subEvent.id} value={subEvent.id}>
+                          {subEvent.name}
                         </option>
                       ))}
                     </select>
@@ -310,22 +578,44 @@ export function CollateralView() {
                     </select>
                   </div>
                   <div className="field">
+                    <label htmlFor="collateral-owner">Owner</label>
+                    <select
+                      id="collateral-owner"
+                      onChange={(event) => updateCollateralItem(selectedItem.id, { owner: event.target.value })}
+                      value={selectedItem.owner}
+                    >
+                      <option value="">No owner assigned</option>
+                      {getOwnerOptions(selectedItem.owner || defaultOwnerForNewItems).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field field--priority">
+                    <label htmlFor="collateral-due-date">Due Date</label>
+                    <input
+                      id="collateral-due-date"
+                      onChange={(event) => updateCollateralItem(selectedItem.id, { dueDate: event.target.value })}
+                      type="date"
+                      value={selectedItem.dueDate}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="collateral-blocked-by">Blocked By</label>
+                    <input
+                      id="collateral-blocked-by"
+                      onChange={(event) => updateCollateralItem(selectedItem.id, { blockedBy: event.target.value })}
+                      placeholder="Optional blocker"
+                      value={selectedItem.blockedBy}
+                    />
+                  </div>
+                  <div className="field">
                     <label htmlFor="collateral-printer">Printer</label>
                     <input
                       id="collateral-printer"
                       onChange={(event) => updateCollateralItem(selectedItem.id, { printer: event.target.value })}
                       value={selectedItem.printer}
-                    />
-                  </div>
-                  <div className="field field--priority">
-                    <label htmlFor="collateral-printer-deadline">Printer Deadline</label>
-                    <input
-                      id="collateral-printer-deadline"
-                      onChange={(event) =>
-                        updateCollateralItem(selectedItem.id, { printerDeadline: event.target.value })
-                      }
-                      type="date"
-                      value={selectedItem.printerDeadline}
                     />
                   </div>
                   <div className="field">
@@ -338,11 +628,18 @@ export function CollateralView() {
                   </div>
                   <div className="field">
                     <label htmlFor="collateral-update-type">Update Type</label>
-                    <input
+                    <select
                       id="collateral-update-type"
                       onChange={(event) => updateCollateralItem(selectedItem.id, { updateType: event.target.value })}
                       value={selectedItem.updateType}
-                    />
+                    >
+                      <option value="">Select update type</option>
+                      {COLLATERAL_UPDATE_TYPE_OPTIONS.filter((option) => option.length > 0).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="field field--wide">
                     <label htmlFor="collateral-notes">Notes</label>
@@ -355,41 +652,358 @@ export function CollateralView() {
                 </div>
               </section>
             </div>
+            {isDeleteConfirmOpen ? (
+              <div className="drawer__confirm-bar">
+                <div className="confirm-delete">
+                  <div className="confirm-delete__title">Delete this collateral item?</div>
+                  <div className="confirm-delete__copy">
+                    This will permanently remove it from the current event instance.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => setIsDeleteConfirmOpen(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button-danger"
+                      onClick={() => {
+                        deleteCollateralItem(selectedItem.id);
+                        setIsDeleteConfirmOpen(false);
+                        setSelectedId(null);
+                      }}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {pendingNewCollateralId === selectedItem.id ? (
+              <div className="drawer__confirm-bar">
+                <div className="confirm-delete confirm-delete--neutral">
+                  <div className="confirm-delete__title">Save this new collateral item?</div>
+                  <div className="confirm-delete__copy">
+                    Save keeps this new item in the current event instance. Cancel removes it.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => {
+                        deleteCollateralItem(selectedItem.id);
+                        setPendingNewCollateralId(null);
+                        setSelectedId(null);
+                      }}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="topbar__button"
+                      onClick={() => {
+                        setPendingNewCollateralId(null);
+                        setSelectedId(null);
+                      }}
+                      type="button"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </aside>
         ) : null}
       </div>
+
+      {isCreateInstanceOpen ? (
+        <div className="modal-layer" role="presentation">
+          <button aria-label="Close create event instance" className="modal-backdrop" onClick={closeCreateInstanceModal} type="button" />
+          <section aria-labelledby="create-instance-title" aria-modal="true" className="quick-add-modal" role="dialog">
+            <div className="quick-add-modal__header">
+              <div>
+                <h2 className="quick-add-modal__title" id="create-instance-title">
+                  New Event Instance
+                </h2>
+                <p className="quick-add-modal__subtitle">Create the event instance first, then optionally apply its default collateral template.</p>
+              </div>
+              <button className="button-link" onClick={closeCreateInstanceModal} type="button">
+                Close
+              </button>
+            </div>
+
+            <div className="quick-add-form">
+              <div className="quick-add-grid">
+                <div className="field">
+                  <label htmlFor="instance-event-type">Event Type</label>
+                  <select
+                    className="field-control"
+                    id="instance-event-type"
+                    onChange={(event) =>
+                      setInstanceFormState((current) => ({
+                        ...current,
+                        eventTypeId: event.target.value
+                      }))
+                    }
+                    value={instanceFormState.eventTypeId}
+                  >
+                    {eventTypes.map((eventType) => (
+                      <option key={eventType.id} value={eventType.id}>
+                        {eventType.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="instance-name">Instance Name</label>
+                  <input
+                    className="field-control"
+                    id="instance-name"
+                    onChange={(event) => {
+                      setHasEditedInstanceName(true);
+                      setInstanceFormState((current) => ({ ...current, instanceName: event.target.value }));
+                    }}
+                    value={instanceFormState.instanceName}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="instance-date-mode">Date Mode</label>
+                  <select
+                    className="field-control"
+                    id="instance-date-mode"
+                    onChange={(event) =>
+                      setInstanceFormState((current) => ({
+                        ...current,
+                        dateMode: event.target.value as EventDateMode,
+                        dates:
+                          event.target.value === "multiple"
+                            ? current.dates.length > 0
+                              ? current.dates
+                              : [""]
+                            : current.dates.length >= 2
+                              ? [current.dates[0] ?? "", current.dates[1] ?? ""]
+                              : current.dates.length === 1
+                                ? [current.dates[0], current.dates[0]]
+                                : ["", ""]
+                      }))
+                    }
+                    value={instanceFormState.dateMode}
+                  >
+                    <option value="single">Single day</option>
+                    <option value="range">Date range</option>
+                    <option value="multiple">Multiple dates</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="instance-location">Location</label>
+                  <input
+                    className="field-control"
+                    id="instance-location"
+                    onChange={(event) =>
+                      setInstanceFormState((current) => ({ ...current, location: event.target.value }))
+                    }
+                    placeholder="Optional"
+                    value={instanceFormState.location}
+                  />
+                </div>
+                {instanceFormState.dateMode === "single" ? (
+                  <div className="field">
+                    <label htmlFor="instance-single-date">Date</label>
+                    <input
+                      className="field-control"
+                      id="instance-single-date"
+                      onChange={(event) =>
+                        setInstanceFormState((current) => ({ ...current, dates: [event.target.value] }))
+                      }
+                      type="date"
+                      value={instanceFormState.dates[0] ?? ""}
+                    />
+                  </div>
+                ) : null}
+                {instanceFormState.dateMode === "range" ? (
+                  <div className="field field--wide collateral-instance-range">
+                    <div className="field">
+                      <label htmlFor="instance-range-start">Start Date</label>
+                      <input
+                        className="field-control"
+                        id="instance-range-start"
+                        onChange={(event) =>
+                          setInstanceFormState((current) => ({
+                            ...current,
+                            dates: [event.target.value, current.dates[1] ?? ""]
+                          }))
+                        }
+                        type="date"
+                        value={instanceFormState.dates[0] ?? ""}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="instance-range-end">End Date</label>
+                      <input
+                        className="field-control"
+                        id="instance-range-end"
+                        onChange={(event) =>
+                          setInstanceFormState((current) => ({
+                            ...current,
+                            dates: [current.dates[0] ?? "", event.target.value]
+                          }))
+                        }
+                        type="date"
+                        value={instanceFormState.dates[1] ?? ""}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {instanceFormState.dateMode === "multiple" ? (
+                  <div className="field field--wide">
+                    <label>Dates</label>
+                    <div className="collateral-instance-multiple">
+                      {instanceFormState.dates.map((date, index) => (
+                        <div className="collateral-instance-multiple__row" key={`instance-date-${index}`}>
+                          <input
+                            className="field-control"
+                            onChange={(event) =>
+                              setInstanceFormState((current) => ({
+                                ...current,
+                                dates: current.dates.map((entry, entryIndex) =>
+                                  entryIndex === index ? event.target.value : entry
+                                )
+                              }))
+                            }
+                            type="date"
+                            value={date}
+                          />
+                          <button
+                            className="button-link button-link--inline-secondary"
+                            onClick={() =>
+                              setInstanceFormState((current) => ({
+                                ...current,
+                                dates:
+                                  current.dates.length > 1
+                                    ? current.dates.filter((_, entryIndex) => entryIndex !== index)
+                                    : [""]
+                              }))
+                            }
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        className="button-link button-link--inline-secondary"
+                        onClick={() =>
+                          setInstanceFormState((current) => ({
+                            ...current,
+                            dates: [...current.dates, ""]
+                          }))
+                        }
+                        type="button"
+                      >
+                        Add Date
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="field field--wide">
+                  <label htmlFor="instance-notes">Notes</label>
+                  <textarea
+                    className="field-control"
+                    id="instance-notes"
+                    onChange={(event) =>
+                      setInstanceFormState((current) => ({ ...current, notes: event.target.value }))
+                    }
+                    rows={3}
+                    value={instanceFormState.notes}
+                  />
+                </div>
+              </div>
+              <div className="quick-add-actions">
+                <button className="button-link button-link--inline-secondary" onClick={closeCreateInstanceModal} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="topbar__button"
+                  disabled={!isInstanceFormValid(instanceFormState)}
+                  onClick={handleCreateInstance}
+                  type="button"
+                >
+                  Create Instance
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingTemplateInstance ? (
+        <div className="modal-layer" role="presentation">
+          <button aria-label="Close template prompt" className="modal-backdrop" onClick={handleSkipTemplateApply} type="button" />
+          <section aria-labelledby="apply-template-title" aria-modal="true" className="quick-add-modal" role="dialog">
+            <div className="quick-add-modal__header">
+              <div>
+                <h2 className="quick-add-modal__title" id="apply-template-title">
+                  Apply template?
+                </h2>
+                <p className="quick-add-modal__subtitle">
+                  {pendingTemplateInstance.name} is ready. Apply its default template pack now, or start from an empty instance.
+                </p>
+              </div>
+            </div>
+            <div className="confirm-delete">
+              <div className="confirm-delete__actions">
+                <button className="button-link button-link--inline-secondary" onClick={handleSkipTemplateApply} type="button">
+                  Skip
+                </button>
+                <button className="topbar__button" onClick={handleConfirmTemplateApply} type="button">
+                  Apply Template
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function groupCollateralItems(items: CollateralItem[]) {
+function groupCollateralItems(
+  items: CollateralItem[],
+  subEvents: { id: string; name: string; sortOrder: number }[],
+  subEventNameById: Map<string, string>
+) {
   const grouped = new Map<string, CollateralItem[]>();
 
-  for (const subEvent of LEG_DAY_SUB_EVENT_OPTIONS) {
-    grouped.set(subEvent, []);
+  for (const subEvent of subEvents) {
+    grouped.set(subEvent.name, []);
   }
 
   for (const item of items) {
-    if (!grouped.has(item.subEvent)) {
-      grouped.set(item.subEvent, []);
+    const subEventName = subEventNameById.get(item.subEventId) ?? "Unassigned";
+
+    if (!grouped.has(subEventName)) {
+      grouped.set(subEventName, []);
     }
 
-    grouped.get(item.subEvent)!.push(item);
+    grouped.get(subEventName)!.push(item);
   }
 
   return Array.from(grouped.entries())
     .map(([subEvent, groupedItems]) => [
       subEvent,
       [...groupedItems].sort((a, b) => {
-        const aHasDeadline = a.printerDeadline.length > 0;
-        const bHasDeadline = b.printerDeadline.length > 0;
+        const aHasDeadline = a.dueDate.length > 0;
+        const bHasDeadline = b.dueDate.length > 0;
 
         if (aHasDeadline !== bHasDeadline) {
           return aHasDeadline ? -1 : 1;
         }
 
         if (aHasDeadline && bHasDeadline) {
-          const dateCompare = a.printerDeadline.localeCompare(b.printerDeadline);
+          const dateCompare = a.dueDate.localeCompare(b.dueDate);
 
           if (dateCompare !== 0) {
             return dateCompare;
@@ -400,4 +1014,28 @@ function groupCollateralItems(items: CollateralItem[]) {
       })
     ] as const)
     .filter(([, groupedItems]) => groupedItems.length > 0);
+}
+
+function isInstanceFormValid(formState: CreateInstanceFormState) {
+  const { startDate, endDate } = deriveEventDateRange(formState.dateMode, formState.dates);
+
+  return (
+    formState.eventTypeId.length > 0 &&
+    formState.instanceName.trim().length > 0 &&
+    startDate.length > 0 &&
+    endDate.length > 0
+  );
+}
+
+function getDefaultLegDayProfile(instance: { startDate: string; endDate: string } | null): LegDayCollateralProfile {
+  return {
+    eventStartDate: instance?.startDate ?? "",
+    eventEndDate: instance?.endDate ?? "",
+    roomBlockDeadline: "",
+    roomBlockNote: "",
+    logoDeadline: "",
+    logoDeadlineNote: "",
+    externalPrintingDue: "",
+    internalPrintingStart: ""
+  };
 }
