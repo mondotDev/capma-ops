@@ -103,138 +103,160 @@ export function DashboardView() {
       <div className="card card--secondary">
         <div className="card__title">PUBLICATIONS</div>
         <div className="simple-list simple-list--tight">
-          {visiblePublicationIssues.map((issue) => (
-            <div
-              className={
-                issue.label === activePublicationIssue
-                  ? "publication-row publication-row--active"
-                  : issue.status === "Planned"
-                    ? "publication-row publication-row--planned"
-                    : "publication-row"
-              }
-              key={issue.label}
-            >
-              <div className="publication-row__body">
-                {issue.status === "Planned" ? (
-                  <div className="publication-row__meta">Next up</div>
-                ) : issue.status === "Open" ? (
-                  <div className="publication-row__meta">Current issue</div>
-                ) : null}
-                <div className="simple-row simple-row--stacked simple-row--truncate" title={`${issue.label} - ${issue.status}`}>
-                  {issue.label} — {issue.status} — {dashboardMetrics.issueProgress[issue.label]?.complete ?? 0}/
-                  {dashboardMetrics.issueProgress[issue.label]?.total ?? 0} complete
+          {visiblePublicationIssues.map((issue) => {
+            const issueProgress = dashboardMetrics.issueProgress[issue.label] ?? { complete: 0, total: 0 };
+            const progressPercent =
+              issueProgress.total > 0 ? Math.round((issueProgress.complete / issueProgress.total) * 100) : 0;
+            const canCompleteIssue = issueProgress.total > 0 && issueProgress.complete === issueProgress.total;
+
+            return (
+              <div
+                className={
+                  issue.label === activePublicationIssue
+                    ? "publication-row publication-row--active"
+                    : issue.status === "Planned"
+                      ? "publication-row publication-row--planned"
+                      : "publication-row"
+                }
+                key={issue.label}
+              >
+                <div className="publication-row__body">
+                  {issue.status === "Planned" ? (
+                    <div className="publication-row__meta">Next up</div>
+                  ) : issue.status === "Open" ? (
+                    <div className="publication-row__meta">Current issue</div>
+                  ) : null}
+                  <div className="publication-row__summary">
+                    <div className="publication-row__title" title={issue.label}>
+                      {issue.label}
+                    </div>
+                    <div className="publication-row__status-line">
+                      <span className="publication-row__status">{issue.status}</span>
+                      <span className="publication-row__progress-copy">
+                        {issueProgress.complete}/{issueProgress.total} complete
+                      </span>
+                    </div>
+                  </div>
+                  <div aria-hidden="true" className="publication-row__progress">
+                    <span className="publication-row__progress-bar" style={{ width: `${progressPercent}%` }} />
+                  </div>
+                  {issue.status === "Planned" && issueProgress.total === 0 ? (
+                    <div className="publication-row__meta">0 deliverables</div>
+                  ) : null}
+                  {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
                 </div>
-                {issue.status === "Planned" && (dashboardMetrics.issueProgress[issue.label]?.total ?? 0) === 0 ? (
-                  <div className="publication-row__meta">0 deliverables</div>
-                ) : null}
-                {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
-              </div>
-              <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
-                {issue.status === "Planned" ? (
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    onClick={() => {
-                      const result = openIssue(issue.label);
-                      setActivePublicationIssue(issue.label);
-                      router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
-                      setPublicationFeedback(formatPublicationFeedback(issue.label, result.created, result.skipped));
-                    }}
-                    type="button"
-                  >
-                    Open Issue
-                  </button>
-                ) : null}
-                {issue.status === "Open" ? (
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    onClick={() => {
-                      setActivePublicationIssue(issue.label);
-                      router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
-                    }}
-                    type="button"
-                  >
-                    Go to Issue
-                  </button>
-                ) : null}
-                {issue.status === "Open" ? (
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    onClick={() => {
-                      const result = generateMissingDeliverablesForIssue(issue.label);
-                      setActivePublicationIssue(issue.label);
-                      setPublicationFeedback(formatGenerateMissingFeedback(issue.label, result.created, result.skipped));
-                    }}
-                    type="button"
-                  >
-                    Generate Missing
-                  </button>
-                ) : null}
-                <select
-                  aria-label={`Issue status for ${issue.label}`}
-                  className="cell-select"
-                  onChange={(event) =>
-                    {
+                <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
+                  {issue.status === "Planned" ? (
+                    <button
+                      className="button-link publication-row__button publication-row__button--primary"
+                      onClick={() => {
+                        const result = openIssue(issue.label);
+                        setActivePublicationIssue(issue.label);
+                        router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
+                        setPublicationFeedback(formatPublicationFeedback(issue.label, result.created, result.skipped));
+                      }}
+                      type="button"
+                    >
+                      Open Issue
+                    </button>
+                  ) : null}
+                  {issue.status === "Open" ? (
+                    <button
+                      className="button-link publication-row__button publication-row__button--primary"
+                      onClick={() => {
+                        setActivePublicationIssue(issue.label);
+                        router.push(`/action?issue=${encodeURIComponent(issue.label)}`);
+                      }}
+                      type="button"
+                    >
+                      Go to Issue
+                    </button>
+                  ) : null}
+                  {issue.status === "Open" ? (
+                    <button
+                      className="button-link button-link--inline-secondary publication-row__button publication-row__button--secondary"
+                      onClick={() => {
+                        const result = generateMissingDeliverablesForIssue(issue.label);
+                        setActivePublicationIssue(issue.label);
+                        setPublicationFeedback(formatGenerateMissingFeedback(issue.label, result.created, result.skipped));
+                      }}
+                      type="button"
+                    >
+                      Generate Missing
+                    </button>
+                  ) : null}
+                </div>
+                <div className="publication-row__utility" onClick={(event) => event.stopPropagation()}>
+                  <select
+                    aria-label={`Issue status for ${issue.label}`}
+                    className="cell-select publication-row__status-select"
+                    onChange={(event) => {
                       const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
                       const result = setIssueStatus(issue.label, nextStatus);
                       setActivePublicationIssue(nextStatus === "Open" ? issue.label : null);
                       if (nextStatus === "Complete" && !result.completed) {
                         setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
                       }
-                    }
-                  }
-                  value={issue.status}
-                >
-                  <option value="Planned">Planned</option>
-                  <option value="Open">Open</option>
-                  <option value="Complete">Complete</option>
-                </select>
-              </div>
-              {issue.status === "Open" ? (
-                issuePendingCompletion === issue.label ? (
-                  <div className="confirm-delete publication-confirm">
-                    <div className="confirm-delete__title">Complete this issue?</div>
-                    <div className="confirm-delete__copy">
-                      This will mark the issue complete but keep all related items in local state.
-                    </div>
-                    <div className="confirm-delete__actions">
-                      <button
-                        className="button-link button-link--inline-secondary"
-                        onClick={() => setIssuePendingCompletion(null)}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="button-danger"
-                        onClick={() => {
-                          const result = completeIssue(issue.label);
-                          setIssuePendingCompletion(null);
-                          if (!result.completed) {
-                            setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
-                            return;
-                          }
-
-                          setActivePublicationIssue(null);
-                          setPublicationFeedback(`${issue.label} marked complete.`);
-                        }}
-                        type="button"
-                      >
-                        Complete Issue
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    onClick={() => setIssuePendingCompletion(issue.label)}
-                    type="button"
+                    }}
+                    value={issue.status}
                   >
-                    Complete Issue
-                  </button>
-                )
-              ) : null}
-            </div>
-          ))}
+                    <option value="Planned">Planned</option>
+                    <option value="Open">Open</option>
+                    <option value="Complete">Complete</option>
+                  </select>
+                  {issue.status === "Open" && issuePendingCompletion !== issue.label ? (
+                    <button
+                      className={
+                        canCompleteIssue
+                          ? "button-link button-link--inline-secondary publication-row__complete publication-row__complete--ready"
+                          : "button-link button-link--inline-secondary publication-row__complete"
+                      }
+                      onClick={() => setIssuePendingCompletion(issue.label)}
+                      type="button"
+                    >
+                      Complete Issue
+                    </button>
+                  ) : null}
+                </div>
+                {issue.status === "Open" ? (
+                  issuePendingCompletion === issue.label ? (
+                    <div className="confirm-delete publication-confirm">
+                      <div className="confirm-delete__title">Complete this issue?</div>
+                      <div className="confirm-delete__copy">
+                        This will mark the issue complete but keep all related items in local state.
+                      </div>
+                      <div className="confirm-delete__actions">
+                        <button
+                          className="button-link button-link--inline-secondary"
+                          onClick={() => setIssuePendingCompletion(null)}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="button-danger"
+                          onClick={() => {
+                            const result = completeIssue(issue.label);
+                            setIssuePendingCompletion(null);
+                            if (!result.completed) {
+                              setPublicationFeedback(formatCompletionBlockedFeedback(issue.label, result.blockedDeliverables));
+                              return;
+                            }
+
+                            setActivePublicationIssue(null);
+                            setPublicationFeedback(`${issue.label} marked complete.`);
+                          }}
+                          type="button"
+                        >
+                          Complete Issue
+                        </button>
+                      </div>
+                    </div>
+                  ) : null
+                ) : null}
+              </div>
+            );
+          })}
           {publicationFeedback ? <div className="card__subhead">{publicationFeedback}</div> : null}
         </div>
       </div>
