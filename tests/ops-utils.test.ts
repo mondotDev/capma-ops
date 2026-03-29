@@ -195,6 +195,22 @@ test("legacy imports restore action items without silently seeding collateral re
   assert.deepEqual(parsed.collateralItems, []);
 });
 
+test("imports keep valid collateral rows even when one collateral row is malformed", () => {
+  const parsed = parseImportedAppState({
+    items: [createItem()],
+    issueStatuses: {},
+    collateralItems: [
+      createCollateralItem({ id: "good-collateral" }),
+      { id: "bad-collateral", itemName: 42 }
+    ]
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed?.items.length, 1);
+  assert.equal(parsed?.collateralItems.length, 1);
+  assert.equal(parsed?.collateralItems[0]?.id, "good-collateral");
+});
+
 test("normalizeCollateralItem preserves template origin metadata", () => {
   const normalized = normalizeCollateralItem({
     ...createCollateralItem(),

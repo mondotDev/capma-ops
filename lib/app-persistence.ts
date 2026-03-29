@@ -119,8 +119,13 @@ export function savePersistedAppState(state: PersistedAppState) {
     workstreamSchedules: normalizeWorkstreamSchedules(state.workstreamSchedules)
   });
 
+  const currentPrimaryState = window.localStorage.getItem(APP_STATE_STORAGE_KEY);
+
+  if (currentPrimaryState) {
+    window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, currentPrimaryState);
+  }
+
   window.localStorage.setItem(APP_STATE_STORAGE_KEY, serializedState);
-  window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, serializedState);
 }
 
 export function clearPersistedAppState() {
@@ -309,10 +314,7 @@ function parseStoredAppState(
           .filter((item): item is CollateralItem => item !== null)
       : initialLegDayCollateralItems;
 
-    if (
-      items.length !== parsedState.items.length ||
-      (Array.isArray(parsedState.collateralItems) && collateralItems.length !== parsedState.collateralItems.length)
-    ) {
+    if (items.length !== parsedState.items.length) {
       return { status: "invalid" };
     }
 

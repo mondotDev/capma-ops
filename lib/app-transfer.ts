@@ -128,10 +128,7 @@ export function parseImportedAppState(
         .filter((item): item is CollateralItem => item !== null)
     : initialLegDayCollateralItems.map((item) => ({ ...item }));
 
-  if (
-    items.length !== snapshot.items.length ||
-    (Array.isArray(snapshot.collateralItems) && collateralItems.length !== snapshot.collateralItems.length)
-  ) {
+  if (items.length !== snapshot.items.length) {
     return null;
   }
 
