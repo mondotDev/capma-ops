@@ -1,10 +1,11 @@
 import type { ActionItem } from "@/lib/sample-data";
-import type { IssueStatus } from "@/lib/ops-utils";
+import { getDefaultWorkstreamSchedules, normalizeWorkstreamSchedules, type IssueStatus, type WorkstreamSchedule } from "@/lib/ops-utils";
 import type { AppStateSnapshot } from "@/lib/app-transfer";
 
 export type PersistedAppState = {
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
+  workstreamSchedules: WorkstreamSchedule[];
 };
 
 export type LoadPersistedAppStateResult = {
@@ -77,7 +78,10 @@ export function savePersistedAppState(state: PersistedAppState) {
     return;
   }
 
-  const serializedState = JSON.stringify(state);
+  const serializedState = JSON.stringify({
+    ...state,
+    workstreamSchedules: normalizeWorkstreamSchedules(state.workstreamSchedules)
+  });
 
   window.localStorage.setItem(APP_STATE_STORAGE_KEY, serializedState);
   window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, serializedState);
@@ -203,7 +207,10 @@ function parseStoredAppState(
       status: "valid",
       state: {
         items: items.map((item) => normalizeItem(item)),
-        issueStatuses: parsedState.issueStatuses
+        issueStatuses: parsedState.issueStatuses,
+        workstreamSchedules: Array.isArray(parsedState.workstreamSchedules)
+          ? normalizeWorkstreamSchedules(parsedState.workstreamSchedules)
+          : getDefaultWorkstreamSchedules()
       }
     };
   } catch {

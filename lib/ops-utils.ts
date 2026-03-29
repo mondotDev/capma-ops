@@ -35,9 +35,28 @@ export const OWNER_OPTIONS = [
   "Governmental Affairs Chair",
   "External / TBD"
 ] as const;
+export const SCHEDULED_WORKSTREAM_OPTIONS = [
+  "Legislative Day",
+  "Best Pest Expo",
+  "Pest Ed",
+  "Termite Academy",
+  "First Friday",
+  "Hands-On Workshops",
+  "Development Summit",
+  "Monday Mingle"
+] as const;
 export const DEFAULT_OWNER = "Melissa";
 export type OwnerOption = (typeof OWNER_OPTIONS)[number];
 export type EventGroupOption = (typeof EVENT_GROUP_OPTIONS)[number];
+export type WorkstreamScheduleMode = "none" | "single" | "range" | "multiple";
+export type WorkstreamSchedule = {
+  workstream: (typeof SCHEDULED_WORKSTREAM_OPTIONS)[number];
+  mode: WorkstreamScheduleMode;
+  singleDate?: string;
+  startDate?: string;
+  endDate?: string;
+  dates?: string[];
+};
 type LegacyBlockedFields = {
   blocked?: boolean;
 };
@@ -134,6 +153,10 @@ export type StuckReasonCount = {
   count: number;
   source: "waiting" | "blocked" | "mixed";
 };
+export type WorkstreamDateContext = {
+  dateText: string;
+  countdownText: string;
+};
 
 export type ActionItemValidation = {
   type: boolean;
@@ -161,6 +184,25 @@ export const LEGACY_NOTE_AUTHOR: ActionNoteAuthor = {
   initials: "LEG",
   displayName: "Legacy note"
 };
+
+const DEFAULT_WORKSTREAM_SCHEDULES: WorkstreamSchedule[] = [
+  { workstream: "Legislative Day", mode: "none" },
+  { workstream: "Best Pest Expo", mode: "none" },
+  { workstream: "Pest Ed", mode: "none" },
+  { workstream: "Termite Academy", mode: "none" },
+  {
+    workstream: "First Friday",
+    mode: "multiple",
+    dates: ["2026-03-06", "2026-05-01", "2026-06-05", "2026-08-07", "2026-10-02", "2026-11-06"]
+  },
+  { workstream: "Hands-On Workshops", mode: "none" },
+  { workstream: "Development Summit", mode: "none" },
+  {
+    workstream: "Monday Mingle",
+    mode: "multiple",
+    dates: ["2026-03-02", "2026-05-04", "2026-06-01", "2026-08-03", "2026-10-05", "2026-11-02"]
+  }
+];
 
 export function getCurrentDate() {
   const currentDate = new Date();
@@ -763,6 +805,83 @@ export function formatShortDate(dateValue: string) {
   });
 }
 
+export function getDefaultWorkstreamSchedules() {
+  return DEFAULT_WORKSTREAM_SCHEDULES.map((schedule) => ({
+    ...schedule,
+    dates: schedule.dates ? [...schedule.dates] : undefined
+  }));
+}
+
+export function normalizeWorkstreamSchedules(schedules?: WorkstreamSchedule[]) {
+  const normalizedByWorkstream = new Map<WorkstreamSchedule["workstream"], WorkstreamSchedule>(
+    getDefaultWorkstreamSchedules().map((schedule) => [schedule.workstream, schedule] as const)
+  );
+
+  for (const schedule of schedules ?? []) {
+    if (!SCHEDULED_WORKSTREAM_OPTIONS.includes(schedule.workstream)) {
+      continue;
+    }
+
+    normalizedByWorkstream.set(schedule.workstream, normalizeWorkstreamSchedule(schedule));
+  }
+
+  return SCHEDULED_WORKSTREAM_OPTIONS.map((workstream) => normalizedByWorkstream.get(workstream)!).filter(Boolean);
+}
+
+export function getWorkstreamDateContext(
+  workstream: string,
+  schedules: WorkstreamSchedule[],
+  issues: IssueRecord[],
+  currentDate = getCurrentDate()
+): WorkstreamDateContext | null {
+  if (workstream === "Newsbrief" || workstream === "The Voice") {
+    const openIssue = getOpenIssuesForWorkstream(issues, workstream)[0];
+    const nextIssue = openIssue ?? getNextPlannedIssueForWorkstream(issues, workstream, currentDate);
+
+    if (!nextIssue?.dueDate || daysUntil(nextIssue.dueDate) < 0) {
+      return null;
+    }
+
+    return {
+      dateText: formatShortDate(nextIssue.dueDate),
+      countdownText: formatCountdownText(nextIssue.dueDate)
+    };
+  }
+
+  const schedule = normalizeWorkstreamSchedules(schedules).find((entry) => entry.workstream === workstream);
+
+  if (!schedule || schedule.mode === "none") {
+    return null;
+  }
+
+  if (schedule.mode === "single" && schedule.singleDate && daysUntil(schedule.singleDate) >= 0) {
+    return {
+      dateText: formatShortDate(schedule.singleDate),
+      countdownText: formatCountdownText(schedule.singleDate)
+    };
+  }
+
+  if (schedule.mode === "range" && schedule.startDate && schedule.endDate && daysUntil(schedule.startDate) >= 0) {
+    return {
+      dateText: `${formatShortDate(schedule.startDate)} - ${formatShortDate(schedule.endDate)}`,
+      countdownText: formatCountdownText(schedule.startDate)
+    };
+  }
+
+  if (schedule.mode === "multiple" && schedule.dates) {
+    const nextDate = [...schedule.dates].sort().find((date) => daysUntil(date) >= 0);
+
+    if (nextDate) {
+      return {
+        dateText: `Next: ${formatShortDate(nextDate)}`,
+        countdownText: formatCountdownText(nextDate)
+      };
+    }
+  }
+
+  return null;
+}
+
 export function formatRelativeDueLabel(item: ActionItem) {
   if (isItemMissingDueDate(item)) {
     return "missing issue setup";
@@ -828,6 +947,64 @@ export function getImmediateRiskPreview(item: ActionItem) {
     title,
     meta: `Due in ${days}d • ${dueText} • ${item.workstream}`
   };
+}
+
+function normalizeWorkstreamSchedule(schedule: WorkstreamSchedule): WorkstreamSchedule {
+  if (schedule.mode === "single") {
+    return {
+      workstream: schedule.workstream,
+      mode: "single",
+      singleDate: normalizeScheduleDate(schedule.singleDate)
+    };
+  }
+
+  if (schedule.mode === "range") {
+    return {
+      workstream: schedule.workstream,
+      mode: "range",
+      startDate: normalizeScheduleDate(schedule.startDate),
+      endDate: normalizeScheduleDate(schedule.endDate)
+    };
+  }
+
+  if (schedule.mode === "multiple") {
+    const dates = Array.from(
+      new Set(
+        (schedule.dates ?? [])
+          .map((date) => normalizeScheduleDate(date))
+          .filter((date): date is string => Boolean(date))
+      )
+    ).sort();
+
+    return {
+      workstream: schedule.workstream,
+      mode: "multiple",
+      dates
+    };
+  }
+
+  return {
+    workstream: schedule.workstream,
+    mode: "none"
+  };
+}
+
+function normalizeScheduleDate(value?: string) {
+  return value?.trim() || undefined;
+}
+
+function formatCountdownText(dateValue: string) {
+  const days = daysUntil(dateValue);
+
+  if (days <= 0) {
+    return "today";
+  }
+
+  if (days === 1) {
+    return "tomorrow";
+  }
+
+  return `${days} days out`;
 }
 
 export function formatItemWithWorkstream(item: ActionItem) {

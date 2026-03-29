@@ -32,6 +32,8 @@ import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/l
 import {
   type IssueRecord,
   type IssueStatus,
+  type WorkstreamSchedule,
+  getDefaultWorkstreamSchedules,
   getGeneratedIssues,
   normalizeActionItemFields
 } from "@/lib/ops-utils";
@@ -50,6 +52,7 @@ export type ImportAppStateResult = {
 type AppStateContextValue = {
   items: ActionItem[];
   issues: IssueRecord[];
+  workstreamSchedules: WorkstreamSchedule[];
   addItem: (item: NewActionItem) => void;
   bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => void;
   deleteItem: (id: string) => void;
@@ -60,6 +63,7 @@ type AppStateContextValue = {
   importAppStateSnapshot: (value: unknown) => ImportAppStateResult;
   openIssue: (issue: string) => GenerateDeliverablesResult;
   resetAppState: () => void;
+  setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => void;
   setIssueStatus: (issue: string, status: IssueStatus) => CompletePublicationIssueResult;
   updateItem: (id: string, updates: Partial<ActionItem>) => void;
 };
@@ -69,6 +73,7 @@ const AppStateContext = createContext<AppStateContextValue | undefined>(undefine
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ActionItem[]>(getDefaultItems);
   const [issueStatuses, setIssueStatuses] = useState<Partial<Record<string, IssueStatus>>>({});
+  const [workstreamSchedules, setWorkstreamSchedulesState] = useState<WorkstreamSchedule[]>(getDefaultWorkstreamSchedules);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [shouldPersist, setShouldPersist] = useState(true);
 
@@ -84,6 +89,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         })
       );
       setIssueStatuses(loadResult.state.issueStatuses);
+      setWorkstreamSchedulesState(loadResult.state.workstreamSchedules);
     }
 
     setShouldPersist(loadResult.shouldPersist);
@@ -97,9 +103,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     savePersistedAppState({
       items,
-      issueStatuses
+      issueStatuses,
+      workstreamSchedules
     });
-  }, [hasHydrated, issueStatuses, items, shouldPersist]);
+  }, [hasHydrated, issueStatuses, items, shouldPersist, workstreamSchedules]);
 
   function enablePersistence() {
     setShouldPersist(true);
@@ -187,12 +194,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     enablePersistence();
     setItems(getDefaultItems());
     setIssueStatuses({});
+    setWorkstreamSchedulesState(getDefaultWorkstreamSchedules());
   }
 
   const value = useMemo(
     () => ({
     items,
     issues: getGeneratedIssues(issueStatuses),
+    workstreamSchedules,
     addItem,
     bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => {
       enablePersistence();
@@ -200,7 +209,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     },
     deleteItem,
     completeIssue,
-    exportAppStateSnapshot: () => createAppStateSnapshot(items, issueStatuses),
+    exportAppStateSnapshot: () => createAppStateSnapshot(items, issueStatuses, workstreamSchedules),
     generateMissingDeliverablesForIssue,
     generateIssueDeliverables,
     importAppStateSnapshot: (value: unknown) => {
@@ -213,6 +222,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       enablePersistence();
       setItems(normalizeActionItems(parsedState.items));
       setIssueStatuses(parsedState.issueStatuses);
+      setWorkstreamSchedulesState(parsedState.workstreamSchedules);
 
       return {
         itemCount: parsedState.items.length,
@@ -221,13 +231,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     },
     openIssue,
     resetAppState,
+    setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => {
+      enablePersistence();
+      setWorkstreamSchedulesState(schedules);
+    },
     setIssueStatus,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       enablePersistence();
       setItems((current) => updateActionItemById(current, id, updates));
     }
     }),
-    [issueStatuses, items]
+    [issueStatuses, items, workstreamSchedules]
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

@@ -21,9 +21,12 @@ import {
   createActionNoteEntry,
   getImmediateRiskPreview,
   getDashboardMetrics,
+  getDefaultWorkstreamSchedules,
   getOwnerOptions,
   getDailyLoad,
+  getGeneratedIssues,
   getSuggestedEventGroupForWorkstream,
+  getWorkstreamDateContext,
   getWorkstreamSummary,
   isBlockedItem,
   isItemDueSoon,
@@ -32,6 +35,7 @@ import {
   daysSince,
   matchesSearchQuery,
   normalizeOwnerValue,
+  normalizeWorkstreamSchedules,
   normalizeActionItemFields,
   syncActionItemIssue,
   syncActionItemStatus,
@@ -135,6 +139,57 @@ test("getWorkstreamSummary returns workload rollups by workstream", () => {
       dueSoon: 1,
       inProgress: 1
     });
+  });
+});
+
+test("normalizeWorkstreamSchedules preserves defaults and sorts multiple dates", () => {
+  const schedules = normalizeWorkstreamSchedules([
+    {
+      workstream: "Pest Ed",
+      mode: "multiple",
+      dates: ["2026-08-12", "2026-05-02", "2026-05-02"]
+    }
+  ]);
+
+  const pestEd = schedules.find((entry) => entry.workstream === "Pest Ed");
+  const firstFriday = schedules.find((entry) => entry.workstream === "First Friday");
+
+  assert.deepEqual(pestEd, {
+    workstream: "Pest Ed",
+    mode: "multiple",
+    dates: ["2026-05-02", "2026-08-12"]
+  });
+  assert.equal(firstFriday?.mode, "multiple");
+});
+
+test("getWorkstreamDateContext uses schedules for event workstreams and issues for publications", () => {
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    const schedules = normalizeWorkstreamSchedules([
+      {
+        workstream: "Legislative Day",
+        mode: "range",
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ]);
+    const issues = getGeneratedIssues({});
+
+    assert.deepEqual(getWorkstreamDateContext("Legislative Day", schedules, issues), {
+      dateText: "Apr 21 - Apr 23",
+      countdownText: "24 days out"
+    });
+
+    assert.deepEqual(getWorkstreamDateContext("First Friday", getDefaultWorkstreamSchedules(), issues), {
+      dateText: "Next: May 1",
+      countdownText: "34 days out"
+    });
+
+    assert.deepEqual(getWorkstreamDateContext("Newsbrief", schedules, issues), {
+      dateText: "Apr 30",
+      countdownText: "33 days out"
+    });
+
+    assert.equal(getWorkstreamDateContext("General Operations", schedules, issues), null);
   });
 });
 

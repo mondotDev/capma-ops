@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import {
   formatShortDate,
   getDailyLoad,
   getDashboardMetrics,
+  getWorkstreamDateContext,
   getWorkstreamSummary,
   getVisiblePublicationIssues,
   isBlockedItem,
@@ -20,7 +21,7 @@ import {
 
 export function DashboardView() {
   const router = useRouter();
-  const { completeIssue, generateMissingDeliverablesForIssue, items, issues, openIssue, setIssueStatus } =
+  const { completeIssue, generateMissingDeliverablesForIssue, items, issues, openIssue, setIssueStatus, workstreamSchedules } =
     useAppState();
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export function DashboardView() {
                 const preview = getImmediateRiskPreview(item);
 
                 return (
-                  <div className="risk-preview" key={item.id} title={`${preview.title} — ${preview.meta}`}>
+                  <div className="risk-preview" key={item.id} title={`${preview.title} â€” ${preview.meta}`}>
                     <div className="risk-preview__title">{preview.title}</div>
                     <div className="risk-preview__meta">{preview.meta}</div>
                   </div>
@@ -132,23 +133,32 @@ export function DashboardView() {
             <div className="card__title">WORKSTREAM SUMMARY</div>
             <div className="workstream-summary">
               {workstreamSummary.length > 0 ? (
-                workstreamSummary.slice(0, 5).map((entry) => (
-                  <div
-                    className="workstream-row"
-                    key={entry.workstream}
-                    title={`${entry.workstream}: ${entry.total} total, ${entry.overdue} overdue, ${entry.dueSoon} due soon, ${entry.inProgress} in progress`}
-                  >
-                    <div className="workstream-row__top">
-                      <span className="workstream-row__name">{entry.workstream}</span>
-                      <strong className="workstream-row__total">{entry.total}</strong>
-                    </div>
-                    <div className="workstream-row__signals">
-                      <span className="workstream-signal workstream-signal--overdue">{entry.overdue} overdue</span>
-                      <span className="workstream-signal workstream-signal--due-soon">{entry.dueSoon} due soon</span>
-                      <span className="workstream-signal">{entry.inProgress} in progress</span>
-                    </div>
-                  </div>
-                ))
+                workstreamSummary.slice(0, 5).map((entry) => {
+                    const dateContext = getWorkstreamDateContext(entry.workstream, workstreamSchedules, issues);
+
+                    return (
+                      <div
+                        className="workstream-row"
+                        key={entry.workstream}
+                        title={`${entry.workstream}: ${entry.total} total, ${entry.overdue} overdue, ${entry.dueSoon} due soon, ${entry.inProgress} in progress`}
+                      >
+                        <div className="workstream-row__top">
+                          <span className="workstream-row__name">{entry.workstream}</span>
+                          <strong className="workstream-row__total">{entry.total}</strong>
+                        </div>
+                        {dateContext ? (
+                          <div className="workstream-row__date">
+                            {dateContext.dateText} • {dateContext.countdownText}
+                          </div>
+                        ) : null}
+                        <div className="workstream-row__signals">
+                          <span className="workstream-signal workstream-signal--overdue">{entry.overdue} overdue</span>
+                          <span className="workstream-signal workstream-signal--due-soon">{entry.dueSoon} due soon</span>
+                          <span className="workstream-signal">{entry.inProgress} in progress</span>
+                        </div>
+                      </div>
+                    );
+                })
               ) : (
                 <div className="muted">No active workstreams</div>
               )}
@@ -459,14 +469,14 @@ function formatPublicationFeedback(issue: string, created: number, skipped: numb
   }
 
   if (skipped === 0) {
-    return `${issue} opened — ${created} deliverables created.`;
+    return `${issue} opened â€” ${created} deliverables created.`;
   }
 
   if (created === 0) {
-    return `${issue} opened — all deliverables already existed.`;
+    return `${issue} opened â€” all deliverables already existed.`;
   }
 
-  return `${issue} opened — ${created} created, ${skipped} skipped.`;
+  return `${issue} opened â€” ${created} created, ${skipped} skipped.`;
 }
 
 function formatGenerateMissingFeedback(issue: string, created: number, skipped: number) {
@@ -524,3 +534,5 @@ function reorderVisibleIssues(
     return a.label.localeCompare(b.label);
   });
 }
+
+

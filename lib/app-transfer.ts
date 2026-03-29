@@ -1,28 +1,40 @@
 import type { ActionItem } from "@/lib/sample-data";
-import type { IssueStatus } from "@/lib/ops-utils";
+import {
+  getDefaultWorkstreamSchedules,
+  normalizeWorkstreamSchedules,
+  type IssueStatus,
+  type WorkstreamSchedule
+} from "@/lib/ops-utils";
 
 export type AppStateSnapshot = {
   version: 1;
   exportedAt: string;
   items: ActionItem[];
   issueStatuses: Partial<Record<string, IssueStatus>>;
+  workstreamSchedules: WorkstreamSchedule[];
 };
 
 export function createAppStateSnapshot(
   items: ActionItem[],
-  issueStatuses: Partial<Record<string, IssueStatus>>
+  issueStatuses: Partial<Record<string, IssueStatus>>,
+  workstreamSchedules: WorkstreamSchedule[]
 ): AppStateSnapshot {
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
     items: items.map((item) => ({ ...item })),
-    issueStatuses: { ...issueStatuses }
+    issueStatuses: { ...issueStatuses },
+    workstreamSchedules: normalizeWorkstreamSchedules(workstreamSchedules)
   };
 }
 
 export function parseImportedAppState(
   value: unknown
-): ({ items: ActionItem[]; issueStatuses: Partial<Record<string, IssueStatus>> } & { usedLegacyFormat: boolean }) | null {
+): ({
+  items: ActionItem[];
+  issueStatuses: Partial<Record<string, IssueStatus>>;
+  workstreamSchedules: WorkstreamSchedule[];
+} & { usedLegacyFormat: boolean }) | null {
   if (Array.isArray(value)) {
     const items = value.filter(isActionItemRecord);
 
@@ -33,6 +45,7 @@ export function parseImportedAppState(
     return {
       items,
       issueStatuses: {},
+      workstreamSchedules: getDefaultWorkstreamSchedules(),
       usedLegacyFormat: true
     };
   }
@@ -56,6 +69,9 @@ export function parseImportedAppState(
   return {
     items,
     issueStatuses: snapshot.issueStatuses,
+    workstreamSchedules: Array.isArray(snapshot.workstreamSchedules)
+      ? normalizeWorkstreamSchedules(snapshot.workstreamSchedules)
+      : getDefaultWorkstreamSchedules(),
     usedLegacyFormat: false
   };
 }

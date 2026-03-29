@@ -7,6 +7,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
 import { QuickAddModal, type QuickAddFormState } from "@/components/quick-add-modal";
 import {
+  SCHEDULED_WORKSTREAM_OPTIONS,
+  type WorkstreamSchedule,
+  type WorkstreamScheduleMode,
   createActionNoteEntry,
   DEFAULT_OWNER,
   getIssuesForWorkstream,
@@ -25,7 +28,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     generateIssueDeliverables,
     importAppStateSnapshot,
     issues,
-    resetAppState
+    resetAppState,
+    setWorkstreamSchedules,
+    workstreamSchedules
   } = useAppState();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -163,6 +168,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setPendingImportFileName("");
       setIsImportPending(false);
     }
+  }
+
+  function updateWorkstreamSchedule(
+    workstream: WorkstreamSchedule["workstream"],
+    updater: (schedule: WorkstreamSchedule) => WorkstreamSchedule
+  ) {
+    setWorkstreamSchedules(
+      workstreamSchedules.map((schedule) => (schedule.workstream === workstream ? updater(schedule) : schedule))
+    );
+  }
+
+  function handleWorkstreamScheduleModeChange(
+    workstream: WorkstreamSchedule["workstream"],
+    mode: WorkstreamScheduleMode
+  ) {
+    updateWorkstreamSchedule(workstream, () => ({
+      workstream,
+      mode,
+      ...(mode === "multiple" ? { dates: [""] } : {})
+    }));
+  }
+
+  function handleWorkstreamScheduleFieldChange(
+    workstream: WorkstreamSchedule["workstream"],
+    field: "singleDate" | "startDate" | "endDate",
+    value: string
+  ) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      [field]: value
+    }));
+  }
+
+  function handleWorkstreamScheduleDateChange(
+    workstream: WorkstreamSchedule["workstream"],
+    index: number,
+    value: string
+  ) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      dates: (schedule.dates ?? []).map((date, dateIndex) => (dateIndex === index ? value : date))
+    }));
+  }
+
+  function handleAddWorkstreamScheduleDate(workstream: WorkstreamSchedule["workstream"]) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      dates: [...(schedule.dates ?? []), ""]
+    }));
+  }
+
+  function handleRemoveWorkstreamScheduleDate(workstream: WorkstreamSchedule["workstream"], index: number) {
+    updateWorkstreamSchedule(workstream, (schedule) => {
+      const nextDates = (schedule.dates ?? []).filter((_, dateIndex) => dateIndex !== index);
+
+      return {
+        ...schedule,
+        dates: nextDates.length > 0 ? nextDates : [""]
+      };
+    });
   }
 
   function updateField<Key extends keyof QuickAddFormState>(field: Key, value: QuickAddFormState[Key]) {
@@ -334,6 +399,131 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
 
               {settingsFeedback ? <div className="field-hint">{settingsFeedback}</div> : null}
+            </div>
+
+            <div className="settings-section">
+              <div className="settings-section__header">
+                <h3 className="drawer-section__title">Event Schedule</h3>
+                <p className="field-hint">
+                  Set the next anchor dates for event-like workstreams. The dashboard uses these dates for countdowns.
+                </p>
+              </div>
+
+              <div className="schedule-settings">
+                {SCHEDULED_WORKSTREAM_OPTIONS.map((workstream) => {
+                  const schedule = workstreamSchedules.find((entry) => entry.workstream === workstream);
+
+                  if (!schedule) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="schedule-settings__row" key={workstream}>
+                      <div className="schedule-settings__heading">
+                        <div className="schedule-settings__name">{workstream}</div>
+                      </div>
+
+                      <div className="schedule-settings__controls">
+                        <div className="field">
+                          <label htmlFor={`schedule-mode-${workstream}`}>Schedule Type</label>
+                          <select
+                            className="field-control"
+                            id={`schedule-mode-${workstream}`}
+                            onChange={(event) =>
+                              handleWorkstreamScheduleModeChange(
+                                workstream,
+                                event.target.value as WorkstreamScheduleMode
+                              )
+                            }
+                            value={schedule.mode}
+                          >
+                            <option value="none">None</option>
+                            <option value="single">Single day</option>
+                            <option value="range">Date range</option>
+                            <option value="multiple">Multiple dates</option>
+                          </select>
+                        </div>
+
+                        {schedule.mode === "single" ? (
+                          <div className="field">
+                            <label htmlFor={`schedule-single-${workstream}`}>Date</label>
+                            <input
+                              className="field-control"
+                              id={`schedule-single-${workstream}`}
+                              onChange={(event) =>
+                                handleWorkstreamScheduleFieldChange(workstream, "singleDate", event.target.value)
+                              }
+                              type="date"
+                              value={schedule.singleDate ?? ""}
+                            />
+                          </div>
+                        ) : null}
+
+                        {schedule.mode === "range" ? (
+                          <div className="schedule-settings__range">
+                            <div className="field">
+                              <label htmlFor={`schedule-start-${workstream}`}>Start Date</label>
+                              <input
+                                className="field-control"
+                                id={`schedule-start-${workstream}`}
+                                onChange={(event) =>
+                                  handleWorkstreamScheduleFieldChange(workstream, "startDate", event.target.value)
+                                }
+                                type="date"
+                                value={schedule.startDate ?? ""}
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`schedule-end-${workstream}`}>End Date</label>
+                              <input
+                                className="field-control"
+                                id={`schedule-end-${workstream}`}
+                                onChange={(event) =>
+                                  handleWorkstreamScheduleFieldChange(workstream, "endDate", event.target.value)
+                                }
+                                type="date"
+                                value={schedule.endDate ?? ""}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {schedule.mode === "multiple" ? (
+                          <div className="schedule-settings__multiple">
+                            {(schedule.dates ?? [""]).map((date, index) => (
+                              <div className="schedule-settings__date-row" key={`${workstream}-${index}`}>
+                                <input
+                                  aria-label={`${workstream} date ${index + 1}`}
+                                  className="field-control"
+                                  onChange={(event) =>
+                                    handleWorkstreamScheduleDateChange(workstream, index, event.target.value)
+                                  }
+                                  type="date"
+                                  value={date}
+                                />
+                                <button
+                                  className="button-link button-link--inline-secondary"
+                                  onClick={() => handleRemoveWorkstreamScheduleDate(workstream, index)}
+                                  type="button"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              className="button-link button-link--inline-secondary"
+                              onClick={() => handleAddWorkstreamScheduleDate(workstream)}
+                              type="button"
+                            >
+                              Add Date
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="settings-section">
