@@ -369,59 +369,61 @@ export function ActionView({
         ) : null}
 
         <div className="filter-bar" aria-label="Action filters">
-          <div className="filter-group">
-            <span className="filter-group__label">Execution</span>
-            <div className="filter-group__pills">
-              {EXECUTION_LENS_OPTIONS.map((option) => (
-                <button
-                  aria-pressed={activeLens === option.value}
-                  className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
-                  key={option.value}
-                  onClick={() => handleLensChange(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
+          <div className="filter-bar__main">
+            <div className="filter-group">
+              <span className="filter-group__label">Execution</span>
+              <div className="filter-group__pills">
+                {EXECUTION_LENS_OPTIONS.map((option) => (
+                  <button
+                    aria-pressed={activeLens === option.value}
+                    className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+                    key={option.value}
+                    onClick={() => handleLensChange(option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="filter-group">
+              <span className="filter-group__label">Review</span>
+              <div className="filter-group__pills">
+                {REVIEW_LENS_OPTIONS.map((option) => (
+                  <button
+                    aria-pressed={activeLens === option.value}
+                    className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+                    key={option.value}
+                    onClick={() => handleLensChange(option.value)}
+                    type="button"
+                  >
+                    {option.label.replace("Review: ", "")}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="filter-group">
+              <span className="filter-group__label">Status</span>
+              <div className="filter-group__pills">
+                {STATUS_FILTER_OPTIONS.map((option) => (
+                  <button
+                    aria-pressed={activeFilter === option.value}
+                    className={activeFilter === option.value ? "filter-pill active" : "filter-pill"}
+                    key={option.value}
+                    onClick={() => handleFilterChange(option.value)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="filter-group">
-            <span className="filter-group__label">Review</span>
-            <div className="filter-group__pills">
-              {REVIEW_LENS_OPTIONS.map((option) => (
-                <button
-                  aria-pressed={activeLens === option.value}
-                  className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
-                  key={option.value}
-                  onClick={() => handleLensChange(option.value)}
-                  type="button"
-                >
-                  {option.label.replace("Review: ", "")}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="filter-group">
-            <span className="filter-group__label">Status</span>
-            <div className="filter-group__pills">
-              {STATUS_FILTER_OPTIONS.map((option) => (
-                <button
-                  aria-pressed={activeFilter === option.value}
-                  className={activeFilter === option.value ? "filter-pill active" : "filter-pill"}
-                  key={option.value}
-                  onClick={() => handleFilterChange(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <label className="field">
-            <span className="muted">Event</span>
+          <label className="filter-field">
+            <span className="filter-field__label">Event</span>
             <select
               aria-label="Filter by event"
-              className="cell-select"
+              className="cell-select filter-field__select"
               onChange={(event) => handleEventGroupChange(event.target.value)}
               value={activeEventGroup}
             >
@@ -435,20 +437,25 @@ export function ActionView({
         </div>
 
         <div className="summary-row" aria-label="Action summary">
-          <span>
-            Overdue: <strong>{summaryCounts.overdue}</strong>
+          <span className="summary-chip summary-chip--overdue">
+            <span className="summary-chip__label">Overdue</span>
+            <strong className="summary-chip__value">{summaryCounts.overdue}</strong>
           </span>
-          <span>
-            Due Soon: <strong>{summaryCounts.dueSoon}</strong>
+          <span className="summary-chip summary-chip--due-soon">
+            <span className="summary-chip__label">Due Soon</span>
+            <strong className="summary-chip__value">{summaryCounts.dueSoon}</strong>
           </span>
-          <span>
-            Blocked: <strong>{summaryCounts.blocked}</strong>
+          <span className="summary-chip summary-chip--blocked">
+            <span className="summary-chip__label">Blocked</span>
+            <strong className="summary-chip__value">{summaryCounts.blocked}</strong>
           </span>
-          <span>
-            Waiting: <strong>{summaryCounts.waiting}</strong>
+          <span className="summary-chip summary-chip--waiting">
+            <span className="summary-chip__label">Waiting</span>
+            <strong className="summary-chip__value">{summaryCounts.waiting}</strong>
           </span>
-          <span>
-            Total Active: <strong>{summaryCounts.totalActive}</strong>
+          <span className="summary-chip">
+            <span className="summary-chip__label">Total Active</span>
+            <strong className="summary-chip__value">{summaryCounts.totalActive}</strong>
           </span>
         </div>
 
@@ -521,7 +528,7 @@ export function ActionView({
               />
               <span>Show Completed</span>
             </label>
-            <span className="muted">Select rows to bulk-assign owner.</span>
+            <span className="muted action-toolbar__hint">Select rows to bulk-assign owner.</span>
           </div>
 
           <div className="action-toolbar__meta">
@@ -586,9 +593,9 @@ export function ActionView({
           <div className="table-wrap">
             <div className="table-scroll">
               <table>
-                <thead>
+                <thead className="table-head">
                   <tr>
-                    <th>
+                    <th className="table-head__select">
                       <input
                         aria-label="Select all visible items"
                         checked={allVisibleSelected}
@@ -596,16 +603,31 @@ export function ActionView({
                         type="checkbox"
                       />
                     </th>
-                    <th>Title</th>
-                    <th>
-                      Due Date <span className="sort-indicator">↑ urgency</span>
+                    <th className="table-head__cell table-head__cell--title">
+                      <span className="table-head__label">Title</span>
                     </th>
-                    <th>Status</th>
-                    <th>Waiting On</th>
-                    <th>Owner</th>
-                    <th>Workstream</th>
-                    <th>Type</th>
-                    <th>Last Updated</th>
+                    <th className="table-head__cell table-head__cell--due-date">
+                      <span className="table-head__label">Due Date</span>
+                      <span className="sort-indicator">↑ urgency</span>
+                    </th>
+                    <th className="table-head__cell table-head__cell--status">
+                      <span className="table-head__label">Status</span>
+                    </th>
+                    <th className="table-head__cell table-head__cell--waiting">
+                      <span className="table-head__label">Waiting On</span>
+                    </th>
+                    <th className="table-head__cell table-head__cell--owner">
+                      <span className="table-head__label">Owner</span>
+                    </th>
+                    <th className="table-head__cell table-head__cell--workstream">
+                      <span className="table-head__label">Workstream</span>
+                    </th>
+                    <th className="table-head__cell table-head__cell--type">
+                      <span className="table-head__label">Type</span>
+                    </th>
+                    <th className="table-head__cell table-head__cell--updated">
+                      <span className="table-head__label">Last Updated</span>
+                    </th>
                   </tr>
                 </thead>
                 {groupedItems.map((group) => {
@@ -664,13 +686,13 @@ export function ActionView({
                                 ) : null}
                                 {item.issue ? <div className="cell-subtext">{item.issue}</div> : null}
                               </td>
-                              <td>
+                              <td className="cell-due-date">
                                 <div>{formatShortDate(item.dueDate)}</div>
                                 {!isTerminalStatus(item.status) && formatDueLabel(item) ? (
                                   <div className="cell-hint">{formatDueLabel(item)}</div>
                                 ) : null}
                               </td>
-                              <td onClick={(event) => event.stopPropagation()}>
+                              <td className="cell-status" onClick={(event) => event.stopPropagation()}>
                                 <select
                                   aria-label={`Status for ${item.title}`}
                                   className="cell-select"
@@ -684,7 +706,7 @@ export function ActionView({
                                   ))}
                                 </select>
                               </td>
-                              <td onClick={(event) => event.stopPropagation()}>
+                              <td className="cell-waiting" onClick={(event) => event.stopPropagation()}>
                                 <select
                                   aria-label={`Waiting on for ${item.title}`}
                                   className={
@@ -705,7 +727,7 @@ export function ActionView({
                                   ))}
                                 </select>
                               </td>
-                              <td onClick={(event) => event.stopPropagation()}>
+                              <td className="cell-owner" onClick={(event) => event.stopPropagation()}>
                                 <select
                                   aria-label={`Owner for ${item.title}`}
                                   className="cell-select"
@@ -719,9 +741,9 @@ export function ActionView({
                                   ))}
                                 </select>
                               </td>
-                              <td className="cell-muted">{item.workstream}</td>
-                              <td className="cell-muted">{item.type}</td>
-                              <td className="cell-muted">{formatShortDate(item.lastUpdated)}</td>
+                              <td className="cell-muted cell-workstream">{item.workstream}</td>
+                              <td className="cell-muted cell-type">{item.type}</td>
+                              <td className="cell-muted cell-updated">{formatShortDate(item.lastUpdated)}</td>
                             </tr>
                           ))
                         : null}
