@@ -46,6 +46,7 @@ import {
   initialEventInstances,
   initialEventSubEvents,
   initialEventTypes,
+  resolveActiveEventInstanceId,
   type EventDateMode,
   type EventFamily,
   type EventInstance,
@@ -184,6 +185,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       workstreamSchedules
     });
   }, [activeEventInstanceId, collateralItems, collateralProfiles, defaultOwnerForNewItems, eventFamilies, eventInstances, eventSubEvents, eventTypes, hasHydrated, issueStatuses, items, shouldPersist, workstreamSchedules]);
+
+  useEffect(() => {
+    const resolvedInstanceId = resolveActiveEventInstanceId(activeEventInstanceId, eventInstances);
+
+    if (resolvedInstanceId !== activeEventInstanceId) {
+      setActiveEventInstanceIdState(resolvedInstanceId);
+    }
+  }, [activeEventInstanceId, eventInstances]);
 
   function enablePersistence() {
     setShouldPersist(true);

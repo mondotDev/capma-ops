@@ -25,6 +25,7 @@ import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
 import {
   createSuggestedEventInstanceName,
   deriveEventDateRange,
+  resolveActiveEventInstanceId,
   type EventDateMode
 } from "@/lib/event-instances";
 import {
@@ -84,32 +85,27 @@ export function CollateralView() {
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<CollateralSummaryFilter>("all");
   const [activeProfileDeadlineFilter, setActiveProfileDeadlineFilter] =
     useState<CollateralProfileDeadlineFilter>("none");
+  const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(activeEventInstanceId, eventInstances);
   const selectedEventInstance =
-    eventInstances.find((instance) => instance.id === activeEventInstanceId) ?? eventInstances[0] ?? null;
+    eventInstances.find((instance) => instance.id === resolvedActiveEventInstanceId) ?? null;
   const currentEventType =
     eventTypes.find((eventType) => eventType.id === selectedEventInstance?.eventTypeId) ?? null;
   const defaultTemplatePack = selectedEventInstance
     ? getDefaultTemplatePackForEventType(selectedEventInstance.eventTypeId)
     : null;
   const activeProfile =
-    collateralProfiles[activeEventInstanceId] ??
+    collateralProfiles[resolvedActiveEventInstanceId] ??
     (selectedEventInstance?.eventTypeId === "legislative-day" ? getDefaultLegDayProfile(selectedEventInstance) : null);
-
-  useEffect(() => {
-    if (!selectedEventInstance && eventInstances[0]) {
-      setActiveEventInstanceId(eventInstances[0].id);
-    }
-  }, [eventInstances, selectedEventInstance, setActiveEventInstanceId]);
 
   useEffect(() => {
     setIsActionsMenuOpen(false);
     setIsDeleteConfirmOpen(false);
-  }, [selectedId, activeEventInstanceId]);
+  }, [selectedId, resolvedActiveEventInstanceId]);
 
   useEffect(() => {
     setActiveSummaryFilter("all");
     setActiveProfileDeadlineFilter("none");
-  }, [activeEventInstanceId]);
+  }, [resolvedActiveEventInstanceId]);
 
   useEffect(() => {
     setNoteDraft("");
@@ -117,9 +113,9 @@ export function CollateralView() {
 
   useEffect(() => {
     setDraftCollateralItem((current) =>
-      current && current.eventInstanceId !== activeEventInstanceId ? null : current
+      current && current.eventInstanceId !== resolvedActiveEventInstanceId ? null : current
     );
-  }, [activeEventInstanceId]);
+  }, [resolvedActiveEventInstanceId]);
 
   useEffect(() => {
     if (hasEditedInstanceName) {
@@ -145,20 +141,20 @@ export function CollateralView() {
   }, [eventTypes, hasEditedInstanceName, instanceFormState.dateMode, instanceFormState.dates, instanceFormState.eventTypeId, instanceFormState.location]);
 
   const instanceSubEvents = useMemo(
-    () => eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === activeEventInstanceId),
-    [activeEventInstanceId, eventSubEvents]
+    () => eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === resolvedActiveEventInstanceId),
+    [resolvedActiveEventInstanceId, eventSubEvents]
   );
   const instanceItems = useMemo(
-    () => collateralItems.filter((item) => item.eventInstanceId === activeEventInstanceId),
-    [activeEventInstanceId, collateralItems]
+    () => collateralItems.filter((item) => item.eventInstanceId === resolvedActiveEventInstanceId),
+    [resolvedActiveEventInstanceId, collateralItems]
   );
   const visibleInstanceItems = useMemo(() => {
-    if (!draftCollateralItem || draftCollateralItem.eventInstanceId !== activeEventInstanceId) {
+    if (!draftCollateralItem || draftCollateralItem.eventInstanceId !== resolvedActiveEventInstanceId) {
       return instanceItems;
     }
 
     return [draftCollateralItem, ...instanceItems];
-  }, [activeEventInstanceId, draftCollateralItem, instanceItems]);
+  }, [resolvedActiveEventInstanceId, draftCollateralItem, instanceItems]);
   const subEventNameById = useMemo(
     () => new Map(instanceSubEvents.map((subEvent) => [subEvent.id, subEvent.name])),
     [instanceSubEvents]
@@ -232,7 +228,7 @@ export function CollateralView() {
   const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
 
   function handleAddCollateralItem() {
-    if (draftCollateralItem && draftCollateralItem.eventInstanceId === activeEventInstanceId) {
+    if (draftCollateralItem && draftCollateralItem.eventInstanceId === resolvedActiveEventInstanceId) {
       setSelectedId(draftCollateralItem.id);
       return;
     }
@@ -240,7 +236,7 @@ export function CollateralView() {
     const fallbackSubEventId = instanceSubEvents[0]?.id ?? "__unassigned__";
     setDraftCollateralItem({
       id: DRAFT_COLLATERAL_ID,
-      eventInstanceId: activeEventInstanceId,
+      eventInstanceId: resolvedActiveEventInstanceId,
       subEventId: fallbackSubEventId,
       itemName: "New collateral item",
       status: "Backlog",
@@ -404,7 +400,7 @@ export function CollateralView() {
                 setActiveEventInstanceId(event.target.value);
                 setSelectedId(null);
               }}
-              value={activeEventInstanceId}
+              value={resolvedActiveEventInstanceId}
             >
               {eventInstancesByType.map(({ eventType, instances }) => (
                 <optgroup key={eventType.id} label={eventType.name}>
@@ -468,7 +464,7 @@ export function CollateralView() {
             <CollateralProfileCard
               activeProfileDeadlineFilter={activeProfileDeadlineFilter}
               onProfileChange={(updates) =>
-                setCollateralProfile(activeEventInstanceId, {
+                setCollateralProfile(resolvedActiveEventInstanceId, {
                   ...activeProfile,
                   ...updates
                 })
@@ -521,7 +517,7 @@ export function CollateralView() {
                   {activeSummaryFilter === "all" && defaultTemplatePack ? (
                     <button
                       className="topbar__button"
-                      onClick={() => applyDefaultTemplateToInstance(activeEventInstanceId)}
+                      onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
                       type="button"
                     >
                       Apply Default Template

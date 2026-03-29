@@ -208,6 +208,21 @@ export function createSuggestedEventInstanceName(
   return `${eventTypeName} ${yearLabel}`;
 }
 
+export function resolveActiveEventInstanceId(
+  activeEventInstanceId: string,
+  eventInstances: EventInstance[]
+) {
+  if (eventInstances.length === 0) {
+    return "";
+  }
+
+  if (eventInstances.some((instance) => instance.id === activeEventInstanceId)) {
+    return activeEventInstanceId;
+  }
+
+  return eventInstances[0]?.id ?? "";
+}
+
 function isEventDateMode(value: unknown): value is EventDateMode {
   return value === "single" || value === "range" || value === "multiple";
 }

@@ -6,6 +6,7 @@ import {
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
 import {
+  resolveActiveEventInstanceId,
   normalizeEventInstance,
   initialEventFamilies,
   initialEventInstances,
@@ -137,46 +138,83 @@ export function parseImportedAppState(
   return {
     items,
     issueStatuses: snapshot.issueStatuses,
-    collateralItems,
-    collateralProfiles: isCollateralProfileMap(snapshot.collateralProfiles)
-      ? Object.fromEntries(
-          Object.entries(snapshot.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
-        )
-      : snapshot.collateralProfile && isCollateralProfileRecord(snapshot.collateralProfile)
-        ? { [initialEventInstances[0].id]: { ...snapshot.collateralProfile } }
-        : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
-    activeEventInstanceId:
-      typeof snapshot.activeEventInstanceId === "string" && snapshot.activeEventInstanceId.length > 0
-        ? snapshot.activeEventInstanceId
-        : initialEventInstances[0].id,
+    ...normalizeEventScopedState({
+      activeEventInstanceId:
+        typeof snapshot.activeEventInstanceId === "string" && snapshot.activeEventInstanceId.length > 0
+          ? snapshot.activeEventInstanceId
+          : initialEventInstances[0].id,
+      collateralItems,
+      collateralProfiles: isCollateralProfileMap(snapshot.collateralProfiles)
+        ? Object.fromEntries(
+            Object.entries(snapshot.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+          )
+        : snapshot.collateralProfile && isCollateralProfileRecord(snapshot.collateralProfile)
+          ? { [initialEventInstances[0].id]: { ...snapshot.collateralProfile } }
+          : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+      eventInstances: Array.isArray(snapshot.eventInstances)
+        ? snapshot.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
+            if (isEventInstanceRecord(instance)) {
+              const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
+
+              if (normalizedInstance) {
+                accumulator.push(normalizedInstance);
+              }
+            }
+
+            return accumulator;
+          }, [])
+        : initialEventInstances.map((instance) => ({ ...instance })),
+      eventSubEvents: Array.isArray(snapshot.eventSubEvents)
+        ? snapshot.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
+        : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
+      eventTypes: Array.isArray(snapshot.eventTypes)
+        ? snapshot.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
+        : initialEventTypes.map((eventType) => ({ ...eventType }))
+    }),
     defaultOwnerForNewItems:
       typeof snapshot.defaultOwnerForNewItems === "string" ? snapshot.defaultOwnerForNewItems : "Melissa",
     eventFamilies: Array.isArray(snapshot.eventFamilies)
       ? snapshot.eventFamilies.filter(isEventFamilyRecord).map((family) => ({ ...family }))
       : initialEventFamilies.map((family) => ({ ...family })),
-    eventTypes: Array.isArray(snapshot.eventTypes)
-      ? snapshot.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
-      : initialEventTypes.map((eventType) => ({ ...eventType })),
-    eventInstances: Array.isArray(snapshot.eventInstances)
-      ? snapshot.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
-          if (isEventInstanceRecord(instance)) {
-            const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
-
-            if (normalizedInstance) {
-              accumulator.push(normalizedInstance);
-            }
-          }
-
-          return accumulator;
-        }, [])
-      : initialEventInstances.map((instance) => ({ ...instance })),
-    eventSubEvents: Array.isArray(snapshot.eventSubEvents)
-      ? snapshot.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
-      : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
     workstreamSchedules: Array.isArray(snapshot.workstreamSchedules)
       ? normalizeWorkstreamSchedules(snapshot.workstreamSchedules)
       : getDefaultWorkstreamSchedules(),
     usedLegacyFormat: false
+  };
+}
+
+function normalizeEventScopedState(input: {
+  activeEventInstanceId: string;
+  collateralItems: CollateralItem[];
+  collateralProfiles: Record<string, LegDayCollateralProfile>;
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
+  eventTypes: EventType[];
+}) {
+  const validEventTypeIds = new Set(input.eventTypes.map((eventType) => eventType.id));
+  const eventInstances = input.eventInstances.filter((instance) => validEventTypeIds.has(instance.eventTypeId));
+  const validEventInstanceIds = new Set(eventInstances.map((instance) => instance.id));
+  const eventSubEvents = input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId));
+  const subEventById = new Map(eventSubEvents.map((subEvent) => [subEvent.id, subEvent]));
+  const collateralItems = input.collateralItems.filter((item) => {
+    if (!validEventInstanceIds.has(item.eventInstanceId)) {
+      return false;
+    }
+
+    const subEvent = subEventById.get(item.subEventId);
+    return Boolean(subEvent && subEvent.eventInstanceId === item.eventInstanceId);
+  });
+  const collateralProfiles = Object.fromEntries(
+    Object.entries(input.collateralProfiles).filter(([instanceId]) => validEventInstanceIds.has(instanceId))
+  );
+
+  return {
+    activeEventInstanceId: resolveActiveEventInstanceId(input.activeEventInstanceId, eventInstances),
+    collateralItems,
+    collateralProfiles,
+    eventTypes: input.eventTypes,
+    eventInstances,
+    eventSubEvents
   };
 }
 

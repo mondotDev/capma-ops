@@ -5,6 +5,7 @@ import {
   normalizeCollateralItem
 } from "@/lib/collateral-data";
 import {
+  resolveActiveEventInstanceId,
   normalizeEventInstance,
   initialEventFamilies,
   initialEventInstances,
@@ -320,18 +321,39 @@ function parseStoredAppState(
       state: {
         items: items.map((item) => normalizeItem(item)),
         issueStatuses: parsedState.issueStatuses,
-        collateralItems: collateralItems.map((item) => ({ ...item })),
-        collateralProfiles: isCollateralProfileMap(parsedState.collateralProfiles)
-          ? Object.fromEntries(
-              Object.entries(parsedState.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
-            )
-          : parsedState.collateralProfile && isCollateralProfileRecord(parsedState.collateralProfile)
-            ? { [initialEventInstances[0].id]: { ...parsedState.collateralProfile } }
-            : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
-        activeEventInstanceId:
-          typeof parsedState.activeEventInstanceId === "string" && parsedState.activeEventInstanceId.length > 0
-            ? parsedState.activeEventInstanceId
-            : initialEventInstances[0].id,
+        ...normalizeEventScopedState({
+          activeEventInstanceId:
+            typeof parsedState.activeEventInstanceId === "string" && parsedState.activeEventInstanceId.length > 0
+              ? parsedState.activeEventInstanceId
+              : initialEventInstances[0].id,
+          collateralItems,
+          collateralProfiles: isCollateralProfileMap(parsedState.collateralProfiles)
+            ? Object.fromEntries(
+                Object.entries(parsedState.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+              )
+            : parsedState.collateralProfile && isCollateralProfileRecord(parsedState.collateralProfile)
+              ? { [initialEventInstances[0].id]: { ...parsedState.collateralProfile } }
+              : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+          eventInstances: Array.isArray(parsedState.eventInstances)
+            ? parsedState.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
+                if (isEventInstanceRecord(instance)) {
+                  const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
+
+                  if (normalizedInstance) {
+                    accumulator.push(normalizedInstance);
+                  }
+                }
+
+                return accumulator;
+              }, [])
+            : initialEventInstances.map((instance) => ({ ...instance })),
+          eventSubEvents: Array.isArray(parsedState.eventSubEvents)
+            ? parsedState.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
+            : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
+          eventTypes: Array.isArray(parsedState.eventTypes)
+            ? parsedState.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
+            : initialEventTypes.map((eventType) => ({ ...eventType }))
+        }),
         defaultOwnerForNewItems:
           typeof parsedState.defaultOwnerForNewItems === "string"
             ? parsedState.defaultOwnerForNewItems
@@ -339,25 +361,6 @@ function parseStoredAppState(
         eventFamilies: Array.isArray(parsedState.eventFamilies)
           ? parsedState.eventFamilies.filter(isEventFamilyRecord).map((family) => ({ ...family }))
           : initialEventFamilies.map((family) => ({ ...family })),
-        eventTypes: Array.isArray(parsedState.eventTypes)
-          ? parsedState.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
-          : initialEventTypes.map((eventType) => ({ ...eventType })),
-        eventInstances: Array.isArray(parsedState.eventInstances)
-          ? parsedState.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
-              if (isEventInstanceRecord(instance)) {
-                const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
-
-                if (normalizedInstance) {
-                  accumulator.push(normalizedInstance);
-                }
-              }
-
-              return accumulator;
-            }, [])
-          : initialEventInstances.map((instance) => ({ ...instance })),
-        eventSubEvents: Array.isArray(parsedState.eventSubEvents)
-          ? parsedState.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
-          : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
         workstreamSchedules: Array.isArray(parsedState.workstreamSchedules)
           ? normalizeWorkstreamSchedules(parsedState.workstreamSchedules)
           : getDefaultWorkstreamSchedules()
@@ -366,4 +369,39 @@ function parseStoredAppState(
   } catch {
     return { status: "invalid" };
   }
+}
+
+function normalizeEventScopedState(input: {
+  activeEventInstanceId: string;
+  collateralItems: CollateralItem[];
+  collateralProfiles: Record<string, LegDayCollateralProfile>;
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
+  eventTypes: EventType[];
+}) {
+  const validEventTypeIds = new Set(input.eventTypes.map((eventType) => eventType.id));
+  const eventInstances = input.eventInstances.filter((instance) => validEventTypeIds.has(instance.eventTypeId));
+  const validEventInstanceIds = new Set(eventInstances.map((instance) => instance.id));
+  const eventSubEvents = input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId));
+  const subEventById = new Map(eventSubEvents.map((subEvent) => [subEvent.id, subEvent]));
+  const collateralItems = input.collateralItems.filter((item) => {
+    if (!validEventInstanceIds.has(item.eventInstanceId)) {
+      return false;
+    }
+
+    const subEvent = subEventById.get(item.subEventId);
+    return Boolean(subEvent && subEvent.eventInstanceId === item.eventInstanceId);
+  });
+  const collateralProfiles = Object.fromEntries(
+    Object.entries(input.collateralProfiles).filter(([instanceId]) => validEventInstanceIds.has(instanceId))
+  );
+
+  return {
+    activeEventInstanceId: resolveActiveEventInstanceId(input.activeEventInstanceId, eventInstances),
+    collateralItems,
+    collateralProfiles,
+    eventTypes: input.eventTypes,
+    eventInstances,
+    eventSubEvents
+  };
 }
