@@ -1062,9 +1062,11 @@ export function getDashboardMetrics(items: ActionItem[]) {
   const summary = getActionSummaryCounts(items);
   const waitingCount = activeItems.filter((item) => isWaitingIssue(item) && !isBlockedItem(item)).length;
   const stuckItems = activeItems.filter((item) => isBlockedItem(item) || isWaitingIssue(item));
-  const stuckOverdueCount = stuckItems.filter((item) => hasDueDate(item.dueDate) && isOverdue(item.dueDate)).length;
-  const stuckDueSoonCount = stuckItems.filter((item) => isItemDueSoon(item)).length;
   const stuckReasonCounts = getStuckReasonCounts(stuckItems);
+  const upcomingLoad = getDailyLoad(items, 7);
+  const peakUpcomingLoadEntry = [...upcomingLoad].sort((a, b) => b.count - a.count || a.date.localeCompare(b.date))[0];
+  const peakUpcomingLoadCount = peakUpcomingLoadEntry?.count ?? 0;
+  const peakUpcomingLoadDate = peakUpcomingLoadEntry && peakUpcomingLoadEntry.count > 0 ? peakUpcomingLoadEntry.date : null;
 
   const urgentItems = activeItems
     .filter((item) => isItemMissingDueDate(item) || isOverdue(item.dueDate) || isItemDueSoon(item))
@@ -1102,10 +1104,10 @@ export function getDashboardMetrics(items: ActionItem[]) {
   return {
     ...summary,
     waiting: waitingCount,
+    peakUpcomingLoadCount,
+    peakUpcomingLoadDate,
     urgentItems,
     blockedCount: activeItems.filter((item) => isBlockedItem(item)).length,
-    stuckOverdueCount,
-    stuckDueSoonCount,
     stuckReasonCounts,
     sponsorRiskItems,
     productionRiskItems,

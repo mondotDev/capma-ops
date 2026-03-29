@@ -10,8 +10,7 @@ import {
   getDailyLoad,
   getDashboardMetrics,
   getWorkstreamSummary,
-  getVisiblePublicationIssues,
-  isWaitingTooLong
+  getVisiblePublicationIssues
 } from "@/lib/ops-utils";
 
 export function DashboardView() {
@@ -24,7 +23,6 @@ export function DashboardView() {
   const dashboardMetrics = getDashboardMetrics(items);
   const extendedDailyLoad = getDailyLoad(items, 30);
   const workstreamSummary = getWorkstreamSummary(items);
-  const waitingTooLongCount = items.filter((item) => isWaitingTooLong(item)).length;
   const highestLoadCount = Math.max(...extendedDailyLoad.map((entry) => entry.count), 0);
   const highlightedLoadDates = new Set(
     [...extendedDailyLoad]
@@ -54,24 +52,45 @@ export function DashboardView() {
             }
             type="button"
           >
-            <div className="card__title">WHAT WILL BURN ME FIRST</div>
+            <div className="card__title">IMMEDIATE RISK</div>
           </button>
           <div className="command-metrics">
-            <button className="command-metric command-metric--overdue" onClick={() => router.push("/action?filter=overdue")} type="button">
+            <button
+              aria-label="Overdue: active items with due dates before today"
+              className="command-metric command-metric--overdue"
+              onClick={() => router.push("/action?filter=overdue")}
+              title="Active items with due dates before today"
+              type="button"
+            >
               <span className="command-metric__label">Overdue</span>
               <strong className="command-metric__value">{dashboardMetrics.overdue}</strong>
             </button>
-            <button className="command-metric command-metric--due-soon" onClick={() => router.push("/action?filter=dueSoon")} type="button">
+            <button
+              aria-label="Due Soon: active items due in the next three days"
+              className="command-metric command-metric--due-soon"
+              onClick={() => router.push("/action?filter=dueSoon")}
+              title="Active items due in the next three days"
+              type="button"
+            >
               <span className="command-metric__label">Due Soon</span>
               <strong className="command-metric__value">{dashboardMetrics.dueSoon}</strong>
             </button>
             <button
-              className="command-metric command-metric--waiting"
-              onClick={() => router.push("/action?lens=reviewWaitingTooLong")}
+              aria-label="Peak Day: highest number of active items due on a single day in the next seven days"
+              className="command-metric command-metric--peak"
+              disabled={!dashboardMetrics.peakUpcomingLoadDate}
+              onClick={() => {
+                if (!dashboardMetrics.peakUpcomingLoadDate) {
+                  return;
+                }
+
+                router.push(`/action?dueDate=${encodeURIComponent(dashboardMetrics.peakUpcomingLoadDate)}`);
+              }}
+              title="Highest number of active items due on a single day in the next seven days"
               type="button"
             >
-              <span className="command-metric__label">Waiting Too Long</span>
-              <strong className="command-metric__value">{waitingTooLongCount}</strong>
+              <span className="command-metric__label">Peak Day</span>
+              <strong className="command-metric__value">{dashboardMetrics.peakUpcomingLoadCount}</strong>
             </button>
           </div>
           <div className="command-zone__list">
@@ -95,12 +114,7 @@ export function DashboardView() {
       <DashboardStuckCard
         blockedCount={dashboardMetrics.blockedCount}
         onOpenBlocked={() => router.push("/action?filter=blocked")}
-        onOpenDueSoon={() => router.push("/action?filter=dueSoon")}
-        onOpenExecutionNow={() => router.push("/action?lens=executionNow")}
-        onOpenOverdue={() => router.push("/action?filter=overdue")}
         onOpenWaiting={() => router.push("/action?filter=waiting")}
-        stuckDueSoonCount={dashboardMetrics.stuckDueSoonCount}
-        stuckOverdueCount={dashboardMetrics.stuckOverdueCount}
         stuckReasonCounts={dashboardMetrics.stuckReasonCounts}
         waitingCount={dashboardMetrics.waiting}
       />

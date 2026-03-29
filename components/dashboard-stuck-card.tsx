@@ -5,89 +5,48 @@ import type { StuckReasonCount } from "@/lib/ops-utils";
 type DashboardStuckCardProps = {
   blockedCount: number;
   waitingCount: number;
-  stuckOverdueCount: number;
-  stuckDueSoonCount: number;
   stuckReasonCounts: StuckReasonCount[];
-  onOpenExecutionNow: () => void;
   onOpenBlocked: () => void;
   onOpenWaiting: () => void;
-  onOpenOverdue: () => void;
-  onOpenDueSoon: () => void;
 };
 
 export function DashboardStuckCard({
   blockedCount,
   waitingCount,
-  stuckOverdueCount,
-  stuckDueSoonCount,
   stuckReasonCounts,
-  onOpenExecutionNow,
   onOpenBlocked,
-  onOpenWaiting,
-  onOpenOverdue,
-  onOpenDueSoon
+  onOpenWaiting
 }: DashboardStuckCardProps) {
   return (
-    <div
-      className="card card--clickable card--secondary"
-      onClick={onOpenExecutionNow}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpenExecutionNow();
-        }
-      }}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="card__title">WHERE THINGS ARE STUCK</div>
+    <div className="card card--secondary">
+      <div className="card__title">NEEDS UNBLOCKING</div>
       <div className="stuck-card">
         <div className="stuck-card__primary">
           <button
+            aria-label="Blocked: active items marked blocked or with a blocker reason"
             className="stuck-metric"
             onClick={(event) => {
               event.stopPropagation();
               onOpenBlocked();
             }}
+            title="Active items marked blocked or with a blocker reason"
             type="button"
           >
             <span className="stuck-metric__label">Blocked</span>
             <strong className="stuck-metric__value">{blockedCount}</strong>
           </button>
           <button
+            aria-label="Waiting: active items in Waiting status that are not also blocked"
             className="stuck-metric"
             onClick={(event) => {
               event.stopPropagation();
               onOpenWaiting();
             }}
+            title="Active items in Waiting status that are not also blocked"
             type="button"
           >
             <span className="stuck-metric__label">Waiting</span>
             <strong className="stuck-metric__value">{waitingCount}</strong>
-          </button>
-        </div>
-        <div className="stuck-card__secondary">
-          <button
-            className="stuck-secondary"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenOverdue();
-            }}
-            type="button"
-          >
-            <span className="stuck-secondary__label">Stuck + Overdue</span>
-            <strong className="stuck-secondary__value">{stuckOverdueCount}</strong>
-          </button>
-          <button
-            className="stuck-secondary"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenDueSoon();
-            }}
-            type="button"
-          >
-            <span className="stuck-secondary__label">Stuck + Due Soon</span>
-            <strong className="stuck-secondary__value">{stuckDueSoonCount}</strong>
           </button>
         </div>
         <div className="stuck-card__reasons">

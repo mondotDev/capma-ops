@@ -137,7 +137,7 @@ test("getWorkstreamSummary returns workload rollups by workstream", () => {
   });
 });
 
-test("getDashboardMetrics surfaces stuck urgency overlaps and top reasons", () => {
+test("getDashboardMetrics separates immediate risk from unblocking counts", () => {
   withMockedToday("2026-03-28T00:00:00.000Z", () => {
     const metrics = getDashboardMetrics([
       createItem({
@@ -181,8 +181,8 @@ test("getDashboardMetrics surfaces stuck urgency overlaps and top reasons", () =
 
     assert.equal(metrics.blockedCount, 3);
     assert.equal(metrics.waiting, 1);
-    assert.equal(metrics.stuckOverdueCount, 1);
-    assert.equal(metrics.stuckDueSoonCount, 2);
+    assert.equal(metrics.peakUpcomingLoadCount, 2);
+    assert.equal(metrics.peakUpcomingLoadDate, "2026-03-30");
     assert.deepEqual(metrics.stuckReasonCounts, [
       { label: "Internal", count: 2, source: "mixed" },
       { label: "External", count: 1, source: "waiting" },

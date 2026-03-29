@@ -515,6 +515,11 @@ textarea {
   min-width: 140px;
 }
 
+.command-metric:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .command-metric--overdue {
   color: var(--danger);
 }
@@ -523,8 +528,8 @@ textarea {
   color: #8a5b00;
 }
 
-.command-metric--waiting {
-  color: #9a4d00;
+.command-metric--peak {
+  color: #2f5d8a;
 }
 
 .command-metric__label {
