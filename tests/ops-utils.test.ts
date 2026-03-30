@@ -26,7 +26,18 @@ import {
   setPublicationIssueStatus
 } from "../lib/publication-issue-actions";
 import { parseImportedAppState } from "../lib/app-transfer";
+import {
+  getActionItemEventGroupLabel,
+  getActionItemSubEventLabel
+} from "../lib/events/event-labels";
 import type { ActionItem } from "../lib/sample-data";
+import { localAppStateRepository } from "../lib/state/local-app-state-repository";
+import {
+  getAppStateRepository,
+  setAppStateRepository
+} from "../lib/state/app-state-repository-provider";
+import type { AppStateRepository } from "../lib/state/app-state-repository";
+import { createDefaultAppStateData } from "../lib/state/app-state-defaults";
 import {
   getItemEventGroupLabel,
   getVisibleActionItems,
@@ -83,6 +94,36 @@ function withMockedToday<T>(isoDateTime: string, callback: () => T) {
     return callback();
   } finally {
     globalThis.Date = RealDate;
+  }
+}
+
+function withMockedWindowStorage<T>(callback: () => T) {
+  const originalWindow = globalThis.window;
+  const storage = new Map<string, string>();
+  const localStorage = {
+    getItem(key: string) {
+      return storage.has(key) ? storage.get(key)! : null;
+    },
+    setItem(key: string, value: string) {
+      storage.set(key, value);
+    },
+    removeItem(key: string) {
+      storage.delete(key);
+    }
+  };
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage }
+  });
+
+  try {
+    return callback();
+  } finally {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow
+    });
   }
 }
 
@@ -1167,4 +1208,90 @@ test("opening a publication issue still generates missing deliverables", () => {
   assert.equal(result.issueStatuses["February 2026 Newsbrief"], "Planned");
   assert.equal(result.issueStatuses["March 2026 Newsbrief"], "Open");
   assert.equal(result.result.created > 0, true);
+});
+
+test("default app state factory returns a normalized local-first state shape", () => {
+  const state = createDefaultAppStateData();
+
+  assert.equal(state.activeEventInstanceId, "legislative-day-2026");
+  assert.equal(state.items.length > 0, true);
+  assert.equal(state.eventInstances.length > 0, true);
+  assert.equal(state.eventSubEvents.length > 0, true);
+  assert.deepEqual(state.issueStatuses, {});
+});
+
+test("local app state repository saves and reloads the same normalized state", () => {
+  withMockedWindowStorage(() => {
+    const state = createDefaultAppStateData();
+    state.items = [createItem({ eventGroup: "Legislative Day" })];
+
+    localAppStateRepository.save(state);
+    const loaded = localAppStateRepository.load();
+
+    assert.equal(loaded.source, "primary");
+    assert.ok(loaded.state);
+    assert.equal(loaded.state?.items.length, 1);
+    assert.equal(loaded.state?.items[0]?.eventInstanceId, "legislative-day-2026");
+    assert.equal(loaded.state?.activeEventInstanceId, state.activeEventInstanceId);
+  });
+});
+
+test("app state repository provider can swap implementations without changing callers", () => {
+  const originalRepository = getAppStateRepository();
+  const fakeRepository: AppStateRepository = {
+    clear() {},
+    export(state: ReturnType<typeof createDefaultAppStateData>) {
+      return {
+        version: 1,
+        schemaVersion: 2,
+        exportedAt: "2026-03-29T12:00:00.000Z",
+        items: state.items,
+        issueStatuses: state.issueStatuses,
+        collateralItems: state.collateralItems,
+        collateralProfiles: state.collateralProfiles,
+        activeEventInstanceId: state.activeEventInstanceId,
+        defaultOwnerForNewItems: state.defaultOwnerForNewItems,
+        eventFamilies: state.eventFamilies,
+        eventTypes: state.eventTypes,
+        eventInstances: state.eventInstances,
+        eventSubEvents: state.eventSubEvents,
+        workstreamSchedules: state.workstreamSchedules
+      };
+    },
+    import() {
+      return {
+        ...createDefaultAppStateData(),
+        itemCount: 0,
+        usedLegacyFormat: false
+      };
+    },
+    load() {
+      return {
+        backupStateStatus: "valid" as const,
+        primaryStateStatus: "valid" as const,
+        source: "primary" as const,
+        shouldPersist: true,
+        state: createDefaultAppStateData()
+      };
+    },
+    save() {}
+  };
+
+  setAppStateRepository(fakeRepository);
+  assert.equal(getAppStateRepository(), fakeRepository);
+  setAppStateRepository(originalRepository);
+  assert.equal(getAppStateRepository(), originalRepository);
+});
+
+test("event label helpers resolve linked event instance and sub-event names", () => {
+  const item = createItem({
+    eventInstanceId: "legislative-day-2026",
+    subEventId: "leg-day-legislative-visits",
+    eventGroup: "Legislative Day"
+  });
+  const state = createDefaultAppStateData();
+
+  assert.equal(getActionItemEventGroupLabel(item, state.eventInstances), "Legislative Day 2026");
+  assert.equal(getActionItemSubEventLabel(item, state.eventSubEvents), "Legislative Visits");
+  assert.equal(getItemEventGroupLabel(item, state.eventInstances), "Legislative Day 2026");
 });

@@ -1,6 +1,10 @@
 import type { ActionItem } from "@/lib/sample-data";
 import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
 import {
+  getActionItemEventGroupLabel,
+  getActionItemSubEventLabel
+} from "@/lib/events/event-labels";
+import {
   type ActionFilter,
   type ActionFocus,
   type ActionLens,
@@ -69,27 +73,11 @@ export function getActionQueryValue(query?: string) {
 }
 
 export function getItemEventGroupLabel(item: ActionItem, eventInstances: EventInstance[] = []) {
-  if (item.eventInstanceId) {
-    const linkedInstance = eventInstances.find((instance) => instance.id === item.eventInstanceId);
-
-    if (linkedInstance) {
-      return linkedInstance.name;
-    }
-  }
-
-  return item.eventGroup?.trim() || "Unassigned";
+  return getActionItemEventGroupLabel(item, eventInstances);
 }
 
 export function getItemSubEventLabel(item: ActionItem, eventSubEvents: EventSubEvent[] = []) {
-  if (!item.eventInstanceId || !item.subEventId) {
-    return "";
-  }
-
-  const linkedSubEvent = eventSubEvents.find(
-    (subEvent) => subEvent.id === item.subEventId && subEvent.eventInstanceId === item.eventInstanceId
-  );
-
-  return linkedSubEvent?.name ?? "";
+  return getActionItemSubEventLabel(item, eventSubEvents);
 }
 
 export function getVisibleActionItems(

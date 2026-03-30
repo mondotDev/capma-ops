@@ -2,13 +2,11 @@
 
 import type { ActionItem } from "@/lib/sample-data";
 import {
-  formatDueLabel,
-  formatShortDate,
-  isBlockedItem,
-  isItemMissingDueDate,
-  isTerminalStatus,
-  isWaitingIssue
-} from "@/lib/ops-utils";
+  getActionDrawerPrimaryBadgeClassName,
+  getActionDrawerPrimaryBadgeLabel,
+  getActionDrawerSecondaryMeta
+} from "@/lib/action/action-drawer-presentation";
+import { isItemMissingDueDate } from "@/lib/ops-utils";
 
 type ActionItemDrawerHeaderProps = {
   item: ActionItem;
@@ -41,11 +39,12 @@ export function ActionItemDrawerHeader({
     <div className="drawer__sticky">
       <div className="drawer__header">
         <div className="drawer__header-text">
+          <div className="action-drawer__eyebrow">Action item</div>
           {isEditingTitle ? (
             <input
               aria-label="Edit title"
               autoFocus
-              className="drawer__title-input"
+              className="drawer__title-input action-drawer__title-input"
               id="drawer-title"
               onBlur={onFinishTitleEdit}
               onChange={(event) => onTitleDraftChange(event.target.value)}
@@ -63,7 +62,7 @@ export function ActionItemDrawerHeader({
               value={titleDraft}
             />
           ) : (
-            <h2 className="drawer__title">
+            <h2 className="drawer__title action-drawer__title">
               <button className="drawer__title-button" onClick={onStartTitleEdit} type="button">
                 {item.title}
               </button>
@@ -71,10 +70,17 @@ export function ActionItemDrawerHeader({
           )}
           <div className="drawer__workstream">{item.workstream}</div>
           <div className="drawer__header-meta">
-            <span className={getDrawerPrimaryBadgeClassName(item)}>{getDrawerPrimaryBadgeLabel(item)}</span>
-            {getDrawerSecondaryMeta(item) ? (
-              <span className="drawer__due-text">{getDrawerSecondaryMeta(item)}</span>
+            <span className={getActionDrawerPrimaryBadgeClassName(item)}>
+              {getActionDrawerPrimaryBadgeLabel(item)}
+            </span>
+            {getActionDrawerSecondaryMeta(item) ? (
+              <span className="drawer__due-text">{getActionDrawerSecondaryMeta(item)}</span>
             ) : null}
+          </div>
+          <div className="action-drawer__meta-row">
+            <span className="action-drawer__meta-pill">Owner: {item.owner}</span>
+            <span className="action-drawer__meta-pill">Type: {item.type}</span>
+            {item.issue ? <span className="action-drawer__meta-pill">Issue: {item.issue}</span> : null}
           </div>
         </div>
         <div className="drawer__header-actions">
@@ -107,8 +113,6 @@ export function ActionItemDrawerHeader({
           </button>
         </div>
       </div>
-
-      {item.issue ? <div className="drawer__issue">{item.issue}</div> : null}
       {item.blockedBy?.trim() ? (
         <div className="drawer__warning drawer__warning--blocked">Blocked by {item.blockedBy.trim()}</div>
       ) : null}
@@ -117,73 +121,4 @@ export function ActionItemDrawerHeader({
       ) : null}
     </div>
   );
-}
-
-function formatDrawerDueText(item: ActionItem) {
-  const dueLabel = formatDueLabel(item);
-
-  if (!item.dueDate) {
-    return dueLabel || "No due date set";
-  }
-
-  if (!dueLabel || dueLabel === `Due ${formatShortDate(item.dueDate)}`) {
-    return `Due ${formatShortDate(item.dueDate)}`;
-  }
-
-  if (dueLabel === "No due date set") {
-    return dueLabel;
-  }
-
-  return `${dueLabel} • ${formatShortDate(item.dueDate)}`;
-}
-
-function getDrawerPrimaryBadgeLabel(item: ActionItem) {
-  if (isBlockedItem(item)) {
-    return "Blocked";
-  }
-
-  if (formatDueLabel(item) === "Overdue") {
-    return "Overdue";
-  }
-
-  if (isWaitingIssue(item)) {
-    return "Waiting";
-  }
-
-  if (isTerminalStatus(item.status)) {
-    return item.status;
-  }
-
-  return item.status === "In Progress" ? "Active" : "Normal";
-}
-
-function getDrawerPrimaryBadgeClassName(item: ActionItem) {
-  if (isBlockedItem(item)) {
-    return "drawer__status-chip drawer__status-chip--blocked";
-  }
-
-  if (formatDueLabel(item) === "Overdue") {
-    return "drawer__status-chip drawer__status-chip--overdue";
-  }
-
-  if (isWaitingIssue(item)) {
-    return "drawer__status-chip drawer__status-chip--waiting";
-  }
-
-  return "drawer__status-chip";
-}
-
-function getDrawerSecondaryMeta(item: ActionItem) {
-  const parts: string[] = [];
-  const dueText = formatDrawerDueText(item);
-
-  if (dueText && dueText !== getDrawerPrimaryBadgeLabel(item)) {
-    parts.push(dueText);
-  }
-
-  if (item.status === "Waiting" && item.waitingOn.trim()) {
-    parts.push(`Waiting on ${item.waitingOn.trim()}`);
-  }
-
-  return parts.join(" • ");
 }

@@ -1,17 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import {
-  clearPersistedAppState,
-  loadPersistedAppState,
-  migratePersistedItems,
-  savePersistedAppState
-} from "@/lib/app-persistence";
-import {
-  createAppStateSnapshot,
-  parseImportedAppState,
-  type AppStateSnapshot
-} from "@/lib/app-transfer";
+import type { AppStateSnapshot } from "@/lib/app-transfer";
 import {
   completePublicationIssue,
   generatePublicationIssueDeliverables,
@@ -23,13 +13,11 @@ import {
 import {
   applyBulkActionItemUpdates,
   deleteActionItemById,
-  normalizeActionItems,
   prependActionItem,
   updateActionItemById,
   type NewActionItemInput
 } from "@/lib/action-item-mutations";
 import {
-  initialLegDayCollateralItems,
   initialLegDayCollateralProfile,
   normalizeCollateralUpdateType,
   type CollateralItem,
@@ -44,50 +32,50 @@ import {
   createUnassignedSubEvent,
   deriveEventDateRange,
   getUnassignedSubEventId,
-  initialEventFamilies,
-  initialEventInstances,
-  initialEventSubEvents,
-  initialEventTypes,
   resolveActiveEventInstanceId,
-  type EventDateMode,
   type EventFamily,
   type EventInstance,
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
-import { initialActionItems, LEGACY_SAMPLE_ITEM_IDS, type ActionItem } from "@/lib/sample-data";
+import type { ActionItem } from "@/lib/sample-data";
 import {
   type IssueRecord,
   type IssueStatus,
   type WorkstreamSchedule,
-  DEFAULT_OWNER,
   getDefaultWorkstreamSchedules,
   getGeneratedIssues,
-  normalizeNoteEntries,
-  normalizeActionItemFields
+  normalizeNoteEntries
 } from "@/lib/ops-utils";
+import {
+  createDefaultActionItems,
+  createDefaultAppStateData,
+  createDefaultCollateralItems,
+  createDefaultCollateralProfiles,
+  createDefaultEventFamilies,
+  createDefaultEventInstances,
+  createDefaultEventSubEvents,
+  createDefaultEventTypes,
+  getDefaultActiveEventInstanceId,
+  getDefaultOwnerForNewItems
+} from "@/lib/state/app-state-defaults";
+import { getAppStateRepository } from "@/lib/state/app-state-repository-provider";
+import type {
+  AppStateData,
+  CollateralProfilesByInstance,
+  CreateEventInstanceInput,
+  ImportAppStateResult
+} from "@/lib/state/app-state-types";
 
-export { clearPersistedAppState };
+export function clearPersistedAppState() {
+  getAppStateRepository().clear();
+}
 export type { AppStateSnapshot };
+export type { CreateEventInstanceInput, ImportAppStateResult };
 
 export type NewActionItem = NewActionItemInput;
 export type { GenerateDeliverablesResult };
 export type { CompletePublicationIssueResult };
-export type ImportAppStateResult = {
-  itemCount: number;
-  usedLegacyFormat: boolean;
-};
-
-export type CollateralProfilesByInstance = Record<string, LegDayCollateralProfile>;
-
-export type CreateEventInstanceInput = {
-  eventTypeId: string;
-  instanceName: string;
-  dateMode: EventDateMode;
-  dates: string[];
-  location?: string;
-  notes?: string;
-};
 
 type AppStateContextValue = {
   items: ActionItem[];
@@ -128,47 +116,26 @@ type AppStateContextValue = {
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<ActionItem[]>(getDefaultItems);
+  const [items, setItems] = useState<ActionItem[]>(createDefaultActionItems);
   const [issueStatuses, setIssueStatuses] = useState<Partial<Record<string, IssueStatus>>>({});
-  const [collateralItems, setCollateralItems] = useState<CollateralItem[]>(getDefaultCollateralItems);
-  const [collateralProfiles, setCollateralProfiles] = useState<CollateralProfilesByInstance>(getDefaultCollateralProfiles);
+  const [collateralItems, setCollateralItems] = useState<CollateralItem[]>(createDefaultCollateralItems);
+  const [collateralProfiles, setCollateralProfiles] = useState<CollateralProfilesByInstance>(createDefaultCollateralProfiles);
   const [activeEventInstanceId, setActiveEventInstanceIdState] = useState<string>(getDefaultActiveEventInstanceId);
   const [defaultOwnerForNewItems, setDefaultOwnerForNewItemsState] = useState<string>(getDefaultOwnerForNewItems);
-  const [eventFamilies, setEventFamilies] = useState<EventFamily[]>(getDefaultEventFamilies);
-  const [eventTypes, setEventTypes] = useState<EventType[]>(getDefaultEventTypes);
-  const [eventInstances, setEventInstances] = useState<EventInstance[]>(getDefaultEventInstances);
-  const [eventSubEvents, setEventSubEvents] = useState<EventSubEvent[]>(getDefaultEventSubEvents);
+  const [eventFamilies, setEventFamilies] = useState<EventFamily[]>(createDefaultEventFamilies);
+  const [eventTypes, setEventTypes] = useState<EventType[]>(createDefaultEventTypes);
+  const [eventInstances, setEventInstances] = useState<EventInstance[]>(createDefaultEventInstances);
+  const [eventSubEvents, setEventSubEvents] = useState<EventSubEvent[]>(createDefaultEventSubEvents);
   const [workstreamSchedules, setWorkstreamSchedulesState] = useState<WorkstreamSchedule[]>(getDefaultWorkstreamSchedules);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [shouldPersist, setShouldPersist] = useState(true);
+  const appStateRepository = getAppStateRepository();
 
   useEffect(() => {
-    const loadResult = loadPersistedAppState(normalizeActionItemFields);
+    const loadResult = appStateRepository.load();
 
     if (loadResult.state) {
-      setItems(
-        normalizeActionItems(
-          migratePersistedItems(loadResult.state.items, {
-          legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,
-          getDefaultItems,
-          normalizeItem: normalizeActionItemFields
-          }),
-          {
-            eventInstances: loadResult.state.eventInstances,
-            eventSubEvents: loadResult.state.eventSubEvents
-          }
-        )
-      );
-      setIssueStatuses(loadResult.state.issueStatuses);
-      setCollateralItems(loadResult.state.collateralItems);
-      setCollateralProfiles(loadResult.state.collateralProfiles);
-      setActiveEventInstanceIdState(loadResult.state.activeEventInstanceId);
-      setDefaultOwnerForNewItemsState(loadResult.state.defaultOwnerForNewItems);
-      setEventFamilies(loadResult.state.eventFamilies);
-      setEventTypes(loadResult.state.eventTypes);
-      setEventInstances(loadResult.state.eventInstances);
-      setEventSubEvents(loadResult.state.eventSubEvents);
-      setWorkstreamSchedulesState(loadResult.state.workstreamSchedules);
+      hydrateAppState(loadResult.state);
     }
 
     setShouldPersist(loadResult.shouldPersist);
@@ -180,7 +147,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    savePersistedAppState({
+    appStateRepository.save({
       items,
       issueStatuses,
       collateralItems,
@@ -205,6 +172,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   function enablePersistence() {
     setShouldPersist(true);
+  }
+
+  function hydrateAppState(state: AppStateData) {
+    setItems(state.items);
+    setIssueStatuses(state.issueStatuses);
+    setCollateralItems(state.collateralItems);
+    setCollateralProfiles(state.collateralProfiles);
+    setActiveEventInstanceIdState(state.activeEventInstanceId);
+    setDefaultOwnerForNewItemsState(state.defaultOwnerForNewItems);
+    setEventFamilies(state.eventFamilies);
+    setEventTypes(state.eventTypes);
+    setEventInstances(state.eventInstances);
+    setEventSubEvents(state.eventSubEvents);
+    setWorkstreamSchedulesState(state.workstreamSchedules);
   }
 
   function setActiveEventInstanceId(instanceId: string) {
@@ -454,19 +435,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }
 
   function resetAppState() {
-    clearPersistedAppState();
+    appStateRepository.clear();
     enablePersistence();
-    setItems(getDefaultItems());
-    setIssueStatuses({});
-    setCollateralItems(getDefaultCollateralItems());
-    setCollateralProfiles(getDefaultCollateralProfiles());
-    setActiveEventInstanceIdState(getDefaultActiveEventInstanceId());
-    setDefaultOwnerForNewItemsState(getDefaultOwnerForNewItems());
-    setEventFamilies(getDefaultEventFamilies());
-    setEventTypes(getDefaultEventTypes());
-    setEventInstances(getDefaultEventInstances());
-    setEventSubEvents(getDefaultEventSubEvents());
-    setWorkstreamSchedulesState(getDefaultWorkstreamSchedules());
+    hydrateAppState(createDefaultAppStateData());
   }
 
   const value = useMemo(
@@ -494,7 +465,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     deleteCollateralItem,
     completeIssue,
     exportAppStateSnapshot: () =>
-      createAppStateSnapshot(
+      appStateRepository.export({
         items,
         issueStatuses,
         collateralItems,
@@ -506,37 +477,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         eventInstances,
         eventSubEvents,
         workstreamSchedules
-      ),
+      }),
     generateMissingDeliverablesForIssue,
     generateIssueDeliverables,
     importAppStateSnapshot: (value: unknown) => {
-      const parsedState = parseImportedAppState(value);
-
-      if (!parsedState) {
-        throw new Error("That file is not a valid CAPMA Ops Hub backup.");
-      }
-
+      const importedState = appStateRepository.import(value);
       enablePersistence();
-      setItems(
-        normalizeActionItems(parsedState.items, {
-          eventInstances: parsedState.eventInstances,
-          eventSubEvents: parsedState.eventSubEvents
-        })
-      );
-      setIssueStatuses(parsedState.issueStatuses);
-      setCollateralItems(parsedState.collateralItems);
-      setCollateralProfiles(parsedState.collateralProfiles);
-      setActiveEventInstanceIdState(parsedState.activeEventInstanceId);
-      setDefaultOwnerForNewItemsState(parsedState.defaultOwnerForNewItems);
-      setEventFamilies(parsedState.eventFamilies);
-      setEventTypes(parsedState.eventTypes);
-      setEventInstances(parsedState.eventInstances);
-      setEventSubEvents(parsedState.eventSubEvents);
-      setWorkstreamSchedulesState(parsedState.workstreamSchedules);
+      hydrateAppState(importedState);
 
       return {
-        itemCount: parsedState.items.length,
-        usedLegacyFormat: parsedState.usedLegacyFormat
+        itemCount: importedState.itemCount,
+        usedLegacyFormat: importedState.usedLegacyFormat
       };
     },
       openIssue,
@@ -578,47 +529,6 @@ export function useAppState() {
   }
 
   return context;
-}
-
-function getDefaultItems() {
-  return normalizeActionItems(initialActionItems, {
-    eventInstances: initialEventInstances,
-    eventSubEvents: initialEventSubEvents
-  });
-}
-
-function getDefaultCollateralItems() {
-  return initialLegDayCollateralItems.map((item) => ({ ...item }));
-}
-
-function getDefaultCollateralProfiles() {
-  return {
-    [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile }
-  };
-}
-
-function getDefaultActiveEventInstanceId() {
-  return initialEventInstances[0]?.id ?? "";
-}
-
-function getDefaultOwnerForNewItems() {
-  return DEFAULT_OWNER;
-}
-
-function getDefaultEventFamilies() {
-  return initialEventFamilies.map((family) => ({ ...family }));
-}
-
-function getDefaultEventTypes() {
-  return initialEventTypes.map((eventType) => ({ ...eventType }));
-}
-
-function getDefaultEventInstances() {
-  return initialEventInstances.map((instance) => ({ ...instance }));
-}
-
-function getDefaultEventSubEvents() {
-  return initialEventSubEvents.map((subEvent) => ({ ...subEvent }));
 }
 
 function slugify(value: string) {

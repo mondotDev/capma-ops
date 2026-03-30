@@ -905,7 +905,10 @@ export function ActionView({
         </div>
 
         {selectedItem ? (
-          <aside className={isBlockedItem(selectedItem) ? "drawer drawer--blocked" : "drawer"} aria-label="Item details">
+          <aside
+            className={isBlockedItem(selectedItem) ? "drawer drawer--action drawer--blocked" : "drawer drawer--action"}
+            aria-label="Item details"
+          >
             <ActionItemDrawerHeader
               isActionsMenuOpen={isActionsMenuOpen}
               isEditingTitle={isEditingTitle}
@@ -923,8 +926,10 @@ export function ActionView({
               titleDraft={titleDraft}
             />
             <div className="drawer__sections">
-              <section className="drawer-section drawer-section--form">
-                <div className="drawer__grid drawer__grid--form">
+              <section className="drawer-section drawer-section--form action-drawer">
+                <div className="action-drawer__group">
+                  <div className="drawer__panel-title">Execution</div>
+                  <div className="drawer__grid action-drawer__group-grid action-drawer__group-grid--execution">
                   <div className="field field--priority">
                     <label htmlFor="drawer-status">Status</label>
                     <select
@@ -994,51 +999,56 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
-                  <div className="field field--secondary">
-                    <label htmlFor="drawer-workstream">Workstream</label>
-                    <select
-                      id="drawer-workstream"
-                      onChange={(event) => {
-                        const nextWorkstream = event.target.value;
-                        const nextItem = syncActionItemWorkstream(selectedItem, nextWorkstream);
+                  </div>
+                </div>
+                <div className="action-drawer__group">
+                  <div className="drawer__panel-title">Context</div>
+                  <div className="drawer__grid action-drawer__group-grid action-drawer__group-grid--context">
+                    <div className="field field--secondary">
+                      <label htmlFor="drawer-workstream">Workstream</label>
+                      <select
+                        id="drawer-workstream"
+                        onChange={(event) => {
+                          const nextWorkstream = event.target.value;
+                          const nextItem = syncActionItemWorkstream(selectedItem, nextWorkstream);
 
-                        updateItem(selectedItem.id, {
-                          workstream: nextItem.workstream,
-                          eventGroup: nextItem.eventGroup,
-                          issue: nextItem.issue
-                        });
-                      }}
-                      value={selectedItem.workstream}
-                    >
-                      {WORKSTREAM_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field field--secondary">
-                    <label htmlFor="drawer-event-instance">Event Instance</label>
-                    <select
-                      id="drawer-event-instance"
-                      onChange={(event) =>
-                        updateItem(selectedItem.id, {
-                          eventInstanceId: event.target.value || undefined,
-                          subEventId: undefined,
-                          legacyEventGroupMigrated: true
-                        })
-                      }
-                      value={selectedItem.eventInstanceId ?? ""}
-                    >
-                      <option value="">None</option>
-                      {eventInstances.map((instance) => (
-                        <option key={instance.id} value={instance.id}>
-                          {instance.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field field--secondary">
+                          updateItem(selectedItem.id, {
+                            workstream: nextItem.workstream,
+                            eventGroup: nextItem.eventGroup,
+                            issue: nextItem.issue
+                          });
+                        }}
+                        value={selectedItem.workstream}
+                      >
+                        {WORKSTREAM_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field field--secondary">
+                      <label htmlFor="drawer-event-instance">Event Instance</label>
+                      <select
+                        id="drawer-event-instance"
+                        onChange={(event) =>
+                          updateItem(selectedItem.id, {
+                            eventInstanceId: event.target.value || undefined,
+                            subEventId: undefined,
+                            legacyEventGroupMigrated: true
+                          })
+                        }
+                        value={selectedItem.eventInstanceId ?? ""}
+                      >
+                        <option value="">None</option>
+                        {eventInstances.map((instance) => (
+                          <option key={instance.id} value={instance.id}>
+                            {instance.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field field--secondary">
                     <label htmlFor="drawer-sub-event">Sub-Event</label>
                     <select
                       disabled={!selectedItem.eventInstanceId}
@@ -1058,7 +1068,7 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
-                  <div className="field field--secondary">
+                    <div className="field field--secondary">
                     <label htmlFor="drawer-event-group">Event Group</label>
                     <select
                       disabled={Boolean(selectedItem.eventInstanceId)}
@@ -1084,78 +1094,7 @@ export function ActionView({
                     </div>
                   </div>
                   {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
-                    <div className="field">
-                      <label htmlFor="drawer-issue">Issue</label>
-                      <select
-                        id="drawer-issue"
-                        onChange={(event) =>
-                          {
-                            const nextItem = syncActionItemIssue(selectedItem, event.target.value);
-
-                            updateItem(selectedItem.id, {
-                              issue: nextItem.issue || undefined,
-                              workstream: nextItem.workstream,
-                              eventGroup: nextItem.eventGroup,
-                              dueDate: nextItem.dueDate
-                            });
-                          }
-                        }
-                        value={selectedItem.issue ?? ""}
-                      >
-                        <option value="">None</option>
-                        {selectedItemIssueOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-                  {selectedIssueRecord ? (
-                    <div className="field">
-                      <label>Issue Status</label>
-                      <div className="field-static">
-                        {selectedIssueRecord.status}
-                        {!selectedIssueRecord.dueDate ? " — missing due date" : ""}
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="field field--secondary">
-                    <label htmlFor="drawer-type">Type</label>
-                    <input
-                      id="drawer-type"
-                      onChange={(event) => updateItem(selectedItem.id, { type: event.target.value })}
-                      value={selectedItem.type}
-                    />
-                  </div>
-                  <div className="field drawer__blocked-control">
-                    <div className="drawer__blocked-stack">
-                      <label className="toggle drawer__blocked-toggle" htmlFor="drawer-blocked">
-                        <input
-                          checked={selectedItem.isBlocked ?? false}
-                          id="drawer-blocked"
-                          onChange={(event) => updateItem(selectedItem.id, { isBlocked: event.target.checked })}
-                          type="checkbox"
-                        />
-                        <span>Blocked</span>
-                      </label>
-                    </div>
-                  </div>
-                  {selectedItem.isBlocked ? (
-                    <div className="field field--wide drawer__blocked-details">
-                      <label htmlFor="drawer-blocked-by">Blocked By</label>
-                      <input
-                        id="drawer-blocked-by"
-                        onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
-                        onChange={(event) => setBlockedByDraft(event.target.value)}
-                        placeholder="Short reason the work cannot move, like logo approval or internal decision"
-                        value={blockedByDraft}
-                      />
-                      <div className="field-hint">Use a short blocker reason. Shared categories will stay standardized; custom reasons are preserved.</div>
-                    </div>
-                  ) : null}
-                  {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
-                    <div className="field field--wide">
+                    <div className="field field--wide action-drawer__issue-field">
                       <label htmlFor="drawer-issue">Issue</label>
                       <select
                         id="drawer-issue"
@@ -1181,13 +1120,63 @@ export function ActionView({
                     </div>
                   ) : null}
                   {selectedIssueRecord ? (
-                    <div className="field field--wide">
+                    <div className="field field--wide action-drawer__issue-status">
+                      <label>Issue Status</label>
                       <div className="field-static">
-                        Issue status: {selectedIssueRecord.status}
-                        {!selectedIssueRecord.dueDate ? " • missing due date" : ""}
+                        {selectedIssueRecord.status}
+                        {!selectedIssueRecord?.dueDate ? " — missing due date" : ""}
                       </div>
                     </div>
                   ) : null}
+                  </div>
+                </div>
+
+                <div className="action-drawer__group">
+                  <div className="drawer__panel-title">Details</div>
+                  <div className="drawer__grid action-drawer__group-grid action-drawer__group-grid--details">
+                  <div className="field field--secondary">
+                    <label htmlFor="drawer-type">Type</label>
+                    <input
+                      id="drawer-type"
+                      onChange={(event) => updateItem(selectedItem.id, { type: event.target.value })}
+                      value={selectedItem.type}
+                    />
+                  </div>
+                    <div className="field drawer__blocked-control">
+                    <div className="drawer__blocked-stack">
+                      <label className="toggle drawer__blocked-toggle" htmlFor="drawer-blocked">
+                        <input
+                          checked={selectedItem.isBlocked ?? false}
+                          id="drawer-blocked"
+                          onChange={(event) => updateItem(selectedItem.id, { isBlocked: event.target.checked })}
+                          type="checkbox"
+                        />
+                        <span>Blocked</span>
+                      </label>
+                    </div>
+                  </div>
+                  {selectedItem.isBlocked ? (
+                    <div className="field field--wide action-drawer__blocked-field">
+                      <label htmlFor="drawer-blocked-by">Blocked By</label>
+                      <input
+                        id="drawer-blocked-by"
+                        onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
+                        onChange={(event) => setBlockedByDraft(event.target.value)}
+                        placeholder="Short reason the work cannot move, like logo approval or internal decision"
+                        value={blockedByDraft}
+                      />
+                      <div className="field-hint">Use a short blocker reason. Shared categories will stay standardized; custom reasons are preserved.</div>
+                    </div>
+                  ) : null}
+                  {false && selectedIssueRecord && (
+                    <div className="field field--wide">
+                      <div className="field-static">
+                        Issue status: {selectedIssueRecord?.status}
+                        {!selectedIssueRecord?.dueDate ? " • missing due date" : ""}
+                      </div>
+                    </div>
+                  )}
+                  </div>
                 </div>
               </section>
 
@@ -1332,3 +1321,4 @@ function getUrgencyBadgeClassName(item: ActionItem) {
 
   return "urgency-badge urgency-badge--due-soon";
 }
+

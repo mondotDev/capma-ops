@@ -104,6 +104,8 @@ export function CollateralView({
   const [pendingDraftDiscardIntent, setPendingDraftDiscardIntent] = useState<PendingDraftDiscardIntent>(null);
   const [setupFeedback, setSetupFeedback] = useState<string>("");
   const [noteDraft, setNoteDraft] = useState("");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<CollateralSummaryFilter>("all");
   const [activeProfileDeadlineFilter, setActiveProfileDeadlineFilter] =
     useState<CollateralProfileDeadlineFilter>("none");
@@ -290,6 +292,11 @@ export function CollateralView({
         ? formatShortDate(selectedEventInstance.startDate)
         : `${formatShortDate(selectedEventInstance.startDate)} - ${formatShortDate(selectedEventInstance.endDate)}`
       : "";
+
+  useEffect(() => {
+    setIsEditingTitle(false);
+    setTitleDraft(selectedItem?.itemName ?? "");
+  }, [selectedItem?.id, selectedItem?.itemName]);
   const summary = useMemo(
     () => {
       const atPrinterItems = activeItems.filter((item) => item.status === "Sent to Printer");
@@ -458,6 +465,27 @@ export function CollateralView({
 
     patchCollateralItem(item.id, { noteEntries: [nextEntry, ...item.noteEntries] });
     setNoteDraft("");
+  }
+
+  function commitTitleDraft(item: CollateralItem, value: string) {
+    const nextTitle = value.trim();
+
+    if (!nextTitle || nextTitle === item.itemName) {
+      setTitleDraft(item.itemName);
+      return;
+    }
+
+    patchCollateralItem(item.id, { itemName: nextTitle });
+  }
+
+  function finishTitleEdit(item: CollateralItem) {
+    commitTitleDraft(item, titleDraft);
+    setIsEditingTitle(false);
+  }
+
+  function cancelTitleEdit(item: CollateralItem) {
+    setTitleDraft(item.itemName);
+    setIsEditingTitle(false);
   }
 
   function patchCollateralItem(id: string, updates: Partial<CollateralItem>) {
@@ -772,10 +800,39 @@ export function CollateralView({
         </div>
 
         {selectedItem ? (
-          <aside className="drawer" aria-label="Collateral details">
+          <aside className="drawer drawer--collateral" aria-label="Collateral details">
+            <div className="drawer__sticky">
             <div className="drawer__header">
               <div className="drawer__header-text">
-                <h2 className="drawer__title">{selectedItem.itemName}</h2>
+                <div className="collateral-drawer__eyebrow">Collateral item</div>
+                {isEditingTitle ? (
+                  <input
+                    aria-label="Edit collateral item title"
+                    autoFocus
+                    className="drawer__title-input collateral-drawer__title-input"
+                    id="collateral-title"
+                    onBlur={() => finishTitleEdit(selectedItem)}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelTitleEdit(selectedItem);
+                      }
+
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        finishTitleEdit(selectedItem);
+                      }
+                    }}
+                    value={titleDraft}
+                  />
+                ) : (
+                  <h2 className="drawer__title collateral-drawer__title">
+                    <button className="drawer__title-button" onClick={() => setIsEditingTitle(true)} type="button">
+                      {selectedItem.itemName}
+                    </button>
+                  </h2>
+                )}
                 <div className="drawer__header-meta">
                   <span className="drawer__workstream">
                     {subEventNameById.get(selectedItem.subEventId) ?? "Unassigned sub-event"}
@@ -785,6 +842,27 @@ export function CollateralView({
                     <span className="drawer__status-chip drawer__status-chip--new">New item</span>
                   ) : null}
                 </div>
+                <div className="collateral-drawer__meta-row">
+                  {selectedItem.dueDate ? (
+                    <span className="drawer__due-text">{getCollateralDrawerDueText(selectedItem)}</span>
+                  ) : (
+                    <span className="drawer__due-text">No due date set</span>
+                  )}
+                  {selectedItem.owner ? (
+                    <span className="collateral-drawer__meta-pill">Owner: {selectedItem.owner}</span>
+                  ) : null}
+                  {selectedItem.printer.trim() ? (
+                    <span className="collateral-drawer__meta-pill">Printer: {selectedItem.printer.trim()}</span>
+                  ) : null}
+                  {selectedItem.quantity.trim() ? (
+                    <span className="collateral-drawer__meta-pill">Qty: {selectedItem.quantity.trim()}</span>
+                  ) : null}
+                </div>
+                {selectedItem.blockedBy.trim() ? (
+                  <div className="drawer__warning drawer__warning--blocked">
+                    Blocked by {selectedItem.blockedBy.trim()}
+                  </div>
+                ) : null}
               </div>
               <div className="drawer__header-actions">
                 <div className="drawer__actions-menu">
@@ -819,20 +897,13 @@ export function CollateralView({
                 </button>
               </div>
             </div>
+            </div>
 
             <div className="drawer__sections">
               <section className="drawer-section drawer-section--form collateral-drawer">
                 <div className="collateral-drawer__group">
                   <div className="drawer__panel-title">Identity</div>
-                  <div className="drawer__grid drawer__grid--form">
-                    <div className="field field--priority">
-                      <label htmlFor="collateral-item-name">Collateral Item</label>
-                      <input
-                        id="collateral-item-name"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { itemName: event.target.value })}
-                        value={selectedItem.itemName}
-                      />
-                    </div>
+                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
                     <div className="field field--secondary">
                       <label htmlFor="collateral-sub-event">Sub-Event</label>
                       <select
@@ -898,7 +969,7 @@ export function CollateralView({
                         value={selectedItem.dueDate}
                       />
                     </div>
-                    <div className="field field--wide">
+                    <div className="field field--wide collateral-drawer__blocked-field">
                       <label htmlFor="collateral-blocked-by">Blocked By</label>
                       <input
                         id="collateral-blocked-by"
@@ -1439,6 +1510,22 @@ function getCollateralStatusClassName(item: CollateralItem) {
   }
 
   return "collateral-status";
+}
+
+function getCollateralDrawerDueText(item: CollateralItem) {
+  if (!item.dueDate) {
+    return "No due date set";
+  }
+
+  if (isCollateralOverdue(item)) {
+    return `Overdue - ${formatShortDate(item.dueDate)}`;
+  }
+
+  if (isCollateralDueSoon(item)) {
+    return `Due soon - ${formatShortDate(item.dueDate)}`;
+  }
+
+  return `Due ${formatShortDate(item.dueDate)}`;
 }
 
 function matchesCollateralSummaryFilter(item: CollateralItem, filter: CollateralSummaryFilter) {
