@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
@@ -126,6 +126,7 @@ export function ActionView({
   const [titleDraft, setTitleDraft] = useState("");
   const [blockedByDraft, setBlockedByDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
+  const blockedByInputRef = useRef<HTMLInputElement | null>(null);
   const activeFilter = getActionFilterValue(initialFilter);
   const activeFocus = getActionFocusValue(initialFocus);
   const activeLens = getActionLensValue(initialLens);
@@ -999,6 +1000,45 @@ export function ActionView({
                       ))}
                     </select>
                   </div>
+                  <div
+                    className={`field action-drawer__blocked-control action-drawer__blocked-toggle-field${selectedItem.isBlocked ? " action-drawer__blocked-toggle-field--active" : ""}`}
+                  >
+                    <div className="drawer__blocked-stack">
+                      <label className="toggle drawer__blocked-toggle" htmlFor="drawer-blocked">
+                        <input
+                          checked={selectedItem.isBlocked ?? false}
+                          id="drawer-blocked"
+                          onChange={(event) => {
+                            const nextChecked = event.target.checked;
+                            updateItem(selectedItem.id, { isBlocked: nextChecked });
+
+                            if (nextChecked) {
+                              requestAnimationFrame(() => {
+                                blockedByInputRef.current?.focus();
+                                blockedByInputRef.current?.select();
+                              });
+                            }
+                          }}
+                          type="checkbox"
+                        />
+                        <span>Blocked</span>
+                      </label>
+                    </div>
+                  </div>
+                  {selectedItem.isBlocked ? (
+                    <div className="field field--wide action-drawer__blocked-field">
+                      <label htmlFor="drawer-blocked-by">Blocked By</label>
+                      <input
+                        id="drawer-blocked-by"
+                        ref={blockedByInputRef}
+                        onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
+                        onChange={(event) => setBlockedByDraft(event.target.value)}
+                        placeholder="Short reason the work cannot move, like logo approval or internal decision"
+                        value={blockedByDraft}
+                      />
+                      <div className="field-hint">Use a short blocker reason. Shared categories will stay standardized; custom reasons are preserved.</div>
+                    </div>
+                  ) : null}
                   </div>
                 </div>
                 <div className="action-drawer__group">
@@ -1141,42 +1181,7 @@ export function ActionView({
                       onChange={(event) => updateItem(selectedItem.id, { type: event.target.value })}
                       value={selectedItem.type}
                     />
-                  </div>
-                    <div className="field drawer__blocked-control">
-                    <div className="drawer__blocked-stack">
-                      <label className="toggle drawer__blocked-toggle" htmlFor="drawer-blocked">
-                        <input
-                          checked={selectedItem.isBlocked ?? false}
-                          id="drawer-blocked"
-                          onChange={(event) => updateItem(selectedItem.id, { isBlocked: event.target.checked })}
-                          type="checkbox"
-                        />
-                        <span>Blocked</span>
-                      </label>
-                    </div>
-                  </div>
-                  {selectedItem.isBlocked ? (
-                    <div className="field field--wide action-drawer__blocked-field">
-                      <label htmlFor="drawer-blocked-by">Blocked By</label>
-                      <input
-                        id="drawer-blocked-by"
-                        onBlur={() => commitBlockedByDraft(selectedItem, blockedByDraft)}
-                        onChange={(event) => setBlockedByDraft(event.target.value)}
-                        placeholder="Short reason the work cannot move, like logo approval or internal decision"
-                        value={blockedByDraft}
-                      />
-                      <div className="field-hint">Use a short blocker reason. Shared categories will stay standardized; custom reasons are preserved.</div>
-                    </div>
-                  ) : null}
-                  {false && selectedIssueRecord && (
-                    <div className="field field--wide">
-                      <div className="field-static">
-                        Issue status: {selectedIssueRecord?.status}
-                        {!selectedIssueRecord?.dueDate ? " • missing due date" : ""}
-                      </div>
-                    </div>
-                  )}
-                  </div>
+                  </div>                  </div>
                 </div>
               </section>
 
@@ -1321,4 +1326,5 @@ function getUrgencyBadgeClassName(item: ActionItem) {
 
   return "urgency-badge urgency-badge--due-soon";
 }
+
 

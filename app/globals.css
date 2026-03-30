@@ -2649,6 +2649,10 @@ tr.blocked-row {
   grid-column: 1 / -1;
 }
 
+.action-drawer__blocked-toggle-field {
+  align-content: start;
+}
+
 .drawer--action .drawer-section--form {
   gap: 16px;
 }
@@ -2659,15 +2663,47 @@ tr.blocked-row {
   letter-spacing: 0.1em;
 }
 
-.drawer--action .drawer__blocked-control {
-  padding: 10px 12px;
-  border: 1px solid #e6ded1;
+.drawer--action .action-drawer__blocked-toggle-field {
+  padding: 8px 12px;
+  border: 1px solid #ece4d7;
   border-radius: 14px;
-  background: #fffaf3;
+  background: rgba(255, 250, 243, 0.55);
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-.drawer--action .drawer__blocked-details input {
+.drawer--action .action-drawer__blocked-toggle-field--active {
+  border-color: #e1c8a8;
+  background: linear-gradient(180deg, #fff8ef 0%, #fff3e2 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.drawer--action .action-drawer__blocked-toggle-field .drawer__blocked-toggle {
+  color: #70583f;
+}
+
+.drawer--action .action-drawer__blocked-toggle-field--active .drawer__blocked-toggle {
+  color: #8a4b12;
+  font-weight: 700;
+}
+
+.drawer--action .action-drawer__blocked-field {
+  margin-top: -4px;
+  padding: 12px 14px 14px;
+  border: 1px solid #e1c8a8;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fffdf9 0%, #fff7ea 100%);
+}
+
+.drawer--action .action-drawer__blocked-field input {
   background: #fffdf8;
+}
+
+.drawer--action .action-drawer__blocked-field label {
+  color: #8a4b12;
+}
+
+.drawer--action .action-drawer__blocked-field .field-hint {
+  max-width: none;
 }
 
 .drawer--action .drawer-section--notes-panel {
