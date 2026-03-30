@@ -22,7 +22,7 @@ import {
   type CollateralItem,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
-import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
+import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
 import {
   createSuggestedEventInstanceName,
   deriveEventDateRange,
@@ -44,6 +44,11 @@ type CreateInstanceFormState = {
   location: string;
   notes: string;
 };
+
+type PendingDraftDiscardIntent =
+  | { type: "switch"; nextEventInstanceId: string }
+  | { type: "createInstance" }
+  | null;
 
 const INITIAL_INSTANCE_FORM: CreateInstanceFormState = {
   eventTypeId: "legislative-day",
@@ -81,6 +86,7 @@ export function CollateralView() {
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [draftCollateralItem, setDraftCollateralItem] = useState<CollateralItem | null>(null);
+  const [pendingDraftDiscardIntent, setPendingDraftDiscardIntent] = useState<PendingDraftDiscardIntent>(null);
   const [setupFeedback, setSetupFeedback] = useState<string>("");
   const [noteDraft, setNoteDraft] = useState("");
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<CollateralSummaryFilter>("all");
@@ -94,6 +100,11 @@ export function CollateralView() {
   const defaultTemplatePack = selectedEventInstance
     ? getDefaultTemplatePackForEventType(selectedEventInstance.eventTypeId)
     : null;
+  const supportedCreateEventTypes = useMemo(
+    () => eventTypes.filter((eventType) => supportsCollateralEventType(eventType.id)),
+    [eventTypes]
+  );
+  const isSelectedCreateEventTypeSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
   const activeProfile =
     collateralProfiles[resolvedActiveEventInstanceId] ??
     (selectedEventInstance?.eventTypeId === "legislative-day" ? getDefaultLegDayProfile(selectedEventInstance) : null);
@@ -124,7 +135,10 @@ export function CollateralView() {
     }
 
     const selectedEventType =
-      eventTypes.find((eventType) => eventType.id === instanceFormState.eventTypeId) ?? eventTypes[0] ?? null;
+      eventTypes.find((eventType) => eventType.id === instanceFormState.eventTypeId) ??
+      supportedCreateEventTypes[0] ??
+      eventTypes[0] ??
+      null;
 
     if (!selectedEventType) {
       return;
@@ -139,7 +153,31 @@ export function CollateralView() {
         current.location
       )
     }));
-  }, [eventTypes, hasEditedInstanceName, instanceFormState.dateMode, instanceFormState.dates, instanceFormState.eventTypeId, instanceFormState.location]);
+  }, [
+    eventTypes,
+    hasEditedInstanceName,
+    instanceFormState.dateMode,
+    instanceFormState.dates,
+    instanceFormState.eventTypeId,
+    instanceFormState.location,
+    supportedCreateEventTypes
+  ]);
+
+  useEffect(() => {
+    if (instanceFormState.eventTypeId && supportsCollateralEventType(instanceFormState.eventTypeId)) {
+      return;
+    }
+
+    const fallbackEventType = supportedCreateEventTypes[0];
+    if (!fallbackEventType || fallbackEventType.id === instanceFormState.eventTypeId) {
+      return;
+    }
+
+    setInstanceFormState((current) => ({
+      ...current,
+      eventTypeId: fallbackEventType.id
+    }));
+  }, [instanceFormState.eventTypeId, supportedCreateEventTypes]);
 
   const instanceSubEvents = useMemo(
     () => eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === resolvedActiveEventInstanceId),
@@ -236,6 +274,7 @@ export function CollateralView() {
   const hasAppliedTemplateItems = instanceItems.some((item) => Boolean(item.templateOriginId));
   const hasActiveCollateralFilters =
     activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none";
+  const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
   const activeFilterLabel = getCollateralSummaryFilterLabel(activeSummaryFilter);
   const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
 
@@ -284,10 +323,15 @@ export function CollateralView() {
     setHasEditedInstanceName(false);
   }
 
-  function handleCreateInstance() {
+  function completeCreateInstance() {
     const normalizedDates = instanceFormState.dates.filter((date) => date.length > 0);
 
-    if (!instanceFormState.eventTypeId || !instanceFormState.instanceName.trim() || normalizedDates.length === 0) {
+    if (
+      !instanceFormState.eventTypeId ||
+      !isSelectedCreateEventTypeSupported ||
+      !instanceFormState.instanceName.trim() ||
+      normalizedDates.length === 0
+    ) {
       return;
     }
 
@@ -309,6 +353,15 @@ export function CollateralView() {
     } else {
       setSetupFeedback(`${instanceFormState.instanceName.trim()} created and set as the active event instance.`);
     }
+  }
+
+  function handleCreateInstance() {
+    if (hasUnsavedDraftCollateral) {
+      setPendingDraftDiscardIntent({ type: "createInstance" });
+      return;
+    }
+
+    completeCreateInstance();
   }
 
   function handleConfirmTemplateApply() {
@@ -391,6 +444,41 @@ export function CollateralView() {
     setActiveProfileDeadlineFilter("none");
   }
 
+  function requestEventInstanceSwitch(nextEventInstanceId: string) {
+    if (nextEventInstanceId === resolvedActiveEventInstanceId) {
+      return;
+    }
+
+    if (hasUnsavedDraftCollateral) {
+      setPendingDraftDiscardIntent({ type: "switch", nextEventInstanceId });
+      return;
+    }
+
+    setActiveEventInstanceId(nextEventInstanceId);
+    setSelectedId(null);
+  }
+
+  function handleCancelDraftDiscardIntent() {
+    setPendingDraftDiscardIntent(null);
+  }
+
+  function handleConfirmDraftDiscardIntent() {
+    if (!pendingDraftDiscardIntent) {
+      return;
+    }
+
+    const intent = pendingDraftDiscardIntent;
+    discardDraftCollateralItem();
+    setPendingDraftDiscardIntent(null);
+
+    if (intent.type === "switch") {
+      setActiveEventInstanceId(intent.nextEventInstanceId);
+      return;
+    }
+
+    completeCreateInstance();
+  }
+
   return (
     <section className="collateral-page">
       <div className="collateral-page__header">
@@ -408,10 +496,7 @@ export function CollateralView() {
             <select
               className="field-control"
               id="collateral-event-instance"
-              onChange={(event) => {
-                setActiveEventInstanceId(event.target.value);
-                setSelectedId(null);
-              }}
+              onChange={(event) => requestEventInstanceSwitch(event.target.value)}
               value={resolvedActiveEventInstanceId}
             >
               {eventInstancesByType.map(({ eventType, instances }) => (
@@ -871,24 +956,31 @@ export function CollateralView() {
               <div className="quick-add-grid">
                 <div className="field">
                   <label htmlFor="instance-event-type">Event Type</label>
-                  <select
-                    className="field-control"
-                    id="instance-event-type"
+                    <select
+                      className="field-control"
+                      id="instance-event-type"
                     onChange={(event) =>
                       setInstanceFormState((current) => ({
                         ...current,
                         eventTypeId: event.target.value
                       }))
-                    }
-                    value={instanceFormState.eventTypeId}
-                  >
-                    {eventTypes.map((eventType) => (
-                      <option key={eventType.id} value={eventType.id}>
-                        {eventType.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                      }
+                      value={instanceFormState.eventTypeId}
+                    >
+                      {eventTypes.map((eventType) => (
+                        <option
+                          disabled={!supportsCollateralEventType(eventType.id)}
+                          key={eventType.id}
+                          value={eventType.id}
+                        >
+                          {supportsCollateralEventType(eventType.id) ? eventType.name : `${eventType.name} (Coming Soon)`}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="field__hint">
+                      Only event types with a default collateral template can be created here right now.
+                    </div>
+                  </div>
                 <div className="field">
                   <label htmlFor="instance-name">Instance Name</label>
                   <input
@@ -1057,12 +1149,12 @@ export function CollateralView() {
                 <button className="button-link button-link--inline-secondary" onClick={closeCreateInstanceModal} type="button">
                   Cancel
                 </button>
-                <button
-                  className="topbar__button"
-                  disabled={!isInstanceFormValid(instanceFormState)}
-                  onClick={handleCreateInstance}
-                  type="button"
-                >
+                  <button
+                    className="topbar__button"
+                    disabled={!isInstanceFormValid(instanceFormState) || !isSelectedCreateEventTypeSupported}
+                    onClick={handleCreateInstance}
+                    type="button"
+                  >
                   Create and Continue
                 </button>
               </div>
@@ -1071,8 +1163,8 @@ export function CollateralView() {
         </div>
       ) : null}
 
-      {pendingTemplateInstance ? (
-        <div className="modal-layer" role="presentation">
+        {pendingTemplateInstance ? (
+          <div className="modal-layer" role="presentation">
           <button aria-label="Close template prompt" className="modal-backdrop" onClick={handleSkipTemplateApply} type="button" />
           <section aria-labelledby="apply-template-title" aria-modal="true" className="quick-add-modal" role="dialog">
             <div className="quick-add-modal__header">
@@ -1096,11 +1188,53 @@ export function CollateralView() {
               </div>
             </div>
           </section>
-        </div>
-      ) : null}
-    </section>
-  );
-}
+          </div>
+        ) : null}
+
+        {pendingDraftDiscardIntent ? (
+          <div className="modal-layer" role="presentation">
+            <button
+              aria-label="Close draft discard prompt"
+              className="modal-backdrop"
+              onClick={handleCancelDraftDiscardIntent}
+              type="button"
+            />
+            <section aria-labelledby="discard-draft-title" aria-modal="true" className="quick-add-modal" role="dialog">
+              <div className="quick-add-modal__header">
+                <div>
+                  <h2 className="quick-add-modal__title" id="discard-draft-title">
+                    Discard unsaved collateral?
+                  </h2>
+                  <p className="quick-add-modal__subtitle">
+                    {pendingDraftDiscardIntent.type === "switch"
+                      ? "Switching event context will discard the new collateral item you have not saved yet."
+                      : "Creating a new event instance will switch context and discard the new collateral item you have not saved yet."}
+                  </p>
+                </div>
+              </div>
+              <div className="confirm-delete confirm-delete--neutral">
+                <div className="confirm-delete__copy">
+                  Save the draft first if you want to keep it in the current event instance.
+                </div>
+                <div className="confirm-delete__actions">
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={handleCancelDraftDiscardIntent}
+                    type="button"
+                  >
+                    Stay Here
+                  </button>
+                  <button className="button-danger" onClick={handleConfirmDraftDiscardIntent} type="button">
+                    Discard and Continue
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
 
 function groupCollateralItems(
   items: CollateralItem[],

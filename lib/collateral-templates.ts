@@ -96,6 +96,10 @@ export function getDefaultTemplatePackForEventType(eventTypeId: string) {
   return initialCollateralTemplatePacks.find((pack) => pack.eventTypeId === eventTypeId) ?? null;
 }
 
+export function supportsCollateralEventType(eventTypeId: string) {
+  return getDefaultTemplatePackForEventType(eventTypeId) !== null;
+}
+
 export function getTemplateSubEventsForPack(packId: string) {
   return initialCollateralTemplateSubEvents.filter((subEvent) => subEvent.packId === packId);
 }
