@@ -2,6 +2,7 @@ import type { ActionNoteEntry } from "@/lib/sample-data";
 import { type NormalizedWorkflowStatus, isNormalizedTerminalStatus } from "@/lib/workflow-status";
 import {
   LEGISLATIVE_DAY_2026_INSTANCE_ID,
+  getUnassignedSubEventId,
   getInitialLegDaySubEventIdByName,
   initialEventSubEvents
 } from "@/lib/event-instances";
@@ -81,7 +82,7 @@ export const initialLegDayCollateralItems: CollateralItem[] = [
   createSeedItem("golf-winning-team-sign", "Golf Tournament", "Winning Team Sign", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Full Redesign", "Podium sized", "golf-winning-team-sign"),
   createSeedItem("legislative-leave-behind", "Legislative Visits", "Legislative leave-behind", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "100", "Full Redesign", "", "legislative-leave-behind"),
   createSeedItem("group-photo-sign", "Legislative Visits", "CAPMA sign for group photo", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Minor Update", "Reusable, podium size", "group-photo-sign"),
-  createSeedItem("podium-signage", "Multi-Event/All Days", "Podium Signage", "Ready for Print", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Minor Update", "", "podium-signage"),
+  createSeedItem("podium-signage", "Multi-Event/All Days", "Podium Signage", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Minor Update", "", "podium-signage"),
   createSeedItem("welcome-leg-day-sign", "Multi-Event/All Days", "Welcome to Leg Day Sign", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Full Redesign", "", "welcome-leg-day-sign"),
   createSeedItem("leg-day-sponsor-thank-you", "Multi-Event/All Days", "Thank you all Leg Day sponsors", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Full Redesign", "", "leg-day-sponsor-thank-you"),
   createSeedItem("master-slide-deck", "Multi-Event/All Days", "Master Slide Deck", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "master-slide-deck"),
@@ -181,9 +182,15 @@ export function normalizeCollateralItem(
     return null;
   }
 
+  const eventInstanceId =
+    typeof item.eventInstanceId === "string" && item.eventInstanceId.length > 0
+      ? item.eventInstanceId
+      : LEGISLATIVE_DAY_2026_INSTANCE_ID;
   const subEventId =
     typeof item.subEventId === "string"
-      ? item.subEventId
+      ? item.subEventId === "__unassigned__"
+        ? getUnassignedSubEventId(eventInstanceId)
+        : item.subEventId
       : typeof item.subEvent === "string"
         ? getInitialLegDaySubEventIdByName(item.subEvent)
         : null;
@@ -194,10 +201,7 @@ export function normalizeCollateralItem(
 
   return {
     id: item.id,
-    eventInstanceId:
-      typeof item.eventInstanceId === "string" && item.eventInstanceId.length > 0
-        ? item.eventInstanceId
-        : LEGISLATIVE_DAY_2026_INSTANCE_ID,
+    eventInstanceId,
     subEventId,
     templateOriginId: typeof item.templateOriginId === "string" ? item.templateOriginId : undefined,
     itemName: item.itemName,

@@ -54,7 +54,7 @@ export const initialCollateralTemplateItems: CollateralTemplateItem[] = [
   createLegDayTemplateItem("golf-reception-thank-you-sign", "Thank You/Welcome sign", "Golf Reception", "Backlog", "Clark", "1", "Light Update", ""),
   createLegDayTemplateItem("golf-reception-table-tents", "Table Tents (Golf Reception)", "Golf Reception", "Backlog", "CAPMA", "10", "Light Update", ""),
   createLegDayTemplateItem("golf-registration-table-tents", "Golf Registration Table Tents", "Golf Registration", "Backlog", "CAPMA", "2", "", ""),
-  createLegDayTemplateItem("golf-registration-stickers", "Golf Registration Stickers (Name Stickers)", "Golf Registration", "In Design", "CAPMA", "", "Net New", ""),
+  createLegDayTemplateItem("golf-registration-stickers", "Golf Registration Stickers (Name Stickers)", "Golf Registration", "Backlog", "CAPMA", "", "Net New", ""),
   createLegDayTemplateItem("golf-registration-qr-signin", "Sign-In Sheets with QR Code (Golf)", "Golf Registration", "Backlog", "CAPMA", "2", "Net New", ""),
   createLegDayTemplateItem("golf-registration-logo-stickers", "Logo Stickers for Golf Bags", "Golf Registration", "Backlog", "CAPMA", "", "", ""),
   createLegDayTemplateItem("golf-registration-water-bottle", "Water Bottle stickers", "Golf Registration", "Backlog", "CAPMA", "400", "Net New", ""),
@@ -62,7 +62,7 @@ export const initialCollateralTemplateItems: CollateralTemplateItem[] = [
   createLegDayTemplateItem("golf-winning-team-sign", "Winning Team Sign", "Golf Tournament", "Backlog", "Clark", "1", "Net New", "Podium sized"),
   createLegDayTemplateItem("legislative-leave-behind", "Legislative leave-behind", "Legislative Visits", "Backlog", "CAPMA", "100", "Net New", ""),
   createLegDayTemplateItem("group-photo-sign", "CAPMA sign for group photo", "Legislative Visits", "Backlog", "Clark", "1", "Light Update", "Reusable, podium size"),
-  createLegDayTemplateItem("podium-signage", "Podium Signage", "Multi-Event/All Days", "Ready for Print", "Clark", "1", "Light Update", ""),
+  createLegDayTemplateItem("podium-signage", "Podium Signage", "Multi-Event/All Days", "Backlog", "Clark", "1", "Light Update", ""),
   createLegDayTemplateItem("welcome-leg-day-sign", "Welcome to Leg Day Sign", "Multi-Event/All Days", "Backlog", "Clark", "1", "Net New", ""),
   createLegDayTemplateItem("leg-day-sponsor-thank-you", "Thank you all Leg Day sponsors", "Multi-Event/All Days", "Backlog", "Clark", "1", "Net New", ""),
   createLegDayTemplateItem("master-slide-deck", "Master Slide Deck", "Multi-Event/All Days", "Backlog", "CAPMA", "", "Net New", ""),
@@ -88,7 +88,7 @@ export const initialCollateralTemplateItems: CollateralTemplateItem[] = [
   createLegDayTemplateItem("reception-napkins", "Branded Napkins for Wednesday Night Reception (Year-Specific)", "Wednesday Reception", "Backlog", "Vendor", "", "Net New", ""),
   createLegDayTemplateItem("reception-raffle-tent", "Wed Reception Raffle Table Tent", "Wed Night Reception", "Backlog", "CAPMA", "", "Net New", ""),
   createLegDayTemplateItem("registration-welcome-sign", "Welcome to Leg Day Sign", "Wednesday Registration", "Backlog", "Clark", "1", "Net New", ""),
-  createLegDayTemplateItem("registration-lanyards", "Custom Lanyards w/ CAPMA + Premier logos", "Wednesday Registration", "In Design", "Vendor", "", "Net New", ""),
+  createLegDayTemplateItem("registration-lanyards", "Custom Lanyards w/ CAPMA + Premier logos", "Wednesday Registration", "Backlog", "Vendor", "", "Net New", ""),
   createLegDayTemplateItem("registration-badges", "Name Badges w/ Premier Sponsor", "Wednesday Registration", "Backlog", "CAPMA", "", "Light Update", "")
 ];
 

@@ -128,6 +128,19 @@ export function getInitialLegDaySubEventIdByName(name: string) {
   return initialEventSubEvents.find((subEvent) => subEvent.name === name)?.id ?? null;
 }
 
+export function getUnassignedSubEventId(eventInstanceId: string) {
+  return `${eventInstanceId}-unassigned`;
+}
+
+export function createUnassignedSubEvent(eventInstanceId: string): EventSubEvent {
+  return {
+    id: getUnassignedSubEventId(eventInstanceId),
+    eventInstanceId,
+    name: "Unassigned",
+    sortOrder: 9_999
+  };
+}
+
 export function normalizeEventInstance(instance: Partial<EventInstance> & { dates?: unknown }) {
   if (
     typeof instance.id !== "string" ||

@@ -226,6 +226,87 @@ test("imports keep valid collateral rows even when one collateral row is malform
   assert.equal(parsed?.collateralItems[0]?.id, "good-collateral");
 });
 
+test("current-format imports do not silently seed legislative day collateral when collateralItems are missing", () => {
+  const parsed = parseImportedAppState({
+    version: 1,
+    exportedAt: "2026-03-29T12:00:00.000Z",
+    items: [createItem()],
+    issueStatuses: {}
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed?.usedLegacyFormat, false);
+  assert.deepEqual(parsed?.collateralItems, []);
+});
+
+test("imports map legacy __unassigned__ collateral into a real per-instance sub-event", () => {
+  const parsed = parseImportedAppState({
+    version: 1,
+    exportedAt: "2026-03-29T12:00:00.000Z",
+    items: [createItem()],
+    issueStatuses: {},
+    collateralItems: [
+      {
+        ...createCollateralItem({
+          id: "custom-collateral",
+          eventInstanceId: "custom-instance",
+          subEventId: "__unassigned__"
+        })
+      }
+    ],
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }],
+    eventInstances: [
+      {
+        id: "custom-instance",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2027",
+        dateMode: "single",
+        dates: ["2027-04-20"],
+        startDate: "2027-04-20",
+        endDate: "2027-04-20"
+      }
+    ],
+    eventSubEvents: []
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed?.collateralItems.length, 1);
+  assert.equal(parsed?.collateralItems[0]?.subEventId, "custom-instance-unassigned");
+  assert.equal(
+    parsed?.eventSubEvents.some((subEvent) => subEvent.id === "custom-instance-unassigned" && subEvent.name === "Unassigned"),
+    true
+  );
+});
+
+test("imports fall back to the seeded default event graph when all event instances are invalid", () => {
+  const parsed = parseImportedAppState({
+    version: 1,
+    exportedAt: "2026-03-29T12:00:00.000Z",
+    items: [createItem()],
+    issueStatuses: {},
+    collateralItems: [createCollateralItem()],
+    eventTypes: [],
+    eventInstances: [
+      {
+        id: "broken-instance",
+        eventTypeId: "missing-type",
+        name: "Broken Event",
+        dateMode: "single",
+        dates: ["2026-05-01"],
+        startDate: "2026-05-01",
+        endDate: "2026-05-01"
+      }
+    ],
+    eventSubEvents: []
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed?.eventInstances.length, 1);
+  assert.equal(parsed?.eventInstances[0]?.id, "legislative-day-2026");
+  assert.equal(parsed?.activeEventInstanceId, "legislative-day-2026");
+  assert.deepEqual(parsed?.collateralItems, []);
+});
+
 test("normalizeCollateralItem preserves template origin metadata", () => {
   const normalized = normalizeCollateralItem({
     ...createCollateralItem(),

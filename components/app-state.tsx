@@ -41,7 +41,9 @@ import {
   getTemplateSubEventsForPack
 } from "@/lib/collateral-templates";
 import {
+  createUnassignedSubEvent,
   deriveEventDateRange,
+  getUnassignedSubEventId,
   initialEventFamilies,
   initialEventInstances,
   initialEventSubEvents,
@@ -112,6 +114,7 @@ type AppStateContextValue = {
   generateIssueDeliverables: (issue: string) => GenerateDeliverablesResult;
   importAppStateSnapshot: (value: unknown) => ImportAppStateResult;
   openIssue: (issue: string) => GenerateDeliverablesResult;
+  ensureEventInstanceUnassignedSubEvent: (instanceId: string) => string;
   resetAppState: () => void;
   setActiveEventInstanceId: (instanceId: string) => void;
   setCollateralProfile: (instanceId: string, profile: LegDayCollateralProfile) => void;
@@ -229,6 +232,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       },
       ...current
     ]);
+
+    return nextId;
+  }
+
+  function ensureEventInstanceUnassignedSubEvent(instanceId: string) {
+    enablePersistence();
+    const nextId = getUnassignedSubEventId(instanceId);
+    setEventSubEvents((current) => {
+      if (current.some((subEvent) => subEvent.id === nextId)) {
+        return current;
+      }
+
+      return [...current, createUnassignedSubEvent(instanceId)];
+    });
 
     return nextId;
   }
@@ -511,8 +528,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         usedLegacyFormat: parsedState.usedLegacyFormat
       };
     },
-    openIssue,
-    resetAppState,
+      openIssue,
+      ensureEventInstanceUnassignedSubEvent,
+      resetAppState,
     setActiveEventInstanceId,
     setCollateralProfile: (instanceId: string, profile: LegDayCollateralProfile) => {
       enablePersistence();

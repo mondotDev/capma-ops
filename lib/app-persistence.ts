@@ -5,6 +5,7 @@ import {
   normalizeCollateralItem
 } from "@/lib/collateral-data";
 import {
+  createUnassignedSubEvent,
   resolveActiveEventInstanceId,
   normalizeEventInstance,
   initialEventFamilies,
@@ -120,12 +121,17 @@ export function savePersistedAppState(state: PersistedAppState) {
   });
 
   const currentPrimaryState = window.localStorage.getItem(APP_STATE_STORAGE_KEY);
+  const currentBackupState = window.localStorage.getItem(APP_STATE_BACKUP_STORAGE_KEY);
 
   if (currentPrimaryState) {
     window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, currentPrimaryState);
   }
 
   window.localStorage.setItem(APP_STATE_STORAGE_KEY, serializedState);
+
+  if (!currentPrimaryState && !currentBackupState) {
+    window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, serializedState);
+  }
 }
 
 export function clearPersistedAppState() {
@@ -312,7 +318,7 @@ function parseStoredAppState(
       ? parsedState.collateralItems
           .map((item) => (item && typeof item === "object" ? normalizeCollateralItem(item as Partial<CollateralItem> & { subEvent?: unknown }) : null))
           .filter((item): item is CollateralItem => item !== null)
-      : initialLegDayCollateralItems;
+      : [];
 
     if (items.length !== parsedState.items.length) {
       return { status: "invalid" };
@@ -335,7 +341,7 @@ function parseStoredAppState(
               )
             : parsedState.collateralProfile && isCollateralProfileRecord(parsedState.collateralProfile)
               ? { [initialEventInstances[0].id]: { ...parsedState.collateralProfile } }
-              : { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+              : {},
           eventInstances: Array.isArray(parsedState.eventInstances)
             ? parsedState.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
                 if (isEventInstanceRecord(instance)) {
@@ -382,9 +388,15 @@ function normalizeEventScopedState(input: {
   eventTypes: EventType[];
 }) {
   const validEventTypeIds = new Set(input.eventTypes.map((eventType) => eventType.id));
-  const eventInstances = input.eventInstances.filter((instance) => validEventTypeIds.has(instance.eventTypeId));
-  const validEventInstanceIds = new Set(eventInstances.map((instance) => instance.id));
-  const eventSubEvents = input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId));
+  const normalizedEventInstances = input.eventInstances.filter((instance) => validEventTypeIds.has(instance.eventTypeId));
+  const validEventInstanceIds = new Set(normalizedEventInstances.map((instance) => instance.id));
+  const normalizedEventSubEvents = input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId));
+  const unassignedSubEventIds = new Set(input.collateralItems.map((item) => item.subEventId).filter((subEventId) => subEventId.endsWith("-unassigned")));
+  const ensuredUnassignedSubEvents = normalizedEventInstances
+    .filter((instance) => unassignedSubEventIds.has(createUnassignedSubEvent(instance.id).id))
+    .filter((instance) => !normalizedEventSubEvents.some((subEvent) => subEvent.id === createUnassignedSubEvent(instance.id).id))
+    .map((instance) => createUnassignedSubEvent(instance.id));
+  const eventSubEvents = [...normalizedEventSubEvents, ...ensuredUnassignedSubEvents];
   const subEventById = new Map(eventSubEvents.map((subEvent) => [subEvent.id, subEvent]));
   const collateralItems = input.collateralItems.filter((item) => {
     if (!validEventInstanceIds.has(item.eventInstanceId)) {
@@ -397,13 +409,29 @@ function normalizeEventScopedState(input: {
   const collateralProfiles = Object.fromEntries(
     Object.entries(input.collateralProfiles).filter(([instanceId]) => validEventInstanceIds.has(instanceId))
   );
+  const eventInstances =
+    normalizedEventInstances.length > 0
+      ? normalizedEventInstances
+      : initialEventInstances.map((instance) => ({ ...instance }));
+  const fallbackInstanceIds = new Set(eventInstances.map((instance) => instance.id));
+  const resolvedEventSubEvents =
+    normalizedEventInstances.length > 0
+      ? eventSubEvents
+      : initialEventSubEvents.map((subEvent) => ({ ...subEvent }));
+  const resolvedCollateralProfiles =
+    normalizedEventInstances.length > 0
+      ? collateralProfiles
+      : Object.fromEntries(
+          Object.entries(collateralProfiles).filter(([instanceId]) => fallbackInstanceIds.has(instanceId))
+        );
+  const resolvedCollateralItems = normalizedEventInstances.length > 0 ? collateralItems : [];
 
   return {
     activeEventInstanceId: resolveActiveEventInstanceId(input.activeEventInstanceId, eventInstances),
-    collateralItems,
-    collateralProfiles,
+    collateralItems: resolvedCollateralItems,
+    collateralProfiles: resolvedCollateralProfiles,
     eventTypes: input.eventTypes,
     eventInstances,
-    eventSubEvents
+    eventSubEvents: resolvedEventSubEvents
   };
 }

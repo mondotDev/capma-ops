@@ -25,6 +25,7 @@ import {
 import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
 import {
   createSuggestedEventInstanceName,
+  getUnassignedSubEventId,
   deriveEventDateRange,
   resolveActiveEventInstanceId,
   type EventDateMode
@@ -71,6 +72,7 @@ export function CollateralView() {
     createEventInstance,
     defaultOwnerForNewItems,
     deleteCollateralItem,
+    ensureEventInstanceUnassignedSubEvent,
     eventInstances,
     eventSubEvents,
     eventTypes,
@@ -105,6 +107,9 @@ export function CollateralView() {
     [eventTypes]
   );
   const isSelectedCreateEventTypeSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
+  const isSelectedEventTypeSupported = selectedEventInstance
+    ? supportsCollateralEventType(selectedEventInstance.eventTypeId)
+    : false;
   const activeProfile =
     collateralProfiles[resolvedActiveEventInstanceId] ??
     (selectedEventInstance?.eventTypeId === "legislative-day" ? getDefaultLegDayProfile(selectedEventInstance) : null);
@@ -284,7 +289,8 @@ export function CollateralView() {
       return;
     }
 
-    const fallbackSubEventId = instanceSubEvents[0]?.id ?? "__unassigned__";
+    const fallbackSubEventId =
+      instanceSubEvents[0]?.id ?? ensureEventInstanceUnassignedSubEvent(resolvedActiveEventInstanceId);
     setDraftCollateralItem({
       id: DRAFT_COLLATERAL_ID,
       eventInstanceId: resolvedActiveEventInstanceId,
@@ -503,7 +509,7 @@ export function CollateralView() {
                 <optgroup key={eventType.id} label={eventType.name}>
                   {instances.map((instance) => (
                     <option key={instance.id} value={instance.id}>
-                      {instance.name}
+                      {supportsCollateralEventType(instance.eventTypeId) ? instance.name : `${instance.name} (Limited)`}
                     </option>
                   ))}
                 </optgroup>
@@ -513,7 +519,12 @@ export function CollateralView() {
           <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
             New Event Instance
           </button>
-          <button className="topbar__button" onClick={handleAddCollateralItem} type="button">
+          <button
+            className="topbar__button"
+            disabled={!isSelectedEventTypeSupported}
+            onClick={handleAddCollateralItem}
+            type="button"
+          >
             + Add Collateral
           </button>
         </div>
@@ -534,9 +545,17 @@ export function CollateralView() {
             {defaultTemplatePack ? (
               <span>{hasAppliedTemplateItems ? "Default template applied" : "Default template available"}</span>
             ) : (
-              <span>No default template configured</span>
+              <span>Collateral workflow not configured for this event type yet</span>
             )}
           </div>
+        </div>
+      ) : null}
+
+      {selectedEventInstance && !isSelectedEventTypeSupported ? (
+        <div className="collateral-setup-banner collateral-setup-banner--warning" role="status">
+          <span>
+            This event instance is visible for context, but collateral workflows are not configured for this event type yet.
+          </span>
         </div>
       ) : null}
 
@@ -605,13 +624,15 @@ export function CollateralView() {
                 </div>
                 <div className="empty-state__copy">
                   {!hasActiveCollateralFilters
-                    ? defaultTemplatePack
-                      ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
-                      : "Add your first collateral item manually to start tracking production work for this event instance."
+                    ? !isSelectedEventTypeSupported
+                      ? "Collateral tracking is not enabled for this event type yet."
+                      : defaultTemplatePack
+                        ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
+                        : "Add your first collateral item manually to start tracking production work for this event instance."
                     : "Try a different summary view or clear the filter to return to the full collateral list."}
                 </div>
                 <div className="empty-state__actions">
-                  {!hasActiveCollateralFilters && defaultTemplatePack ? (
+                  {!hasActiveCollateralFilters && defaultTemplatePack && isSelectedEventTypeSupported ? (
                     <button
                       className="topbar__button"
                       onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
@@ -620,7 +641,7 @@ export function CollateralView() {
                       Apply Default Template
                     </button>
                   ) : null}
-                  {!hasActiveCollateralFilters ? (
+                  {!hasActiveCollateralFilters && isSelectedEventTypeSupported ? (
                     <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
                       Add First Collateral Item
                     </button>
@@ -744,7 +765,7 @@ export function CollateralView() {
                       <label htmlFor="collateral-item-name">Collateral Item</label>
                       <input
                         id="collateral-item-name"
-                        onChange={(event) => updateCollateralItem(selectedItem.id, { itemName: event.target.value })}
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { itemName: event.target.value })}
                         value={selectedItem.itemName}
                       />
                     </div>
@@ -756,7 +777,7 @@ export function CollateralView() {
                         value={selectedItem.subEventId}
                       >
                         {instanceSubEvents.length === 0 ? (
-                          <option value="__unassigned__">Unassigned</option>
+                          <option value={getUnassignedSubEventId(resolvedActiveEventInstanceId)}>Unassigned</option>
                         ) : null}
                         {instanceSubEvents.map((subEvent) => (
                           <option key={subEvent.id} value={subEvent.id}>
