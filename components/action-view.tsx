@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
+import { getVisibleCollateralExecutionRows } from "@/lib/collateral-execution-view";
 import {
-  getCollateralExecutionDueLabel,
-  getCollateralExecutionRowClassName,
-  getVisibleCollateralExecutionRows
-} from "@/lib/collateral-execution-view";
+  getVisibleActionViewRows,
+  groupActionViewRowsByEventGroup,
+  isSelectableActionViewRow
+} from "@/lib/action-view-rows";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getActionDueDateValue,
@@ -18,9 +19,8 @@ import {
   getActionFocusValue,
   getActionLensValue,
   getActionQueryValue,
-  getActionRowClassName,
-  getVisibleActionItems,
-  groupItemsByEventGroup
+  getItemEventGroupLabel,
+  getVisibleActionItems
 } from "@/lib/action-view-utils";
 import {
   createActionNoteEntry,
@@ -42,7 +42,6 @@ import {
   isWaitingIssue,
   isWaitingMissingReason,
   OWNER_OPTIONS,
-  sortByPriority,
   STATUS_OPTIONS,
   syncActionItemIssue,
   syncActionItemWorkstream,
@@ -145,10 +144,10 @@ export function ActionView({
         activeFocus,
         activeLens,
         activeIssue,
-        activeQuery,
+        activeQuery: "",
         showCompleted
-      }),
-    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, activeQuery, items, showCompleted]
+      }, eventInstances),
+    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, eventInstances, items, showCompleted]
   );
   const visibleCollateralExecutionItems = useMemo(
     () =>
@@ -185,7 +184,7 @@ export function ActionView({
     const optionValues = new Set<string>(["all"]);
 
     items
-      .map((item) => item.eventGroup?.trim())
+      .map((item) => getItemEventGroupLabel(item, eventInstances).trim())
       .filter((value): value is string => Boolean(value))
       .forEach((value) => optionValues.add(value));
 
@@ -200,30 +199,55 @@ export function ActionView({
     }));
   }, [items, visibleCollateralExecutionItems]);
   const visibleExecutionCount = visibleItems.length + visibleCollateralExecutionItems.length;
-
-  const sortedItems = useMemo(() => [...visibleItems].sort(sortByPriority), [visibleItems]);
-  const groupedItems = useMemo(() => groupItemsByEventGroup(sortedItems), [sortedItems]);
-  const selectedItem = sortedItems.find((item) => item.id === selectedId) ?? null;
+  const visibleRows = useMemo(
+    () =>
+      getVisibleActionViewRows({
+        actionItems: visibleItems,
+        collateralRows: visibleCollateralExecutionItems,
+        eventInstances,
+        eventSubEvents,
+        activeQuery
+      }),
+    [activeQuery, eventInstances, eventSubEvents, visibleCollateralExecutionItems, visibleItems]
+  );
+  const visibleItemById = useMemo(
+    () => new Map(visibleItems.map((item) => [item.id, item])),
+    [visibleItems]
+  );
+  const groupedRows = useMemo(() => groupActionViewRowsByEventGroup(visibleRows), [visibleRows]);
+  const visibleSelectableRows = useMemo(
+    () => visibleRows.filter(isSelectableActionViewRow),
+    [visibleRows]
+  );
+  const selectedItem = visibleItems.find((item) => item.id === selectedId) ?? null;
   const selectedIssueRecord = selectedItem?.issue
     ? issues.find((issue) => issue.label === selectedItem.issue) ?? null
     : null;
   const selectedItemIssueOptions = selectedItem ? getIssuesForWorkstream(selectedItem.workstream) : [];
+  const selectedItemSubEvents = useMemo(
+    () =>
+      selectedItem?.eventInstanceId
+        ? eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === selectedItem.eventInstanceId)
+        : [],
+    [eventSubEvents, selectedItem?.eventInstanceId]
+  );
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
-    () => selectedItemIds.filter((id) => sortedItems.some((item) => item.id === id)),
-    [selectedItemIds, sortedItems]
+    () => selectedItemIds.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)),
+    [selectedItemIds, visibleSelectableRows]
   );
-  const allVisibleSelected = sortedItems.length > 0 && selectedVisibleIds.length === sortedItems.length;
+  const allVisibleSelected =
+    visibleSelectableRows.length > 0 && selectedVisibleIds.length === visibleSelectableRows.length;
 
   useEffect(() => {
     if (!selectedId) {
       return;
     }
 
-    if (!sortedItems.some((item) => item.id === selectedId)) {
+    if (!visibleSelectableRows.some((row) => row.actionItemId === selectedId)) {
       setSelectedId(null);
     }
-  }, [selectedId, sortedItems]);
+  }, [selectedId, visibleSelectableRows]);
 
   useEffect(() => {
     setIsDeleteConfirmOpen(false);
@@ -231,8 +255,8 @@ export function ActionView({
   }, [selectedId]);
 
   useEffect(() => {
-    setSelectedItemIds((current) => current.filter((id) => sortedItems.some((item) => item.id === id)));
-  }, [sortedItems]);
+    setSelectedItemIds((current) => current.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)));
+  }, [visibleSelectableRows]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -404,7 +428,9 @@ export function ActionView({
   function toggleSelectAllVisible() {
     setBulkFeedback("");
     setSelectedItemIds((current) =>
-      allVisibleSelected ? current.filter((id) => !sortedItems.some((item) => item.id === id)) : sortedItems.map((item) => item.id)
+      allVisibleSelected
+        ? current.filter((id) => !visibleSelectableRows.some((row) => row.actionItemId === id))
+        : visibleSelectableRows.map((row) => row.actionItemId)
     );
   }
 
@@ -666,80 +692,6 @@ export function ActionView({
           ) : null}
 
           <div className="table-wrap">
-            {visibleCollateralExecutionItems.length > 0 ? (
-              <section className="card card--secondary collateral-execution-section">
-                <div className="card__title">COLLATERAL IN EXECUTION</div>
-                <p className="collateral-execution-section__copy">
-                  Production work surfaced from Collateral. Click a row to open the source item.
-                </p>
-                <div className="table-scroll">
-                  <table>
-                    <thead className="table-head">
-                      <tr>
-                        <th className="table-head__cell table-head__cell--title">
-                          <span className="table-head__label">Title</span>
-                        </th>
-                        <th className="table-head__cell table-head__cell--due-date">
-                          <span className="table-head__label">Due Date</span>
-                        </th>
-                        <th className="table-head__cell table-head__cell--status">
-                          <span className="table-head__label">Status</span>
-                        </th>
-                        <th className="table-head__cell table-head__cell--owner">
-                          <span className="table-head__label">Owner</span>
-                        </th>
-                        <th className="table-head__cell table-head__cell--workstream">
-                          <span className="table-head__label">Sub-Event</span>
-                        </th>
-                        <th className="table-head__cell table-head__cell--type">
-                          <span className="table-head__label">Type</span>
-                        </th>
-                        <th className="table-head__cell table-head__cell--updated">
-                          <span className="table-head__label">Last Updated</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleCollateralExecutionItems.map((item) => (
-                        <tr className={getCollateralExecutionRowClassName(item)} key={item.id}>
-                          <td className="cell-primary">
-                            <button
-                              className="collateral-execution-row__open"
-                              onClick={() => openCollateralExecutionItem(item.eventInstanceId, item.collateralId)}
-                              type="button"
-                            >
-                              <div className="cell-title">
-                                {item.title}
-                                <span className="collateral-origin-badge">{item.typeLabel}</span>
-                              </div>
-                              <div className="cell-subtext">{item.eventInstanceName}</div>
-                              {item.blockedBy?.trim() ? (
-                                <div className="cell-subtext cell-subtext--blocked">Blocked by: {item.blockedBy.trim()}</div>
-                              ) : item.printer ? (
-                                <div className="cell-subtext">Printer: {item.printer}</div>
-                              ) : null}
-                            </button>
-                          </td>
-                          <td className="cell-due-date">
-                            <div>{formatShortDate(item.dueDate)}</div>
-                            {item.dueDate && getCollateralExecutionDueLabel(item) ? (
-                              <div className="cell-hint">{getCollateralExecutionDueLabel(item)}</div>
-                            ) : null}
-                          </td>
-                          <td className="cell-status">
-                            <span className="cell-status__text">{item.status}</span>
-                          </td>
-                          <td className="cell-muted cell-owner">{item.owner || "Unassigned"}</td>
-                          <td className="cell-muted cell-workstream">{item.subEventName}</td>
-                          <td className="cell-muted cell-type">{item.typeLabel}</td>
-                          <td className="cell-muted cell-updated">{formatShortDate(item.lastUpdated)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            ) : null}
             <div className="table-scroll">
               <table>
                 <thead className="table-head">
@@ -748,6 +700,7 @@ export function ActionView({
                       <input
                         aria-label="Select all visible items"
                         checked={allVisibleSelected}
+                        disabled={visibleSelectableRows.length === 0}
                         onChange={toggleSelectAllVisible}
                         type="checkbox"
                       />
@@ -763,7 +716,7 @@ export function ActionView({
                       <span className="table-head__label">Status</span>
                     </th>
                     <th className="table-head__cell table-head__cell--waiting">
-                      <span className="table-head__label">Waiting On</span>
+                      <span className="table-head__label">Details</span>
                     </th>
                     <th className="table-head__cell table-head__cell--owner">
                       <span className="table-head__label">Owner</span>
@@ -779,7 +732,7 @@ export function ActionView({
                     </th>
                   </tr>
                 </thead>
-                {groupedItems.map((group) => {
+                {groupedRows.map((group) => {
                   const isCollapsed = collapsedGroups[group.label] ?? false;
 
                   return (
@@ -799,109 +752,154 @@ export function ActionView({
                         </td>
                       </tr>
                       {!isCollapsed
-                        ? group.items.map((item) => (
-                            <tr
-                              className={getActionRowClassName(item)}
-                              data-clickable="true"
-                              key={item.id}
-                              onClick={() => setSelectedId(item.id)}
-                            >
-                              <td onClick={(event) => event.stopPropagation()}>
-                                <input
-                                  aria-label={`Select ${item.title}`}
-                                  checked={selectedItemIds.includes(item.id)}
-                                  onChange={() => toggleItemSelection(item.id)}
-                                  type="checkbox"
-                                />
-                              </td>
-                              <td className="cell-primary">
-                                <div
-                                  className={[
-                                    isTerminalStatus(item.status) ? "cell-title cell-title--cut" : "cell-title",
-                                    !isTerminalStatus(item.status) && formatDueLabel(item) === "Overdue"
-                                      ? "cell-title--overdue"
-                                      : "",
-                                    !isTerminalStatus(item.status) && item.status === "Waiting" && daysSince(item.lastUpdated) >= 7
-                                      ? "cell-title--waiting-aged"
-                                      : ""
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" ")}
-                                >
-                                  {item.title}
-                                </div>
-                                {item.blockedBy?.trim() ? (
-                                  <div className="cell-subtext cell-subtext--blocked">Blocked by: {item.blockedBy.trim()}</div>
-                                ) : null}
-                                {item.issue ? <div className="cell-subtext">{item.issue}</div> : null}
-                              </td>
-                              <td className="cell-due-date">
-                                <div>{formatShortDate(item.dueDate)}</div>
-                                {!isTerminalStatus(item.status) && formatDueLabel(item) ? (
-                                  <div className="cell-hint">{formatDueLabel(item)}</div>
-                                ) : null}
-                              </td>
-                              <td className="cell-status" onClick={(event) => event.stopPropagation()}>
-                                <select
-                                  aria-label={`Status for ${item.title}`}
-                                  className="cell-select"
-                                  onChange={(event) => updateItem(item.id, { status: event.target.value })}
-                                  value={item.status}
-                                >
-                                  {STATUS_OPTIONS.map((status) => (
-                                    <option key={status} value={status}>
-                                      {status}
+                        ? group.items.map((row) =>
+                            row.kind === "action" ? (
+                              <tr
+                                className={row.rowClassName}
+                                data-clickable="true"
+                                key={row.id}
+                                onClick={() => setSelectedId(row.actionItemId)}
+                              >
+                                <td onClick={(event) => event.stopPropagation()}>
+                                  <input
+                                    aria-label={`Select ${row.title}`}
+                                    checked={selectedItemIds.includes(row.actionItemId)}
+                                    onChange={() => toggleItemSelection(row.actionItemId)}
+                                    type="checkbox"
+                                  />
+                                </td>
+                                <td className="cell-primary">
+                                  <div
+                                    className={[
+                                      row.isTerminal ? "cell-title cell-title--cut" : "cell-title",
+                                      !row.isTerminal && row.isOverdue ? "cell-title--overdue" : "",
+                                      !row.isTerminal && row.statusLabel === "Waiting" && daysSince(row.lastUpdated) >= 7
+                                        ? "cell-title--waiting-aged"
+                                        : ""
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ")}
+                                  >
+                                    {row.title}
+                                  </div>
+                                  {row.blockedBy?.trim() ? (
+                                    <div className="cell-subtext cell-subtext--blocked">Blocked by: {row.blockedBy.trim()}</div>
+                                  ) : null}
+                                  {row.subEventLabel ? <div className="cell-subtext">{row.subEventLabel}</div> : null}
+                                  {row.issueLabel ? <div className="cell-subtext">{row.issueLabel}</div> : null}
+                                </td>
+                                <td className="cell-due-date">
+                                  <div>{formatShortDate(row.dueDate)}</div>
+                                  {!row.isTerminal && row.dueLabel ? <div className="cell-hint">{row.dueLabel}</div> : null}
+                                </td>
+                                <td className="cell-status" onClick={(event) => event.stopPropagation()}>
+                                  <select
+                                    aria-label={`Status for ${row.title}`}
+                                    className="cell-select"
+                                    onChange={(event) => updateItem(row.actionItemId, { status: event.target.value })}
+                                    value={row.statusLabel}
+                                  >
+                                    {STATUS_OPTIONS.map((status) => (
+                                      <option key={status} value={status}>
+                                        {status}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="cell-waiting" onClick={(event) => event.stopPropagation()}>
+                                  <select
+                                    aria-label={`Waiting on for ${row.title}`}
+                                    className={
+                                      isWaitingMissingReason(
+                                        visibleItemById.get(row.actionItemId) ??
+                                          ({ status: row.statusLabel, waitingOn: row.waitingLabel } as ActionItem)
+                                      )
+                                        ? "cell-select cell-select--required"
+                                        : row.statusLabel !== "Waiting"
+                                          ? "cell-select cell-select--muted"
+                                          : "cell-select"
+                                    }
+                                    onChange={(event) => updateItem(row.actionItemId, { waitingOn: event.target.value })}
+                                    value={row.waitingLabel}
+                                  >
+                                    <option value="">
+                                      {isWaitingMissingReason(
+                                        visibleItemById.get(row.actionItemId) ??
+                                          ({ status: row.statusLabel, waitingOn: row.waitingLabel } as ActionItem)
+                                      )
+                                        ? "Required"
+                                        : "None"}
                                     </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="cell-waiting" onClick={(event) => event.stopPropagation()}>
-                                <select
-                                  aria-label={`Waiting on for ${item.title}`}
-                                  className={
-                                    isWaitingMissingReason(item)
-                                      ? "cell-select cell-select--required"
-                                      : item.status !== "Waiting"
-                                        ? "cell-select cell-select--muted"
-                                        : "cell-select"
-                                  }
-                                  onChange={(event) => updateItem(item.id, { waitingOn: event.target.value })}
-                                  value={item.waitingOn}
-                                >
-                                  <option value="">{isWaitingMissingReason(item) ? "Required" : "None"}</option>
-                                  {WAITING_ON_SUGGESTIONS.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="cell-owner" onClick={(event) => event.stopPropagation()}>
-                                <select
-                                  aria-label={`Owner for ${item.title}`}
-                                  className="cell-select"
-                                  onChange={(event) => updateItem(item.id, { owner: event.target.value })}
-                                  value={item.owner}
-                                >
-                                  {getOwnerOptions(item.owner).map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="cell-muted cell-workstream">{item.workstream}</td>
-                              <td className="cell-muted cell-type">{item.type}</td>
-                              <td className="cell-muted cell-updated">{formatShortDate(item.lastUpdated)}</td>
-                            </tr>
-                          ))
+                                    {WAITING_ON_SUGGESTIONS.map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="cell-owner" onClick={(event) => event.stopPropagation()}>
+                                  <select
+                                    aria-label={`Owner for ${row.title}`}
+                                    className="cell-select"
+                                    onChange={(event) => updateItem(row.actionItemId, { owner: event.target.value })}
+                                    value={row.owner}
+                                  >
+                                    {getOwnerOptions(row.owner).map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="cell-muted cell-workstream">{row.workstreamLabel}</td>
+                                <td className="cell-muted cell-type">{row.typeLabel}</td>
+                                <td className="cell-muted cell-updated">{formatShortDate(row.lastUpdated)}</td>
+                              </tr>
+                            ) : (
+                              <tr className={row.rowClassName} key={row.id}>
+                                <td />
+                                <td className="cell-primary">
+                                  <button
+                                    className="collateral-execution-row__open"
+                                    onClick={() => openCollateralExecutionItem(row.eventInstanceId, row.collateralId)}
+                                    type="button"
+                                  >
+                                    <div className="cell-title">
+                                      {row.title}
+                                      <span className="collateral-origin-badge">{row.badgeLabel}</span>
+                                    </div>
+                                    <div className="cell-subtext">{row.eventInstanceName}</div>
+                                    {row.blockedBy?.trim() ? (
+                                      <div className="cell-subtext cell-subtext--blocked">Blocked by: {row.blockedBy.trim()}</div>
+                                    ) : row.printer ? (
+                                      <div className="cell-subtext">Printer: {row.printer}</div>
+                                    ) : null}
+                                  </button>
+                                </td>
+                                <td className="cell-due-date">
+                                  <div>{formatShortDate(row.dueDate)}</div>
+                                  {row.dueLabel ? <div className="cell-hint">{row.dueLabel}</div> : null}
+                                </td>
+                                <td className="cell-status">
+                                  <span className="cell-status__text">{row.statusLabel}</span>
+                                </td>
+                                <td className="cell-muted cell-waiting">
+                                  {row.blockedBy?.trim() ? `Blocked: ${row.blockedBy.trim()}` : row.printer || "—"}
+                                </td>
+                                <td className="cell-muted cell-owner">{row.owner || "Unassigned"}</td>
+                                <td className="cell-muted cell-workstream">{row.subEventName}</td>
+                                <td className="cell-muted cell-type">{row.typeLabel}</td>
+                                <td className="cell-muted cell-updated">{formatShortDate(row.lastUpdated)}</td>
+                              </tr>
+                            )
+                          )
                         : null}
                     </tbody>
                   );
                 })}
               </table>
 
-              {sortedItems.length === 0 ? <div className="empty-state">No items match this view.</div> : null}
+              {visibleRows.length === 0 ? <div className="empty-state">No items match this view.</div> : null}
             </div>
           </div>
         </div>
@@ -1020,8 +1018,50 @@ export function ActionView({
                     </select>
                   </div>
                   <div className="field field--secondary">
+                    <label htmlFor="drawer-event-instance">Event Instance</label>
+                    <select
+                      id="drawer-event-instance"
+                      onChange={(event) =>
+                        updateItem(selectedItem.id, {
+                          eventInstanceId: event.target.value || undefined,
+                          subEventId: undefined,
+                          legacyEventGroupMigrated: true
+                        })
+                      }
+                      value={selectedItem.eventInstanceId ?? ""}
+                    >
+                      <option value="">None</option>
+                      {eventInstances.map((instance) => (
+                        <option key={instance.id} value={instance.id}>
+                          {instance.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field field--secondary">
+                    <label htmlFor="drawer-sub-event">Sub-Event</label>
+                    <select
+                      disabled={!selectedItem.eventInstanceId}
+                      id="drawer-sub-event"
+                      onChange={(event) =>
+                        updateItem(selectedItem.id, {
+                          subEventId: event.target.value || undefined
+                        })
+                      }
+                      value={selectedItem.subEventId ?? ""}
+                    >
+                      <option value="">None</option>
+                      {selectedItemSubEvents.map((subEvent) => (
+                        <option key={subEvent.id} value={subEvent.id}>
+                          {subEvent.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field field--secondary">
                     <label htmlFor="drawer-event-group">Event Group</label>
                     <select
+                      disabled={Boolean(selectedItem.eventInstanceId)}
                       id="drawer-event-group"
                       onChange={(event) =>
                         updateItem(selectedItem.id, {
@@ -1037,6 +1077,11 @@ export function ActionView({
                         </option>
                       ))}
                     </select>
+                    <div className="field-hint">
+                      {selectedItem.eventInstanceId
+                        ? "Legacy fallback grouping is disabled while this item is linked to an event instance."
+                        : "Use only for non-event action items that still need a fallback group."}
+                    </div>
                   </div>
                   {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
                     <div className="field">

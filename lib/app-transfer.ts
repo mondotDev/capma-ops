@@ -262,7 +262,10 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     (item.blocked === undefined || typeof item.blocked === "boolean") &&
     (item.blockedBy === undefined || typeof item.blockedBy === "string") &&
     (item.issue === undefined || typeof item.issue === "string") &&
-    (item.eventGroup === undefined || typeof item.eventGroup === "string");
+    (item.eventGroup === undefined || typeof item.eventGroup === "string") &&
+    (item.legacyEventGroupMigrated === undefined || typeof item.legacyEventGroupMigrated === "boolean") &&
+    (item.eventInstanceId === undefined || typeof item.eventInstanceId === "string") &&
+    (item.subEventId === undefined || typeof item.subEventId === "string");
 }
 
 function isCollateralProfileRecord(value: unknown): value is LegDayCollateralProfile {

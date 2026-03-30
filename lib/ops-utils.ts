@@ -1,5 +1,6 @@
 ﻿import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
 
+import { LEGISLATIVE_DAY_2026_INSTANCE_ID } from "@/lib/event-instances";
 export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Canceled", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle", "External"] as const;
 export const WORKSTREAM_OPTIONS = [
@@ -65,7 +66,20 @@ type LegacyNotesField = {
 };
 type ActionItemBlockedState = Pick<ActionItem, "isBlocked" | "blockedBy" | "status"> & LegacyBlockedFields;
 type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
-  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy" | "waitingOn" | "noteEntries" | "lastUpdated">> &
+  Partial<
+    Pick<
+      ActionItem,
+      | "eventGroup"
+      | "legacyEventGroupMigrated"
+      | "eventInstanceId"
+      | "subEventId"
+      | "isBlocked"
+      | "blockedBy"
+      | "waitingOn"
+      | "noteEntries"
+      | "lastUpdated"
+    >
+  > &
   LegacyBlockedFields &
   LegacyNotesField;
 type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
@@ -74,7 +88,12 @@ type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
 > &
   Pick<ActionItem, "owner" | "workstream"> &
   Pick<ActionItem, "noteEntries"> &
-  Partial<Pick<ActionItem, "eventGroup" | "isBlocked" | "blockedBy" | "notes">>;
+  Partial<
+    Pick<
+      ActionItem,
+      "eventGroup" | "legacyEventGroupMigrated" | "eventInstanceId" | "subEventId" | "isBlocked" | "blockedBy" | "notes"
+    >
+  >;
 
 const NEWSBRIEF_MONTHS = [
   "January",
@@ -399,15 +418,40 @@ export function getOwnerOptions(owner?: string) {
 }
 
 export function normalizeActionItemFields<T extends NormalizeActionItemInput>(item: T): NormalizeActionItemResult<T> {
-  const { blocked, blockedBy, isBlocked, noteEntries, notes, ...rest } = item;
+  const {
+    blocked,
+    blockedBy,
+    eventInstanceId,
+    isBlocked,
+    legacyEventGroupMigrated,
+    noteEntries,
+    notes,
+    subEventId,
+    ...rest
+  } = item;
   const normalizedBlockedBy = normalizeOperationalReason(blockedBy);
   const normalizedNoteEntries = normalizeNoteEntries(noteEntries, notes, item.lastUpdated);
+  const normalizedEventGroup = normalizeEventGroupValue(item.eventGroup);
+  const hasMigratedLegacyEventGroup = legacyEventGroupMigrated === true;
+  const normalizedEventInstanceId =
+    normalizeIdentifierValue(eventInstanceId) ??
+    (!hasMigratedLegacyEventGroup && normalizedEventGroup === "Legislative Day"
+      ? LEGISLATIVE_DAY_2026_INSTANCE_ID
+      : undefined);
+  const normalizedSubEventId = normalizedEventInstanceId ? normalizeIdentifierValue(subEventId) : undefined;
+  const normalizedLegacyEventGroupMigrated =
+    legacyEventGroupMigrated === true || (normalizedEventGroup === "Legislative Day" && Boolean(normalizedEventInstanceId))
+      ? true
+      : undefined;
 
   return {
     ...rest,
     owner: normalizeOwnerValue(item.owner),
     workstream: normalizeWorkstreamValue(item.workstream),
-    eventGroup: normalizeEventGroupValue(item.eventGroup),
+    eventGroup: normalizedEventGroup,
+    legacyEventGroupMigrated: normalizedLegacyEventGroupMigrated,
+    eventInstanceId: normalizedEventInstanceId,
+    subEventId: normalizedSubEventId,
     waitingOn: normalizeOperationalReason(item.waitingOn) ?? "",
     isBlocked: isBlocked ?? blocked ?? undefined,
     blockedBy: normalizedBlockedBy ? normalizedBlockedBy : undefined,
@@ -613,6 +657,11 @@ export function normalizeEventGroupValue(eventGroup?: string) {
   }
 
   return trimmedEventGroup;
+}
+
+export function normalizeIdentifierValue(value?: string) {
+  const trimmedValue = value?.trim();
+  return trimmedValue ? trimmedValue : undefined;
 }
 
 export function isEventGroupOption(value: string): value is EventGroupOption {

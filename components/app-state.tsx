@@ -147,11 +147,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     if (loadResult.state) {
       setItems(
-        migratePersistedItems(loadResult.state.items, {
+        normalizeActionItems(
+          migratePersistedItems(loadResult.state.items, {
           legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,
           getDefaultItems,
           normalizeItem: normalizeActionItemFields
-        })
+          }),
+          {
+            eventInstances: loadResult.state.eventInstances,
+            eventSubEvents: loadResult.state.eventSubEvents
+          }
+        )
       );
       setIssueStatuses(loadResult.state.issueStatuses);
       setCollateralItems(loadResult.state.collateralItems);
@@ -511,7 +517,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
 
       enablePersistence();
-      setItems(normalizeActionItems(parsedState.items));
+      setItems(
+        normalizeActionItems(parsedState.items, {
+          eventInstances: parsedState.eventInstances,
+          eventSubEvents: parsedState.eventSubEvents
+        })
+      );
       setIssueStatuses(parsedState.issueStatuses);
       setCollateralItems(parsedState.collateralItems);
       setCollateralProfiles(parsedState.collateralProfiles);
@@ -570,7 +581,10 @@ export function useAppState() {
 }
 
 function getDefaultItems() {
-  return normalizeActionItems(initialActionItems);
+  return normalizeActionItems(initialActionItems, {
+    eventInstances: initialEventInstances,
+    eventSubEvents: initialEventSubEvents
+  });
 }
 
 function getDefaultCollateralItems() {

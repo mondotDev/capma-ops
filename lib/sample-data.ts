@@ -19,6 +19,9 @@ export type ActionItem = {
   type: string;
   workstream: string;
   eventGroup?: string;
+  legacyEventGroupMigrated?: boolean;
+  eventInstanceId?: string;
+  subEventId?: string;
   isBlocked?: boolean;
   blockedBy?: string;
   issue?: string;

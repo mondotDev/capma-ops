@@ -1,4 +1,5 @@
 import type { ActionItem } from "@/lib/sample-data";
+import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
 import {
   type ActionFilter,
   type ActionFocus,
@@ -11,7 +12,6 @@ import {
   matchesActionFilter,
   matchesActionFocus,
   matchesActionLens,
-  matchesEventGroup,
   matchesSearchQuery
 } from "@/lib/ops-utils";
 
@@ -68,11 +68,35 @@ export function getActionQueryValue(query?: string) {
   return query?.trim() || "";
 }
 
-export function getItemEventGroupLabel(item: ActionItem) {
+export function getItemEventGroupLabel(item: ActionItem, eventInstances: EventInstance[] = []) {
+  if (item.eventInstanceId) {
+    const linkedInstance = eventInstances.find((instance) => instance.id === item.eventInstanceId);
+
+    if (linkedInstance) {
+      return linkedInstance.name;
+    }
+  }
+
   return item.eventGroup?.trim() || "Unassigned";
 }
 
-export function getVisibleActionItems(items: ActionItem[], filters: ActionViewFilters) {
+export function getItemSubEventLabel(item: ActionItem, eventSubEvents: EventSubEvent[] = []) {
+  if (!item.eventInstanceId || !item.subEventId) {
+    return "";
+  }
+
+  const linkedSubEvent = eventSubEvents.find(
+    (subEvent) => subEvent.id === item.subEventId && subEvent.eventInstanceId === item.eventInstanceId
+  );
+
+  return linkedSubEvent?.name ?? "";
+}
+
+export function getVisibleActionItems(
+  items: ActionItem[],
+  filters: ActionViewFilters,
+  eventInstances: EventInstance[] = []
+) {
   return items.filter((item) => {
     if (!filters.showCompleted && isTerminalStatus(item.status)) {
       return false;
@@ -90,17 +114,17 @@ export function getVisibleActionItems(items: ActionItem[], filters: ActionViewFi
       matchesActionFilter(item, filters.activeFilter) &&
       matchesActionFocus(item, filters.activeFocus) &&
       matchesActionLens(item, filters.activeLens) &&
-      matchesEventGroup(item, filters.activeEventGroup) &&
+      matchesEventGroupLabel(getItemEventGroupLabel(item, eventInstances), filters.activeEventGroup) &&
       matchesSearchQuery(item, filters.activeQuery)
     );
   });
 }
 
-export function groupItemsByEventGroup(items: ActionItem[]) {
+export function groupItemsByEventGroup(items: ActionItem[], eventInstances: EventInstance[] = []) {
   const groups: { label: string; items: ActionItem[] }[] = [];
 
   for (const item of items) {
-    const groupLabel = getItemEventGroupLabel(item);
+    const groupLabel = getItemEventGroupLabel(item, eventInstances);
     const existingGroup = groups.find((group) => group.label === groupLabel);
 
     if (existingGroup) {
@@ -143,4 +167,12 @@ export function getActionRowClassName(item: ActionItem) {
   }
 
   return undefined;
+}
+
+function matchesEventGroupLabel(groupLabel: string, eventGroup?: string) {
+  if (!eventGroup || eventGroup === "all") {
+    return true;
+  }
+
+  return groupLabel === eventGroup;
 }

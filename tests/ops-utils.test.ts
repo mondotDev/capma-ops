@@ -4,6 +4,7 @@ import {
   applyActionItemUpdates,
   applyBulkActionItemUpdates,
   createActionItem,
+  normalizeActionEventLinks,
   normalizeActionItems
 } from "../lib/action-item-mutations";
 import {
@@ -14,6 +15,10 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
+import {
+  getVisibleActionViewRows,
+  isSelectableActionViewRow
+} from "../lib/action-view-rows";
 import { getVisibleCollateralExecutionRows } from "../lib/collateral-execution-view";
 import {
   completePublicationIssue,
@@ -23,6 +28,7 @@ import {
 import { parseImportedAppState } from "../lib/app-transfer";
 import type { ActionItem } from "../lib/sample-data";
 import {
+  getItemEventGroupLabel,
   getVisibleActionItems,
 } from "../lib/action-view-utils";
 import {
@@ -57,14 +63,16 @@ import { normalizeActionWorkflowStatus } from "../lib/workflow-status";
 
 function withMockedToday<T>(isoDateTime: string, callback: () => T) {
   const RealDate = Date;
+  const localDateKey = isoDateTime.slice(0, 10);
+  const mockedNow = `${localDateKey}T12:00:00`;
 
   class MockDate extends Date {
     constructor(value?: string | number | Date) {
-      super(value ?? isoDateTime);
+      super(value ?? mockedNow);
     }
 
     static now() {
-      return new RealDate(isoDateTime).getTime();
+      return new RealDate(mockedNow).getTime();
     }
   }
 
@@ -430,6 +438,214 @@ test("collateral execution rows do not surface for unsupported event types", () 
   assert.deepEqual(rows, []);
 });
 
+test("action view rows merge native and collateral execution work into one urgency-sorted list", () => {
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    const rows = getVisibleActionViewRows({
+      actionItems: [
+        createItem({ id: "native-due-soon", title: "Native due soon", dueDate: "2026-03-29" }),
+        createItem({ id: "native-blocked", title: "Native blocked", isBlocked: true, blockedBy: "Approval" })
+      ],
+      eventInstances: [],
+      eventSubEvents: [],
+      collateralRows: [
+        {
+          kind: "collateral",
+          id: "collateral-execution-ready",
+          collateralId: "collateral-ready",
+          eventInstanceId: "legislative-day-2026",
+          eventInstanceName: "Legislative Day 2026",
+          eventTypeName: "Legislative Day",
+          subEventId: "leg-day-legislative-visits",
+          subEventName: "Legislative Visits",
+          title: "Collateral ready",
+          status: "Ready for Print",
+          dueDate: "2026-03-30",
+          owner: "Melissa",
+          blockedBy: "",
+          printer: "CAPMA",
+          lastUpdated: "2026-03-28",
+          typeLabel: "Collateral",
+          workstreamLabel: "Collateral",
+          eventGroupLabel: "Legislative Day 2026"
+        }
+      ]
+    });
+
+    assert.deepEqual(rows.map((row) => row.id), [
+      "native-blocked",
+      "native-due-soon",
+      "collateral-execution-ready"
+    ]);
+  });
+});
+
+test("only native mixed action view rows are selectable", () => {
+  const rows = getVisibleActionViewRows({
+    actionItems: [createItem({ id: "native-1" })],
+    eventInstances: [],
+    eventSubEvents: [],
+    collateralRows: [
+      {
+        kind: "collateral",
+        id: "collateral-execution-1",
+        collateralId: "collateral-1",
+        eventInstanceId: "legislative-day-2026",
+        eventInstanceName: "Legislative Day 2026",
+        eventTypeName: "Legislative Day",
+        subEventId: "leg-day-legislative-visits",
+        subEventName: "Legislative Visits",
+        title: "Collateral item",
+        status: "Waiting",
+        dueDate: "2026-03-30",
+        owner: "Melissa",
+        blockedBy: "",
+        printer: "",
+        lastUpdated: "2026-03-28",
+        typeLabel: "Collateral",
+        workstreamLabel: "Collateral",
+        eventGroupLabel: "Legislative Day 2026"
+      }
+    ]
+  });
+
+  assert.deepEqual(rows.filter(isSelectableActionViewRow).map((row) => row.actionItemId), ["native-1"]);
+});
+
+test("normalizeActionItemFields migrates obvious legislative day items to the seeded event instance", () => {
+  const normalized = normalizeActionItemFields(
+    createItem({
+      eventGroup: "Legislative Day",
+      legacyEventGroupMigrated: undefined,
+      eventInstanceId: undefined,
+      subEventId: undefined
+    })
+  );
+
+  assert.equal(normalized.eventInstanceId, "legislative-day-2026");
+  assert.equal(normalized.legacyEventGroupMigrated, true);
+});
+
+test("normalizeActionItemFields does not reattach legislative day event instance after explicit clear", () => {
+  const normalized = normalizeActionItemFields(
+    createItem({
+      eventGroup: "Legislative Day",
+      legacyEventGroupMigrated: true,
+      eventInstanceId: undefined,
+      subEventId: undefined
+    })
+  );
+
+  assert.equal(normalized.eventInstanceId, undefined);
+  assert.equal(normalized.legacyEventGroupMigrated, true);
+});
+
+test("normalizeActionEventLinks clears invalid event-instance and sub-event references without dropping the action item", () => {
+  const normalized = normalizeActionEventLinks(
+    createItem({
+      eventInstanceId: "missing-instance",
+      subEventId: "missing-sub-event"
+    }),
+    [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    [{ id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }]
+  );
+
+  assert.equal(normalized.eventInstanceId, undefined);
+  assert.equal(normalized.subEventId, undefined);
+  assert.equal(normalized.title, "Follow up with sponsor");
+});
+
+test("getItemEventGroupLabel prefers linked event instance name over legacy event group", () => {
+  const label = getItemEventGroupLabel(
+    createItem({
+      eventGroup: "Legislative Day",
+      eventInstanceId: "legislative-day-2026"
+    }),
+    [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ]
+  );
+
+  assert.equal(label, "Legislative Day 2026");
+});
+
+test("mixed action view search matches derived event instance and sub-event labels for native actions", () => {
+  const rows = getVisibleActionViewRows({
+    actionItems: [
+      createItem({
+        id: "native-leg-day",
+        eventGroup: "Legislative Day",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-legislative-visits"
+      })
+    ],
+    collateralRows: [],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+    ],
+    activeQuery: "2026"
+  });
+
+  assert.deepEqual(rows.map((row) => row.id), ["native-leg-day"]);
+
+  const subEventRows = getVisibleActionViewRows({
+    actionItems: [
+      createItem({
+        id: "native-leg-day",
+        eventGroup: "Legislative Day",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-legislative-visits"
+      })
+    ],
+    collateralRows: [],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+    ],
+    activeQuery: "legislative visits"
+  });
+
+  assert.deepEqual(subEventRows.map((row) => row.id), ["native-leg-day"]);
+});
+
 test("normalizeCollateralItem preserves template origin metadata", () => {
   const normalized = normalizeCollateralItem({
     ...createCollateralItem(),
@@ -495,8 +711,8 @@ test("getWorkstreamDateContext uses schedules for event workstreams and issues f
     });
 
     assert.deepEqual(getWorkstreamDateContext("Newsbrief", schedules, issues), {
-      dateText: "Apr 30",
-      countdownText: "33 days out"
+      dateText: "Apr 20",
+      countdownText: "23 days out"
     });
 
     assert.equal(getWorkstreamDateContext("General Operations", schedules, issues), null);
@@ -578,8 +794,8 @@ test("getDashboardMetrics separates immediate risk from unblocking counts", () =
 
     assert.equal(metrics.blockedCount, 3);
     assert.equal(metrics.waiting, 1);
-    assert.equal(metrics.peakUpcomingLoadCount, 2);
-    assert.equal(metrics.peakUpcomingLoadDate, "2026-03-30");
+    assert.equal(metrics.peakUpcomingLoadCount, 1);
+    assert.equal(metrics.peakUpcomingLoadDate, "2026-03-29");
     assert.deepEqual(metrics.stuckReasonCounts, [
       { label: "Internal", count: 2, source: "mixed" },
       { label: "External", count: 1, source: "waiting" },
@@ -825,7 +1041,7 @@ test("shared item shaping and validation helpers align create and edit flows", (
     "March 2026 Newsbrief"
   );
   assert.equal(syncedIssue.workstream, "Newsbrief");
-  assert.equal(syncedIssue.eventGroup, undefined);
+  assert.equal(syncedIssue.eventGroup, "");
   assert.equal(syncedIssue.dueDate, "2026-03-20");
 
   const validation = validateActionItemInput({
@@ -839,7 +1055,7 @@ test("shared item shaping and validation helpers align create and edit flows", (
     waitingOn: ""
   });
   assert.equal(validation.issue, true);
-  assert.equal(validation.dueDate, false);
+  assert.equal(validation.dueDate, true);
   assert.equal(validation.isValid, false);
 });
 

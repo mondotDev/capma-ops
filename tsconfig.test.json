@@ -5,11 +5,15 @@
     "moduleResolution": "Node",
     "outDir": ".test-dist",
     "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["lib/ops-utils.ts", "tests/**/*.test.ts"]
+  "include": ["lib/**/*.ts", "tests/**/*.test.ts"]
 }

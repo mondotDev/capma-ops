@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
 import type { ActionItemValidation, IssueRecord } from "@/lib/ops-utils";
 import {
   EVENT_GROUP_OPTIONS,
@@ -19,6 +20,8 @@ export type QuickAddFormState = {
   title: string;
   workstream: string;
   eventGroup: string;
+  eventInstanceId: string;
+  subEventId: string;
   issue: string;
   dueDate: string;
   owner: string;
@@ -34,6 +37,8 @@ type QuickAddModalProps = {
   formState: QuickAddFormState;
   validation: ActionItemValidation;
   availableIssues: string[];
+  availableEventInstances: EventInstance[];
+  availableSubEvents: EventSubEvent[];
   selectedIssueRecord: IssueRecord | null;
   canGenerateDeliverables: boolean;
   generationFeedback: string;
@@ -48,6 +53,8 @@ export function QuickAddModal({
   formState,
   validation,
   availableIssues,
+  availableEventInstances,
+  availableSubEvents,
   selectedIssueRecord,
   canGenerateDeliverables,
   generationFeedback,
@@ -133,9 +140,49 @@ export function QuickAddModal({
             </div>
 
             <div className="field">
-              <label htmlFor="quick-add-event-group">Event Group</label>
+              <label htmlFor="quick-add-event-instance">Event Instance</label>
               <select
                 className="field-control"
+                id="quick-add-event-instance"
+                onChange={(event) => {
+                  const nextEventInstanceId = event.target.value;
+                  onFieldChange("eventInstanceId", nextEventInstanceId);
+                  onFieldChange("subEventId", "");
+                }}
+                value={formState.eventInstanceId}
+              >
+                <option value="">None</option>
+                {availableEventInstances.map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="quick-add-sub-event">Sub-Event</label>
+              <select
+                className={!formState.eventInstanceId ? "field-control field-control--muted" : "field-control"}
+                disabled={!formState.eventInstanceId}
+                id="quick-add-sub-event"
+                onChange={(event) => onFieldChange("subEventId", event.target.value)}
+                value={formState.subEventId}
+              >
+                <option value="">None</option>
+                {availableSubEvents.map((subEvent) => (
+                  <option key={subEvent.id} value={subEvent.id}>
+                    {subEvent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="quick-add-event-group">Event Group</label>
+              <select
+                className={!formState.eventInstanceId ? "field-control" : "field-control field-control--muted"}
+                disabled={Boolean(formState.eventInstanceId)}
                 id="quick-add-event-group"
                 onChange={(event) => onFieldChange("eventGroup", event.target.value)}
                 value={formState.eventGroup}

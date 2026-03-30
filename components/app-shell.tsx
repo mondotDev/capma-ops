@@ -26,6 +26,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const {
     defaultOwnerForNewItems,
     addItem,
+    eventInstances,
+    eventSubEvents,
     exportAppStateSnapshot,
     generateIssueDeliverables,
     importAppStateSnapshot,
@@ -50,6 +52,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const selectedIssueRecord = useMemo(
     () => issues.find((issue) => issue.label === formState.issue) ?? null,
     [formState.issue, issues]
+  );
+  const availableQuickAddSubEvents = useMemo(
+    () =>
+      formState.eventInstanceId
+        ? eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === formState.eventInstanceId)
+        : [],
+    [eventSubEvents, formState.eventInstanceId]
   );
   const canGenerateDeliverables =
     formState.issue.length > 0 && (formState.workstream === "Newsbrief" || formState.workstream === "The Voice");
@@ -269,6 +278,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       title: formState.title.trim(),
       workstream: formState.workstream.trim(),
       eventGroup: formState.eventGroup || undefined,
+      eventInstanceId: formState.eventInstanceId || undefined,
+      subEventId: formState.subEventId || undefined,
       issue: formState.issue || undefined,
       dueDate: formState.dueDate,
       owner: formState.owner,
@@ -330,11 +341,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="page">{children}</main>
       </div>
 
-      <QuickAddModal
-        availableIssues={availableIssues}
-        canGenerateDeliverables={canGenerateDeliverables}
-        formState={formState}
-        generationFeedback={generationFeedback}
+        <QuickAddModal
+          availableIssues={availableIssues}
+          availableEventInstances={eventInstances}
+          availableSubEvents={availableQuickAddSubEvents}
+          canGenerateDeliverables={canGenerateDeliverables}
+          formState={formState}
+          generationFeedback={generationFeedback}
         isOpen={isQuickAddOpen}
         onClose={closeQuickAdd}
         onFieldChange={updateField}
@@ -619,6 +632,8 @@ function createInitialFormState(): QuickAddFormState {
     title: "",
     workstream: "",
     eventGroup: "",
+    eventInstanceId: "",
+    subEventId: "",
     issue: "",
     dueDate: "",
     owner: DEFAULT_OWNER,
