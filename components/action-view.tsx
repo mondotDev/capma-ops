@@ -5,6 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
+import {
+  getCollateralExecutionDueLabel,
+  getCollateralExecutionRowClassName,
+  getVisibleCollateralExecutionRows
+} from "@/lib/collateral-execution-view";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getActionDueDateValue,
@@ -96,7 +101,18 @@ export function ActionView({
   initialIssue?: string;
   initialQuery?: string;
 }) {
-  const { bulkUpdateItems, deleteItem, items, issues, updateItem } = useAppState();
+  const {
+    activeEventInstanceId,
+    bulkUpdateItems,
+    collateralItems,
+    deleteItem,
+    eventInstances,
+    eventSubEvents,
+    eventTypes,
+    items,
+    issues,
+    updateItem
+  } = useAppState();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -119,15 +135,6 @@ export function ActionView({
   const activeQuery = getActionQueryValue(initialQuery);
   const summaryCounts = useMemo(() => getActionSummaryCounts(items), [items]);
   const activeIssue = initialIssue?.trim() || "";
-  const eventGroupOptions = useMemo(
-    () =>
-      ["all", ...new Set(items.map((item) => item.eventGroup?.trim()).filter((value): value is string => Boolean(value)))]
-        .map((value) => ({
-          label: value === "all" ? "All Events" : value,
-          value
-        })),
-    [items]
-  );
 
   const visibleItems = useMemo(
     () =>
@@ -143,6 +150,56 @@ export function ActionView({
       }),
     [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, activeQuery, items, showCompleted]
   );
+  const visibleCollateralExecutionItems = useMemo(
+    () =>
+      getVisibleCollateralExecutionRows({
+        activeDueDate,
+        activeEventGroup,
+        activeEventInstanceId,
+        activeFilter,
+        activeFocus,
+        activeIssue,
+        activeLens,
+        activeQuery,
+        collateralItems,
+        eventInstances,
+        eventSubEvents,
+        eventTypes
+      }),
+    [
+      activeDueDate,
+      activeEventGroup,
+      activeEventInstanceId,
+      activeFilter,
+      activeFocus,
+      activeIssue,
+      activeLens,
+      activeQuery,
+      collateralItems,
+      eventInstances,
+      eventSubEvents,
+      eventTypes
+    ]
+  );
+  const eventGroupOptions = useMemo(() => {
+    const optionValues = new Set<string>(["all"]);
+
+    items
+      .map((item) => item.eventGroup?.trim())
+      .filter((value): value is string => Boolean(value))
+      .forEach((value) => optionValues.add(value));
+
+    visibleCollateralExecutionItems
+      .map((item) => item.eventGroupLabel.trim())
+      .filter((value) => Boolean(value))
+      .forEach((value) => optionValues.add(value));
+
+    return [...optionValues].map((value) => ({
+      label: value === "all" ? "All Events" : value,
+      value
+    }));
+  }, [items, visibleCollateralExecutionItems]);
+  const visibleExecutionCount = visibleItems.length + visibleCollateralExecutionItems.length;
 
   const sortedItems = useMemo(() => [...visibleItems].sort(sortByPriority), [visibleItems]);
   const groupedItems = useMemo(() => groupItemsByEventGroup(sortedItems), [sortedItems]);
@@ -356,6 +413,13 @@ export function ActionView({
     setBulkFeedback("");
   }
 
+  function openCollateralExecutionItem(eventInstanceId: string, collateralId: string) {
+    const params = new URLSearchParams();
+    params.set("eventInstanceId", eventInstanceId);
+    params.set("collateralId", collateralId);
+    router.push(`/collateral?${params.toString()}`);
+  }
+
   return (
     <section className="action-view">
       <div className="action-controls">
@@ -506,7 +570,7 @@ export function ActionView({
             <div>
               <div className="issue-context__title">Due on {formatShortDate(activeDueDate)}</div>
               <div className="issue-context__meta">
-                {visibleItems.length} {visibleItems.length === 1 ? "item" : "items"}
+                {visibleExecutionCount} {visibleExecutionCount === 1 ? "item" : "items"}
               </div>
             </div>
             <button className="button-link button-link--inline-secondary" onClick={clearDueDateFilter} type="button">
@@ -520,7 +584,7 @@ export function ActionView({
             <div>
               <div className="issue-context__title">Search: {activeQuery}</div>
               <div className="issue-context__meta">
-                {visibleItems.length} {visibleItems.length === 1 ? "item" : "items"}
+                {visibleExecutionCount} {visibleExecutionCount === 1 ? "item" : "items"}
               </div>
             </div>
             <button className="button-link button-link--inline-secondary" onClick={clearSearchQuery} type="button">
@@ -602,6 +666,80 @@ export function ActionView({
           ) : null}
 
           <div className="table-wrap">
+            {visibleCollateralExecutionItems.length > 0 ? (
+              <section className="card card--secondary collateral-execution-section">
+                <div className="card__title">COLLATERAL IN EXECUTION</div>
+                <p className="collateral-execution-section__copy">
+                  Production work surfaced from Collateral. Click a row to open the source item.
+                </p>
+                <div className="table-scroll">
+                  <table>
+                    <thead className="table-head">
+                      <tr>
+                        <th className="table-head__cell table-head__cell--title">
+                          <span className="table-head__label">Title</span>
+                        </th>
+                        <th className="table-head__cell table-head__cell--due-date">
+                          <span className="table-head__label">Due Date</span>
+                        </th>
+                        <th className="table-head__cell table-head__cell--status">
+                          <span className="table-head__label">Status</span>
+                        </th>
+                        <th className="table-head__cell table-head__cell--owner">
+                          <span className="table-head__label">Owner</span>
+                        </th>
+                        <th className="table-head__cell table-head__cell--workstream">
+                          <span className="table-head__label">Sub-Event</span>
+                        </th>
+                        <th className="table-head__cell table-head__cell--type">
+                          <span className="table-head__label">Type</span>
+                        </th>
+                        <th className="table-head__cell table-head__cell--updated">
+                          <span className="table-head__label">Last Updated</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleCollateralExecutionItems.map((item) => (
+                        <tr className={getCollateralExecutionRowClassName(item)} key={item.id}>
+                          <td className="cell-primary">
+                            <button
+                              className="collateral-execution-row__open"
+                              onClick={() => openCollateralExecutionItem(item.eventInstanceId, item.collateralId)}
+                              type="button"
+                            >
+                              <div className="cell-title">
+                                {item.title}
+                                <span className="collateral-origin-badge">{item.typeLabel}</span>
+                              </div>
+                              <div className="cell-subtext">{item.eventInstanceName}</div>
+                              {item.blockedBy?.trim() ? (
+                                <div className="cell-subtext cell-subtext--blocked">Blocked by: {item.blockedBy.trim()}</div>
+                              ) : item.printer ? (
+                                <div className="cell-subtext">Printer: {item.printer}</div>
+                              ) : null}
+                            </button>
+                          </td>
+                          <td className="cell-due-date">
+                            <div>{formatShortDate(item.dueDate)}</div>
+                            {item.dueDate && getCollateralExecutionDueLabel(item) ? (
+                              <div className="cell-hint">{getCollateralExecutionDueLabel(item)}</div>
+                            ) : null}
+                          </td>
+                          <td className="cell-status">
+                            <span className="cell-status__text">{item.status}</span>
+                          </td>
+                          <td className="cell-muted cell-owner">{item.owner || "Unassigned"}</td>
+                          <td className="cell-muted cell-workstream">{item.subEventName}</td>
+                          <td className="cell-muted cell-type">{item.typeLabel}</td>
+                          <td className="cell-muted cell-updated">{formatShortDate(item.lastUpdated)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
             <div className="table-scroll">
               <table>
                 <thead className="table-head">

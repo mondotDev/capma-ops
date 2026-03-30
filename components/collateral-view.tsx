@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import {
   CollateralProfileCard,
@@ -51,6 +52,11 @@ type PendingDraftDiscardIntent =
   | { type: "createInstance" }
   | null;
 
+type PendingCollateralOpenIntent = {
+  collateralId: string;
+  eventInstanceId: string;
+};
+
 const INITIAL_INSTANCE_FORM: CreateInstanceFormState = {
   eventTypeId: "legislative-day",
   instanceName: "Legislative Day 2027",
@@ -62,7 +68,13 @@ const INITIAL_INSTANCE_FORM: CreateInstanceFormState = {
 
 const DRAFT_COLLATERAL_ID = "__draft-collateral__";
 
-export function CollateralView() {
+export function CollateralView({
+  initialEventInstanceId,
+  initialSelectedCollateralId
+}: {
+  initialEventInstanceId?: string;
+  initialSelectedCollateralId?: string;
+}) {
   const {
     activeEventInstanceId,
     addCollateralItem,
@@ -80,6 +92,7 @@ export function CollateralView() {
     setCollateralProfile,
     updateCollateralItem
   } = useAppState();
+  const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreateInstanceOpen, setIsCreateInstanceOpen] = useState(false);
   const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
@@ -94,6 +107,10 @@ export function CollateralView() {
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<CollateralSummaryFilter>("all");
   const [activeProfileDeadlineFilter, setActiveProfileDeadlineFilter] =
     useState<CollateralProfileDeadlineFilter>("none");
+  const [pendingOpenIntent, setPendingOpenIntent] = useState<PendingCollateralOpenIntent>(() => ({
+    collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
+    eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
+  }));
   const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(activeEventInstanceId, eventInstances);
   const selectedEventInstance =
     eventInstances.find((instance) => instance.id === resolvedActiveEventInstanceId) ?? null;
@@ -133,6 +150,53 @@ export function CollateralView() {
       current && current.eventInstanceId !== resolvedActiveEventInstanceId ? null : current
     );
   }, [resolvedActiveEventInstanceId]);
+
+  useEffect(() => {
+    if (!pendingOpenIntent.eventInstanceId) {
+      return;
+    }
+
+    if (draftCollateralItem) {
+      return;
+    }
+
+    if (pendingOpenIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
+      setActiveEventInstanceId(pendingOpenIntent.eventInstanceId);
+      return;
+    }
+
+    setPendingOpenIntent((current) => ({ ...current, eventInstanceId: "" }));
+  }, [
+    draftCollateralItem,
+    pendingOpenIntent.eventInstanceId,
+    resolvedActiveEventInstanceId,
+    setActiveEventInstanceId
+  ]);
+
+  useEffect(() => {
+    if (!pendingOpenIntent.collateralId) {
+      return;
+    }
+
+    if (pendingOpenIntent.eventInstanceId && pendingOpenIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
+      return;
+    }
+
+    if (
+      collateralItems.some(
+        (item) => item.id === pendingOpenIntent.collateralId && item.eventInstanceId === resolvedActiveEventInstanceId
+      )
+    ) {
+      setSelectedId((current) => (current === pendingOpenIntent.collateralId ? current : pendingOpenIntent.collateralId));
+    }
+
+    setPendingOpenIntent((current) => ({ ...current, collateralId: "" }));
+  }, [
+    collateralItems,
+    pendingOpenIntent.collateralId,
+    pendingOpenIntent.eventInstanceId,
+    resolvedActiveEventInstanceId,
+  ]);
 
   useEffect(() => {
     if (hasEditedInstanceName) {

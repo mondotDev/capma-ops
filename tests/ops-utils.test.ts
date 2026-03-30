@@ -14,6 +14,7 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
+import { getVisibleCollateralExecutionRows } from "../lib/collateral-execution-view";
 import {
   completePublicationIssue,
   openPublicationIssue,
@@ -305,6 +306,128 @@ test("imports fall back to the seeded default event graph when all event instanc
   assert.equal(parsed?.eventInstances[0]?.id, "legislative-day-2026");
   assert.equal(parsed?.activeEventInstanceId, "legislative-day-2026");
   assert.deepEqual(parsed?.collateralItems, []);
+});
+
+test("collateral execution rows surface only qualifying statuses for the active event instance", () => {
+  const rows = getVisibleCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: "legislative-day-2026",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    collateralItems: [
+      createCollateralItem({ id: "a", status: "In Design" }),
+      createCollateralItem({ id: "b", status: "Blocked" }),
+      createCollateralItem({ id: "c", status: "Backlog" }),
+      createCollateralItem({ id: "d", status: "Sent to Printer" }),
+      createCollateralItem({ id: "e", status: "Ready for Print", eventInstanceId: "other-event" })
+    ],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      },
+      {
+        id: "other-event",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2027",
+        dateMode: "single",
+        dates: ["2027-04-20"],
+        startDate: "2027-04-20",
+        endDate: "2027-04-20"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 },
+      { id: "leg-day-other", eventInstanceId: "other-event", name: "Other", sortOrder: 10 }
+    ],
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+  });
+
+  assert.deepEqual(rows.map((row) => row.collateralId).sort(), ["a", "b"]);
+});
+
+test("collateral execution rows participate in action filters without becoming native action items", () => {
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    const rows = getVisibleCollateralExecutionRows({
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeEventInstanceId: "legislative-day-2026",
+      activeFilter: "blocked",
+      activeFocus: "all",
+      activeIssue: "",
+      activeLens: "executionNow",
+      activeQuery: "",
+      collateralItems: [
+        createCollateralItem({ id: "blocked-status", status: "Blocked" }),
+        createCollateralItem({ id: "waiting", status: "Waiting" }),
+        createCollateralItem({ id: "ready", status: "Ready for Print" })
+      ],
+      eventInstances: [
+        {
+          id: "legislative-day-2026",
+          eventTypeId: "legislative-day",
+          name: "Legislative Day 2026",
+          dateMode: "range",
+          dates: ["2026-04-21", "2026-04-23"],
+          startDate: "2026-04-21",
+          endDate: "2026-04-23"
+        }
+      ],
+      eventSubEvents: [
+        { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+      ],
+      eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+    });
+
+    assert.deepEqual(rows.map((row) => row.collateralId), ["blocked-status"]);
+  });
+});
+
+test("collateral execution rows do not surface for unsupported event types", () => {
+  const rows = getVisibleCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: "first-friday-april-2027",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    collateralItems: [
+      createCollateralItem({
+        id: "unsupported-collateral",
+        eventInstanceId: "first-friday-april-2027",
+        subEventId: "first-friday-main",
+        status: "In Design"
+      })
+    ],
+    eventInstances: [
+      {
+        id: "first-friday-april-2027",
+        eventTypeId: "first-friday",
+        name: "April 2027 First Friday",
+        dateMode: "single",
+        dates: ["2027-04-02"],
+        startDate: "2027-04-02",
+        endDate: "2027-04-02"
+      }
+    ],
+    eventSubEvents: [
+      { id: "first-friday-main", eventInstanceId: "first-friday-april-2027", name: "Main Event", sortOrder: 10 }
+    ],
+    eventTypes: [{ id: "first-friday", name: "First Friday", familyId: "recurring-monthly-program" }]
+  });
+
+  assert.deepEqual(rows, []);
 });
 
 test("normalizeCollateralItem preserves template origin metadata", () => {

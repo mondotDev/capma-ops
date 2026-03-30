@@ -1622,6 +1622,34 @@ textarea {
   min-height: 100%;
 }
 
+.collateral-execution-section {
+  margin-bottom: 14px;
+  gap: 10px;
+}
+
+.collateral-execution-section__copy {
+  margin: 0;
+  font-size: 13px;
+  color: #6f7e8c;
+}
+
+.collateral-execution-row__open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.collateral-execution-row__open:focus-visible {
+  outline: 2px solid #5b87b3;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1845,6 +1873,27 @@ tr.blocked-row {
   font-size: 14px;
   font-weight: 800;
   line-height: 1.25;
+}
+
+.collateral-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #355d8f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.cell-status__text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #435466;
 }
 
 .cell-title--cut {
