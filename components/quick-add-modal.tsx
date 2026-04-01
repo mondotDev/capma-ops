@@ -4,9 +4,9 @@ import type { FormEvent } from "react";
 import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
 import type { ActionItemValidation, IssueRecord } from "@/lib/ops-utils";
 import {
-  EVENT_GROUP_OPTIONS,
   getContextualDueDateLabel,
   getOwnerOptions,
+  OPERATIONAL_BUCKET_OPTIONS,
   shouldRequireIssue,
   STATUS_OPTIONS,
   WAITING_ON_SUGGESTIONS,
@@ -19,7 +19,7 @@ export type QuickAddFormState = {
   type: string;
   title: string;
   workstream: string;
-  eventGroup: string;
+  operationalBucket: string;
   eventInstanceId: string;
   subEventId: string;
   issue: string;
@@ -148,6 +148,7 @@ export function QuickAddModal({
                   const nextEventInstanceId = event.target.value;
                   onFieldChange("eventInstanceId", nextEventInstanceId);
                   onFieldChange("subEventId", "");
+                  onFieldChange("operationalBucket", "");
                 }}
                 value={formState.eventInstanceId}
               >
@@ -179,16 +180,16 @@ export function QuickAddModal({
             </div>
 
             <div className="field">
-              <label htmlFor="quick-add-event-group">Event Group</label>
+              <label htmlFor="quick-add-operational-bucket">Operational Bucket</label>
               <select
                 className={!formState.eventInstanceId ? "field-control" : "field-control field-control--muted"}
                 disabled={Boolean(formState.eventInstanceId)}
-                id="quick-add-event-group"
-                onChange={(event) => onFieldChange("eventGroup", event.target.value)}
-                value={formState.eventGroup}
+                id="quick-add-operational-bucket"
+                onChange={(event) => onFieldChange("operationalBucket", event.target.value)}
+                value={formState.operationalBucket}
               >
                 <option value="">None</option>
-                {EVENT_GROUP_OPTIONS.map((option) => (
+                {OPERATIONAL_BUCKET_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

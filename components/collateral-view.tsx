@@ -108,7 +108,7 @@ export function CollateralView({
     workspaceBundle,
     collateralListView,
     selectedWorkspace,
-    eventTypes,
+    eventPrograms,
     eventInstances
   } = useCollateralWorkspaceReadModel({
     activeSummaryFilter,
@@ -118,11 +118,11 @@ export function CollateralView({
   });
   const resolvedActiveEventInstanceId = workspaceBundle.resolvedActiveEventInstanceId;
   const selectedEventInstance = workspaceBundle.selectedEventInstance;
-  const currentEventType = workspaceBundle.currentEventType;
+  const currentEventProgram = workspaceBundle.currentEventProgram;
   const defaultTemplatePack = workspaceBundle.defaultTemplatePack;
-  const supportedCreateEventTypes = workspaceBundle.supportedCreateEventTypes;
-  const isSelectedCreateEventTypeSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
-  const isSelectedEventTypeSupported = workspaceBundle.isSelectedEventTypeSupported;
+  const supportedCreateEventPrograms = workspaceBundle.supportedCreateEventPrograms;
+  const isSelectedCreateEventProgramSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
+  const isSelectedEventProgramSupported = workspaceBundle.isSelectedEventProgramSupported;
   const activeProfile = workspaceBundle.activeProfile;
 
   useEffect(() => {
@@ -172,33 +172,33 @@ export function CollateralView({
       return;
     }
 
-    const selectedEventType =
-      eventTypes.find((eventType) => eventType.id === instanceFormState.eventTypeId) ??
-      supportedCreateEventTypes[0] ??
-      eventTypes[0] ??
+    const selectedEventProgram =
+      eventPrograms.find((eventProgram) => eventProgram.id === instanceFormState.eventTypeId) ??
+      supportedCreateEventPrograms[0] ??
+      eventPrograms[0] ??
       null;
 
-    if (!selectedEventType) {
+    if (!selectedEventProgram) {
       return;
     }
 
     setInstanceFormState((current) => ({
-      ...current,
-      instanceName: createSuggestedEventInstanceName(
-        selectedEventType.name,
-        current.dateMode,
-        current.dates,
-        current.location
-      )
-    }));
+        ...current,
+        instanceName: createSuggestedEventInstanceName(
+          selectedEventProgram.name,
+          current.dateMode,
+          current.dates,
+          current.location
+        )
+      }));
   }, [
-    eventTypes,
+    eventPrograms,
     hasEditedInstanceName,
     instanceFormState.dateMode,
     instanceFormState.dates,
     instanceFormState.eventTypeId,
     instanceFormState.location,
-    supportedCreateEventTypes
+    supportedCreateEventPrograms
   ]);
 
   useEffect(() => {
@@ -206,16 +206,16 @@ export function CollateralView({
       return;
     }
 
-    const fallbackEventType = supportedCreateEventTypes[0];
-    if (!fallbackEventType || fallbackEventType.id === instanceFormState.eventTypeId) {
+    const fallbackEventProgram = supportedCreateEventPrograms[0];
+    if (!fallbackEventProgram || fallbackEventProgram.id === instanceFormState.eventTypeId) {
       return;
     }
 
     setInstanceFormState((current) => ({
       ...current,
-      eventTypeId: fallbackEventType.id
+      eventTypeId: fallbackEventProgram.id
     }));
-  }, [instanceFormState.eventTypeId, supportedCreateEventTypes]);
+  }, [instanceFormState.eventTypeId, supportedCreateEventPrograms]);
 
   const instanceSubEvents = workspaceBundle.instanceSubEvents;
   const instanceItems = collateralListView.instanceItems;
@@ -253,7 +253,7 @@ export function CollateralView({
     setIsEditingTitle(false);
     setTitleDraft(selectedItem?.itemName ?? "");
   }, [selectedItem?.id, selectedItem?.itemName]);
-  const eventInstancesByType = workspaceBundle.eventInstancesByType;
+  const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
   const pendingTemplateInstance =
     pendingTemplateInstanceId
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
@@ -316,7 +316,7 @@ export function CollateralView({
 
     if (
       !instanceFormState.eventTypeId ||
-      !isSelectedCreateEventTypeSupported ||
+      !isSelectedCreateEventProgramSupported ||
       !instanceFormState.instanceName.trim() ||
       normalizedDates.length === 0
     ) {
@@ -508,8 +508,8 @@ export function CollateralView({
               onChange={(event) => requestEventInstanceSwitch(event.target.value)}
               value={resolvedActiveEventInstanceId}
             >
-              {eventInstancesByType.map(({ eventType, instances }) => (
-                <optgroup key={eventType.id} label={eventType.name}>
+              {eventInstancesByProgram.map(({ eventProgram, instances }) => (
+                <optgroup key={eventProgram.id} label={eventProgram.name}>
                   {instances.map((instance) => (
                     <option key={instance.id} value={instance.id}>
                       {supportsCollateralEventType(instance.eventTypeId) ? instance.name : `${instance.name} (Limited)`}
@@ -524,7 +524,7 @@ export function CollateralView({
           </button>
           <button
             className="topbar__button"
-            disabled={!isSelectedEventTypeSupported}
+            disabled={!isSelectedEventProgramSupported}
             onClick={handleAddCollateralItem}
             type="button"
           >
@@ -539,7 +539,7 @@ export function CollateralView({
             <div className="collateral-context__label">Current Event Context</div>
             <div className="collateral-context__title-row">
               <strong className="collateral-context__title">{selectedEventInstance.name}</strong>
-              {currentEventType ? <span className="collateral-context__chip">{currentEventType.name}</span> : null}
+              {currentEventProgram ? <span className="collateral-context__chip">{currentEventProgram.name}</span> : null}
             </div>
           </div>
           <div className="collateral-context__meta">
@@ -548,16 +548,16 @@ export function CollateralView({
             {defaultTemplatePack ? (
               <span>{hasAppliedTemplateItems ? "Default template applied" : "Default template available"}</span>
             ) : (
-              <span>Collateral workflow not configured for this event type yet</span>
+              <span>Collateral workflow not configured for this event program yet</span>
             )}
           </div>
         </div>
       ) : null}
 
-      {selectedEventInstance && !isSelectedEventTypeSupported ? (
+      {selectedEventInstance && !isSelectedEventProgramSupported ? (
         <div className="collateral-setup-banner collateral-setup-banner--warning" role="status">
           <span>
-            This event instance is visible for context, but collateral workflows are not configured for this event type yet.
+            This event instance is visible for context, but collateral workflows are not configured for this event program yet.
           </span>
         </div>
       ) : null}
@@ -596,7 +596,7 @@ export function CollateralView({
           <div className="card card--secondary collateral-groups">
             <div className="card__title">
               COLLATERAL ITEMS
-              {currentEventType ? <span className="collateral-card-context"> - {currentEventType.name}</span> : null}
+              {currentEventProgram ? <span className="collateral-card-context"> - {currentEventProgram.name}</span> : null}
             </div>
             {hasActiveCollateralFilters ? (
               <div className="collateral-filter-context">
@@ -627,15 +627,15 @@ export function CollateralView({
                 </div>
                 <div className="empty-state__copy">
                   {!hasActiveCollateralFilters
-                    ? !isSelectedEventTypeSupported
-                      ? "Collateral tracking is not enabled for this event type yet."
+                    ? !isSelectedEventProgramSupported
+                      ? "Collateral tracking is not enabled for this event program yet."
                       : defaultTemplatePack
-                        ? `Apply the default template pack for ${currentEventType?.name ?? "this event"} or add your first collateral item manually.`
+                        ? `Apply the default template pack for ${currentEventProgram?.name ?? "this event"} or add your first collateral item manually.`
                         : "Add your first collateral item manually to start tracking production work for this event instance."
                     : "Try a different summary view or clear the filter to return to the full collateral list."}
                 </div>
                 <div className="empty-state__actions">
-                  {!hasActiveCollateralFilters && defaultTemplatePack && isSelectedEventTypeSupported ? (
+                  {!hasActiveCollateralFilters && defaultTemplatePack && isSelectedEventProgramSupported ? (
                     <button
                       className="topbar__button"
                       onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
@@ -644,7 +644,7 @@ export function CollateralView({
                       Apply Default Template
                     </button>
                   ) : null}
-                  {!hasActiveCollateralFilters && isSelectedEventTypeSupported ? (
+                  {!hasActiveCollateralFilters && isSelectedEventProgramSupported ? (
                     <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
                       Add First Collateral Item
                     </button>
@@ -1022,7 +1022,7 @@ export function CollateralView({
             <div className="quick-add-form">
               <div className="quick-add-grid">
                 <div className="field">
-                  <label htmlFor="instance-event-type">Event Type</label>
+                  <label htmlFor="instance-event-type">Event Program</label>
                     <select
                       className="field-control"
                       id="instance-event-type"
@@ -1034,18 +1034,18 @@ export function CollateralView({
                       }
                       value={instanceFormState.eventTypeId}
                     >
-                      {eventTypes.map((eventType) => (
+                      {eventPrograms.map((eventProgram) => (
                         <option
-                          disabled={!supportsCollateralEventType(eventType.id)}
-                          key={eventType.id}
-                          value={eventType.id}
+                          disabled={!supportsCollateralEventType(eventProgram.id)}
+                          key={eventProgram.id}
+                          value={eventProgram.id}
                         >
-                          {supportsCollateralEventType(eventType.id) ? eventType.name : `${eventType.name} (Coming Soon)`}
+                          {supportsCollateralEventType(eventProgram.id) ? eventProgram.name : `${eventProgram.name} (Coming Soon)`}
                         </option>
                       ))}
                     </select>
                     <div className="field__hint">
-                      Only event types with a default collateral template can be created here right now.
+                      Only event programs with a default collateral template can be created here right now.
                     </div>
                   </div>
                 <div className="field">
@@ -1218,7 +1218,7 @@ export function CollateralView({
                 </button>
                   <button
                     className="topbar__button"
-                    disabled={!isInstanceFormValid(instanceFormState) || !isSelectedCreateEventTypeSupported}
+                    disabled={!isInstanceFormValid(instanceFormState) || !isSelectedCreateEventProgramSupported}
                     onClick={handleCreateInstance}
                     type="button"
                   >

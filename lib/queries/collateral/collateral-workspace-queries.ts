@@ -11,8 +11,8 @@ import {
   getUnassignedSubEventId,
   resolveActiveEventInstanceId,
   type EventInstance,
+  type EventProgram,
   type EventSubEvent,
-  type EventType
 } from "@/lib/event-instances";
 import { formatShortDate } from "@/lib/ops-utils";
 
@@ -30,20 +30,25 @@ export type CollateralWorkspaceProfileDeadlineFilter =
   | "internalPrintingStart";
 
 export type CollateralWorkspaceInstanceGroup = {
-  eventType: EventType;
+  eventProgram: EventProgram;
+  eventType?: EventProgram;
   instances: EventInstance[];
 };
 
 export type CollateralEventInstanceWorkspaceBundle = {
   resolvedActiveEventInstanceId: string;
   selectedEventInstance: EventInstance | null;
-  currentEventType: EventType | null;
+  currentEventProgram: EventProgram | null;
+  currentEventType?: EventProgram | null;
   defaultTemplatePack: ReturnType<typeof getDefaultTemplatePackForEventType> | null;
-  supportedCreateEventTypes: EventType[];
-  isSelectedEventTypeSupported: boolean;
+  supportedCreateEventPrograms: EventProgram[];
+  supportedCreateEventTypes?: EventProgram[];
+  isSelectedEventProgramSupported: boolean;
+  isSelectedEventTypeSupported?: boolean;
   activeProfile: LegDayCollateralProfile | null;
   selectedEventDateRange: string;
-  eventInstancesByType: CollateralWorkspaceInstanceGroup[];
+  eventInstancesByProgram: CollateralWorkspaceInstanceGroup[];
+  eventInstancesByType?: CollateralWorkspaceInstanceGroup[];
   instanceSubEvents: EventSubEvent[];
   hasAppliedTemplateItems: boolean;
 };
@@ -76,21 +81,25 @@ export function getCollateralEventInstanceWorkspaceBundle(input: {
   collateralProfiles: Record<string, LegDayCollateralProfile | undefined>;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
 }) {
+  const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
   const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(
     input.activeEventInstanceId,
     input.eventInstances
   );
   const selectedEventInstance =
     input.eventInstances.find((instance) => instance.id === resolvedActiveEventInstanceId) ?? null;
-  const currentEventType =
-    input.eventTypes.find((eventType) => eventType.id === selectedEventInstance?.eventTypeId) ?? null;
+  const currentEventProgram =
+    eventPrograms.find((eventProgram) => eventProgram.id === selectedEventInstance?.eventTypeId) ?? null;
   const defaultTemplatePack = selectedEventInstance
     ? getDefaultTemplatePackForEventType(selectedEventInstance.eventTypeId)
     : null;
-  const supportedCreateEventTypes = input.eventTypes.filter((eventType) => supportsCollateralEventType(eventType.id));
-  const isSelectedEventTypeSupported = selectedEventInstance
+  const supportedCreateEventPrograms = eventPrograms.filter((eventProgram) =>
+    supportsCollateralEventType(eventProgram.id)
+  );
+  const isSelectedEventProgramSupported = selectedEventInstance
     ? supportsCollateralEventType(selectedEventInstance.eventTypeId)
     : false;
   const activeProfile =
@@ -114,10 +123,11 @@ export function getCollateralEventInstanceWorkspaceBundle(input: {
     instancesByType.get(instance.eventTypeId)!.push(instance);
   }
 
-  const eventInstancesByType = input.eventTypes
-    .map((eventType) => ({
-      eventType,
-      instances: instancesByType.get(eventType.id) ?? []
+  const eventInstancesByProgram = eventPrograms
+    .map((eventProgram) => ({
+      eventProgram,
+      eventType: eventProgram,
+      instances: instancesByType.get(eventProgram.id) ?? []
     }))
     .filter((group) => group.instances.length > 0);
   const instanceSubEvents = input.eventSubEvents.filter(
@@ -130,13 +140,17 @@ export function getCollateralEventInstanceWorkspaceBundle(input: {
   return {
     resolvedActiveEventInstanceId,
     selectedEventInstance,
-    currentEventType,
+    currentEventProgram,
+    currentEventType: currentEventProgram,
     defaultTemplatePack,
-    supportedCreateEventTypes,
-    isSelectedEventTypeSupported,
+    supportedCreateEventPrograms,
+    supportedCreateEventTypes: supportedCreateEventPrograms,
+    isSelectedEventProgramSupported,
+    isSelectedEventTypeSupported: isSelectedEventProgramSupported,
     activeProfile,
     selectedEventDateRange,
-    eventInstancesByType,
+    eventInstancesByProgram,
+    eventInstancesByType: eventInstancesByProgram,
     instanceSubEvents,
     hasAppliedTemplateItems
   } satisfies CollateralEventInstanceWorkspaceBundle;

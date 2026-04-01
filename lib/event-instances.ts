@@ -9,6 +9,8 @@ export type EventType = {
   familyId: string;
 };
 
+export type EventProgram = EventType;
+
 export type EventDateMode = "single" | "range" | "multiple";
 
 export type EventInstance = {
@@ -92,6 +94,8 @@ export const initialEventTypes: EventType[] = [
     familyId: "expo-large-multiday"
   }
 ];
+
+export const initialEventPrograms: EventProgram[] = initialEventTypes;
 
 export const initialEventInstances: EventInstance[] = [
   {

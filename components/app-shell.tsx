@@ -277,7 +277,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       type: formState.type,
       title: formState.title.trim(),
       workstream: formState.workstream.trim(),
-      eventGroup: formState.eventGroup || undefined,
+      operationalBucket: formState.operationalBucket || undefined,
       eventInstanceId: formState.eventInstanceId || undefined,
       subEventId: formState.subEventId || undefined,
       issue: formState.issue || undefined,
@@ -449,9 +449,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <div className="settings-section">
               <div className="settings-section__header">
-                <h3 className="drawer-section__title">Event Schedule</h3>
+                <h3 className="drawer-section__title">Event Programs</h3>
                 <p className="field-hint">
-                  Set the next anchor dates for event-like workstreams. The dashboard uses these dates for countdowns.
+                  Set the schedule rules and anchor dates for recurring event programs. The dashboard uses these dates for countdowns.
                 </p>
               </div>
 
@@ -631,7 +631,7 @@ function createInitialFormState(): QuickAddFormState {
     type: "",
     title: "",
     workstream: "",
-    eventGroup: "",
+    operationalBucket: "",
     eventInstanceId: "",
     subEventId: "",
     issue: "",

@@ -1,3 +1,4 @@
+import { buildActionScopes } from "@/lib/action-scopes";
 import {
   getVisibleCollateralExecutionRows,
   type CollateralExecutionRow
@@ -10,11 +11,10 @@ import {
   type NativeActionViewRow
 } from "@/lib/action-view-rows";
 import {
-  getItemEventGroupLabel,
   getVisibleActionItems,
   type ActionViewFilters
 } from "@/lib/action-view-utils";
-import type { EventInstance, EventSubEvent, EventType } from "@/lib/event-instances";
+import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import { getIssuesForWorkstream, type IssueRecord } from "@/lib/ops-utils";
 
@@ -23,7 +23,8 @@ export type ActionListQueryInput = {
   collateralItems: CollateralExecutionQueryInput["collateralItems"];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
   activeEventInstanceId: string;
   filters: ActionViewFilters;
 };
@@ -40,7 +41,8 @@ type CollateralExecutionQueryInput = {
   collateralItems: Parameters<typeof getVisibleCollateralExecutionRows>[0]["collateralItems"];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
 };
 
 export type ActionListViewData = {
@@ -62,6 +64,8 @@ export type ActionDetailWorkspaceData = {
 export function getActionCollateralExecutionRows(input: Omit<CollateralExecutionQueryInput, "collateralItems"> & {
   collateralItems: Parameters<typeof getVisibleCollateralExecutionRows>[0]["collateralItems"];
 }) {
+  const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
+
   return getVisibleCollateralExecutionRows({
     activeDueDate: input.activeDueDate,
     activeEventGroup: input.activeEventGroup,
@@ -74,12 +78,13 @@ export function getActionCollateralExecutionRows(input: Omit<CollateralExecution
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
     eventSubEvents: input.eventSubEvents,
-    eventTypes: input.eventTypes
+    eventPrograms
   });
 }
 
 export function getActionListViewData(input: ActionListQueryInput): ActionListViewData {
-  const visibleItems = getVisibleActionItems(input.items, input.filters, input.eventInstances);
+  const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
+  const visibleItems = getVisibleActionItems(input.items, input.filters, input.eventInstances, eventPrograms);
   const collateralRows = getActionCollateralExecutionRows({
     activeDueDate: input.filters.activeDueDate,
     activeEventGroup: input.filters.activeEventGroup,
@@ -92,32 +97,28 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
     eventSubEvents: input.eventSubEvents,
-    eventTypes: input.eventTypes
+    eventPrograms
   });
   const visibleRows = getVisibleActionViewRows({
     actionItems: visibleItems,
     collateralRows,
     eventInstances: input.eventInstances,
+    eventPrograms,
     eventSubEvents: input.eventSubEvents,
     activeQuery: input.filters.activeQuery
   });
   const visibleSelectableRows = visibleRows.filter(isSelectableActionViewRow);
-  const optionValues = new Set<string>(["all"]);
-
-  input.items
-    .map((item) => getItemEventGroupLabel(item, input.eventInstances).trim())
-    .filter((value): value is string => Boolean(value))
-    .forEach((value) => optionValues.add(value));
-
-  collateralRows
-    .map((item) => item.eventGroupLabel.trim())
-    .filter((value) => Boolean(value))
-    .forEach((value) => optionValues.add(value));
+  const actionScopes = buildActionScopes({
+    items: input.items,
+    eventPrograms,
+    eventInstances: input.eventInstances,
+    collateralExecutionInstanceIds: collateralRows.map((row) => row.eventInstanceId)
+  });
 
   return {
-    eventGroupOptions: [...optionValues].map((value) => ({
-      label: value === "all" ? "All Events" : value,
-      value
+    eventGroupOptions: actionScopes.map((scope) => ({
+      label: scope.label,
+      value: scope.value
     })),
     groupedRows: groupActionViewRowsByEventGroup(visibleRows),
     visibleActionItemCount: visibleItems.length,

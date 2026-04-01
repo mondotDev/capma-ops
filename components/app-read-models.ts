@@ -30,7 +30,7 @@ import {
 import { createLocalAppReadSource } from "@/lib/read-source/local-app-read-source";
 import { getActionSummaryCounts, type ActionSummaryCounts } from "@/lib/ops-utils";
 import type { ActionViewFilters } from "@/lib/action-view-utils";
-import type { EventInstance, EventType } from "@/lib/event-instances";
+import type { EventInstance, EventProgram } from "@/lib/event-instances";
 
 function useLocalAppReadSource() {
   const {
@@ -39,7 +39,7 @@ function useLocalAppReadSource() {
     collateralProfiles,
     eventInstances,
     eventSubEvents,
-    eventTypes,
+    eventTypes: eventPrograms,
     issues,
     items,
     workstreamSchedules
@@ -53,7 +53,7 @@ function useLocalAppReadSource() {
         collateralItems,
         collateralProfiles,
         activeEventInstanceId,
-        eventTypes,
+        eventPrograms,
         eventInstances,
         eventSubEvents,
         workstreamSchedules
@@ -64,7 +64,7 @@ function useLocalAppReadSource() {
       collateralProfiles,
       eventInstances,
       eventSubEvents,
-      eventTypes,
+      eventPrograms,
       issues,
       items,
       workstreamSchedules
@@ -148,7 +148,7 @@ export function useCollateralWorkspaceReadModel(input: {
   workspaceBundle: CollateralEventInstanceWorkspaceBundle;
   collateralListView: CollateralInstanceListView;
   selectedWorkspace: SelectedCollateralItemWorkspace;
-  eventTypes: EventType[];
+  eventPrograms: EventProgram[];
   eventInstances: EventInstance[];
 } {
   const { activeEventInstanceId } = useAppState();
@@ -165,7 +165,7 @@ export function useCollateralWorkspaceReadModel(input: {
         collateralProfiles: workspaceSource.collateralProfiles,
         eventInstances: workspaceSource.eventInstances,
         eventSubEvents: workspaceSource.eventSubEvents,
-        eventTypes: workspaceSource.eventTypes
+        eventPrograms: workspaceSource.eventPrograms
       }),
     [workspaceSource]
   );
@@ -206,7 +206,7 @@ export function useCollateralWorkspaceReadModel(input: {
     workspaceBundle,
     collateralListView,
     selectedWorkspace,
-    eventTypes: workspaceSource.eventTypes,
+    eventPrograms: workspaceSource.eventPrograms ?? workspaceSource.eventTypes ?? [],
     eventInstances: workspaceSource.eventInstances
   };
 }

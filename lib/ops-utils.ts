@@ -29,6 +29,7 @@ export const EVENT_GROUP_OPTIONS = [
   "Membership Campaigns",
   "General Operations"
 ] as const;
+export const OPERATIONAL_BUCKET_OPTIONS = ["General Operations", "Membership Campaigns"] as const;
 export const OWNER_OPTIONS = [
   "Melissa",
   "Crystelle",
@@ -49,6 +50,7 @@ export const SCHEDULED_WORKSTREAM_OPTIONS = [
 export const DEFAULT_OWNER = "Melissa";
 export type OwnerOption = (typeof OWNER_OPTIONS)[number];
 export type EventGroupOption = (typeof EVENT_GROUP_OPTIONS)[number];
+export type OperationalBucketOption = (typeof OPERATIONAL_BUCKET_OPTIONS)[number];
 export type WorkstreamScheduleMode = "none" | "single" | "range" | "multiple";
 export type WorkstreamSchedule = {
   workstream: (typeof SCHEDULED_WORKSTREAM_OPTIONS)[number];
@@ -70,6 +72,7 @@ type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
     Pick<
       ActionItem,
       | "eventGroup"
+      | "operationalBucket"
       | "legacyEventGroupMigrated"
       | "eventInstanceId"
       | "subEventId"
@@ -91,7 +94,14 @@ type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
   Partial<
     Pick<
       ActionItem,
-      "eventGroup" | "legacyEventGroupMigrated" | "eventInstanceId" | "subEventId" | "isBlocked" | "blockedBy" | "notes"
+      | "eventGroup"
+      | "operationalBucket"
+      | "legacyEventGroupMigrated"
+      | "eventInstanceId"
+      | "subEventId"
+      | "isBlocked"
+      | "blockedBy"
+      | "notes"
     >
   >;
 
@@ -443,11 +453,18 @@ export function normalizeActionItemFields<T extends NormalizeActionItemInput>(it
     legacyEventGroupMigrated === true || (normalizedEventGroup === "Legislative Day" && Boolean(normalizedEventInstanceId))
       ? true
       : undefined;
+  const normalizedOperationalBucket =
+    normalizedEventInstanceId
+      ? undefined
+      : normalizeOperationalBucketValue(item.operationalBucket) ??
+        getOperationalBucketFromLegacyEventGroup(normalizedEventGroup) ??
+        getSuggestedOperationalBucketForWorkstream(item.workstream);
 
   return {
     ...rest,
     owner: normalizeOwnerValue(item.owner),
     workstream: normalizeWorkstreamValue(item.workstream),
+    operationalBucket: normalizedOperationalBucket,
     eventGroup: normalizedEventGroup,
     legacyEventGroupMigrated: normalizedLegacyEventGroupMigrated,
     eventInstanceId: normalizedEventInstanceId,
@@ -581,7 +598,8 @@ export function syncActionItemStatus<T extends Pick<ActionItem, "status" | "wait
 }
 
 export function syncActionItemWorkstream<
-  T extends Pick<ActionItem, "workstream" | "dueDate"> & Partial<Pick<ActionItem, "eventGroup" | "issue">>
+  T extends Pick<ActionItem, "workstream" | "dueDate"> &
+    Partial<Pick<ActionItem, "eventGroup" | "issue" | "operationalBucket">>
 >(current: T, nextWorkstream: string): T {
   const nextIssues = getIssuesForWorkstream(nextWorkstream);
   const nextIssue =
@@ -591,13 +609,16 @@ export function syncActionItemWorkstream<
     ...current,
     workstream: nextWorkstream,
     eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
+    operationalBucket:
+      syncOperationalBucketWithWorkstream(current.operationalBucket, current.workstream, nextWorkstream) ?? "",
     issue: nextIssue,
     dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
   };
 }
 
 export function syncActionItemIssue<
-  T extends Pick<ActionItem, "workstream" | "dueDate"> & Partial<Pick<ActionItem, "eventGroup" | "issue">>
+  T extends Pick<ActionItem, "workstream" | "dueDate"> &
+    Partial<Pick<ActionItem, "eventGroup" | "issue" | "operationalBucket">>
 >(current: T, nextIssue: string): T {
   const nextWorkstream = nextIssue ? (getWorkstreamForIssue(nextIssue) ?? current.workstream) : current.workstream;
 
@@ -606,6 +627,8 @@ export function syncActionItemIssue<
     issue: nextIssue,
     workstream: nextWorkstream,
     eventGroup: syncEventGroupWithWorkstream(current.eventGroup, current.workstream, nextWorkstream) ?? "",
+    operationalBucket:
+      syncOperationalBucketWithWorkstream(current.operationalBucket, current.workstream, nextWorkstream) ?? "",
     dueDate: nextIssue ? (getIssueDueDate(nextIssue) ?? current.dueDate) : current.dueDate
   };
 }
@@ -668,6 +691,47 @@ export function isEventGroupOption(value: string): value is EventGroupOption {
   return EVENT_GROUP_OPTIONS.includes(value as EventGroupOption);
 }
 
+export function isOperationalBucketOption(value: string): value is OperationalBucketOption {
+  return OPERATIONAL_BUCKET_OPTIONS.includes(value as OperationalBucketOption);
+}
+
+export function normalizeOperationalBucketValue(operationalBucket?: string) {
+  const trimmedOperationalBucket = operationalBucket?.trim();
+
+  if (!trimmedOperationalBucket) {
+    return undefined;
+  }
+
+  if (trimmedOperationalBucket === "General Ops") {
+    return "General Operations";
+  }
+
+  return trimmedOperationalBucket;
+}
+
+export function getSuggestedOperationalBucketForWorkstream(workstream?: string): OperationalBucketOption | undefined {
+  const normalizedWorkstream = normalizeWorkstreamValue(workstream);
+
+  if (!normalizedWorkstream || isPublicationWorkstream(normalizedWorkstream)) {
+    return undefined;
+  }
+
+  if (normalizedWorkstream === "Membership Campaigns") {
+    return "Membership Campaigns";
+  }
+
+  if (normalizedWorkstream === "General Operations") {
+    return "General Operations";
+  }
+
+  return undefined;
+}
+
+export function getOperationalBucketFromLegacyEventGroup(eventGroup?: string) {
+  const normalizedEventGroup = normalizeEventGroupValue(eventGroup);
+  return normalizedEventGroup && isOperationalBucketOption(normalizedEventGroup) ? normalizedEventGroup : undefined;
+}
+
 export function getSuggestedEventGroupForWorkstream(workstream?: string): EventGroupOption | undefined {
   const normalizedWorkstream = normalizeWorkstreamValue(workstream);
 
@@ -680,6 +744,26 @@ export function getSuggestedEventGroupForWorkstream(workstream?: string): EventG
   }
 
   return "General Operations";
+}
+
+export function syncOperationalBucketWithWorkstream(
+  currentOperationalBucket: string | undefined,
+  previousWorkstream: string | undefined,
+  nextWorkstream: string | undefined
+) {
+  const normalizedOperationalBucket = normalizeOperationalBucketValue(currentOperationalBucket);
+
+  if (!normalizedOperationalBucket) {
+    return getSuggestedOperationalBucketForWorkstream(nextWorkstream);
+  }
+
+  const previousSuggestedOperationalBucket = getSuggestedOperationalBucketForWorkstream(previousWorkstream);
+
+  if (normalizedOperationalBucket === previousSuggestedOperationalBucket) {
+    return getSuggestedOperationalBucketForWorkstream(nextWorkstream);
+  }
+
+  return normalizedOperationalBucket;
 }
 
 export function syncEventGroupWithWorkstream(
@@ -1146,6 +1230,7 @@ export function matchesSearchQuery(item: ActionItem, query?: string) {
     item.title,
     ...item.noteEntries.map((entry) => entry.text),
     item.workstream,
+    item.operationalBucket,
     item.eventGroup,
     item.issue,
     item.owner,

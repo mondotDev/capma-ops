@@ -1,5 +1,5 @@
 import type { ActionItem } from "@/lib/sample-data";
-import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
+import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
 import {
   getActionRowClassName,
   getItemEventGroupLabel,
@@ -80,11 +80,16 @@ export function getVisibleActionViewRows(input: {
   actionItems: ActionItem[];
   collateralRows: CollateralExecutionRow[];
   eventInstances: EventInstance[];
+  eventPrograms?: EventProgram[];
   eventSubEvents: EventSubEvent[];
   activeQuery?: string;
 }) {
+  const eventPrograms = input.eventPrograms ?? [];
+
   return [
-    ...input.actionItems.map((item) => mapActionItemToRow(item, input.eventInstances, input.eventSubEvents)),
+    ...input.actionItems.map((item) =>
+      mapActionItemToRow(item, input.eventInstances, eventPrograms, input.eventSubEvents)
+    ),
     ...input.collateralRows.map(mapCollateralRow)
   ]
     .filter((row) => matchesActionViewRowSearch(row, input.activeQuery))
@@ -118,6 +123,7 @@ export function isSelectableActionViewRow(row: ActionViewRow): row is NativeActi
 function mapActionItemToRow(
   item: ActionItem,
   eventInstances: EventInstance[],
+  eventPrograms: EventProgram[],
   eventSubEvents: EventSubEvent[]
 ): NativeActionViewRow {
   const dueLabel = !isTerminalStatus(item.status) ? formatDueLabel(item) : "";
@@ -133,7 +139,7 @@ function mapActionItemToRow(
     dueDate: item.dueDate,
     owner: item.owner,
     statusLabel: item.status,
-    eventGroupLabel: getItemEventGroupLabel(item, eventInstances),
+    eventGroupLabel: getItemEventGroupLabel(item, eventInstances, eventPrograms),
     lastUpdated: item.lastUpdated,
     dueLabel,
     rowClassName: getActionRowClassName(item),
@@ -156,8 +162,9 @@ function mapActionItemToRow(
       item.type,
       item.workstream,
       item.issue ?? "",
+      item.operationalBucket ?? "",
       item.eventGroup ?? "",
-      getItemEventGroupLabel(item, eventInstances),
+      getItemEventGroupLabel(item, eventInstances, eventPrograms),
       linkedSubEventLabel
     ]
   };

@@ -4,8 +4,8 @@ import type {
 } from "@/lib/collateral-data";
 import type {
   EventInstance,
+  EventProgram,
   EventSubEvent,
-  EventType
 } from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import type { CollateralProfilesByInstance } from "@/lib/state/app-state-types";
@@ -22,7 +22,8 @@ export type ActionListSourceData = {
   collateralItems: CollateralItem[];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
 };
 
 export type ActionDetailSourceData = {
@@ -37,7 +38,8 @@ export type CollateralWorkspaceSourceData = {
   collateralProfiles: Partial<CollateralProfilesByInstance>;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
 };
 
 export type CollateralDetailSourceData = {
@@ -53,7 +55,8 @@ export type AppReadSourceSnapshot = {
   collateralItems: CollateralItem[];
   collateralProfiles: CollateralProfilesByInstance;
   activeEventInstanceId: string;
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
   workstreamSchedules: WorkstreamSchedule[];

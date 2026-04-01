@@ -2,6 +2,7 @@ import type { ActionItem } from "@/lib/sample-data";
 import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
 import {
   getSuggestedEventGroupForWorkstream,
+  getSuggestedOperationalBucketForWorkstream,
   normalizeActionItemFields,
   resolveInitialOwner
 } from "@/lib/ops-utils";
@@ -12,6 +13,7 @@ export function createActionItem(item: NewActionItemInput): ActionItem {
   const normalizedItem = normalizeActionItemFields({
     ...item,
     eventGroup: item.eventGroup ?? getSuggestedEventGroupForWorkstream(item.workstream),
+    operationalBucket: item.operationalBucket ?? getSuggestedOperationalBucketForWorkstream(item.workstream),
     legacyEventGroupMigrated: item.legacyEventGroupMigrated,
     owner: resolveInitialOwner(item.owner, item.workstream)
   });

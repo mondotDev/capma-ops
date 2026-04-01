@@ -27,7 +27,8 @@ class LocalAppReadSource implements AppReadSource {
       collateralItems: this.snapshot.collateralItems,
       eventInstances: this.snapshot.eventInstances,
       eventSubEvents: this.snapshot.eventSubEvents,
-      eventTypes: this.snapshot.eventTypes
+      eventPrograms: this.snapshot.eventPrograms ?? this.snapshot.eventTypes ?? [],
+      eventTypes: this.snapshot.eventPrograms ?? this.snapshot.eventTypes ?? []
     };
   }
 
@@ -64,7 +65,8 @@ class LocalAppReadSource implements AppReadSource {
       eventSubEvents: this.snapshot.eventSubEvents.filter(
         (subEvent) => subEvent.eventInstanceId === resolvedActiveEventInstanceId
       ),
-      eventTypes: this.snapshot.eventTypes
+      eventPrograms: this.snapshot.eventPrograms ?? this.snapshot.eventTypes ?? [],
+      eventTypes: this.snapshot.eventPrograms ?? this.snapshot.eventTypes ?? []
     };
   }
 

@@ -6,6 +6,7 @@ import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { useActionViewReadModel } from "@/components/app-read-models";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
+import { getActionScopeLabelByValue } from "@/lib/action-scopes";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getActionDueDateValue,
@@ -22,12 +23,12 @@ import {
   type ActionLens,
   DEFAULT_OWNER,
   daysSince,
-  EVENT_GROUP_OPTIONS,
   formatDueLabel,
   formatShortDate,
   getContextualDueDateLabel,
   getOwnerOptions,
   LOCAL_FALLBACK_NOTE_AUTHOR,
+  OPERATIONAL_BUCKET_OPTIONS,
   isBlockedItem,
   isTerminalStatus,
   isWaitingIssue,
@@ -141,6 +142,10 @@ export function ActionView({
     selectedId
   });
   const eventGroupOptions = actionListView.eventGroupOptions;
+  const activeScopeLabel = useMemo(
+    () => eventGroupOptions.find((option) => option.value === activeEventGroup)?.label ?? activeEventGroup,
+    [activeEventGroup, eventGroupOptions]
+  );
   const visibleExecutionCount = actionListView.visibleExecutionCount;
   const visibleRows = actionListView.visibleRows;
   const groupedRows = actionListView.groupedRows;
@@ -439,9 +444,9 @@ export function ActionView({
             </div>
           </div>
           <label className="filter-field">
-            <span className="filter-field__label">Event</span>
+            <span className="filter-field__label">Scope</span>
             <select
-              aria-label="Filter by event"
+              aria-label="Filter by scope"
               className="cell-select filter-field__select"
               onChange={(event) => handleEventGroupChange(event.target.value)}
               value={activeEventGroup}
@@ -577,7 +582,7 @@ export function ActionView({
             ) : null}
             {activeEventGroup !== "all" ? (
               <p className="muted action-toolbar__filter">
-                Event group: {activeEventGroup}.{" "}
+                Scope: {activeScopeLabel}.{" "}
                 <button className="button-link button-link--inline" onClick={() => handleEventGroupChange("all")} type="button">
                   Clear
                 </button>
@@ -969,7 +974,7 @@ export function ActionView({
 
                           updateItem(selectedItem.id, {
                             workstream: nextItem.workstream,
-                            eventGroup: nextItem.eventGroup,
+                            operationalBucket: nextItem.operationalBucket || undefined,
                             issue: nextItem.issue
                           });
                         }}
@@ -990,6 +995,7 @@ export function ActionView({
                           updateItem(selectedItem.id, {
                             eventInstanceId: event.target.value || undefined,
                             subEventId: undefined,
+                            operationalBucket: undefined,
                             legacyEventGroupMigrated: true
                           })
                         }
@@ -1024,19 +1030,19 @@ export function ActionView({
                     </select>
                   </div>
                     <div className="field field--secondary">
-                    <label htmlFor="drawer-event-group">Event Group</label>
+                    <label htmlFor="drawer-operational-bucket">Operational Bucket</label>
                     <select
                       disabled={Boolean(selectedItem.eventInstanceId)}
-                      id="drawer-event-group"
+                      id="drawer-operational-bucket"
                       onChange={(event) =>
                         updateItem(selectedItem.id, {
-                          eventGroup: event.target.value || undefined
+                          operationalBucket: event.target.value || undefined
                         })
                       }
-                      value={selectedItem.eventGroup ?? ""}
+                      value={selectedItem.operationalBucket ?? ""}
                     >
                       <option value="">None</option>
-                      {EVENT_GROUP_OPTIONS.map((option) => (
+                      {OPERATIONAL_BUCKET_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>
@@ -1044,8 +1050,8 @@ export function ActionView({
                     </select>
                     <div className="field-hint">
                       {selectedItem.eventInstanceId
-                        ? "Legacy fallback grouping is disabled while this item is linked to an event instance."
-                        : "Use only for non-event action items that still need a fallback group."}
+                        ? "Operational buckets are disabled while this item is linked to an event instance."
+                        : "Use this only for non-event action items such as general operations or membership work."}
                     </div>
                   </div>
                   {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
@@ -1059,7 +1065,7 @@ export function ActionView({
                           updateItem(selectedItem.id, {
                             issue: nextItem.issue || undefined,
                             workstream: nextItem.workstream,
-                            eventGroup: nextItem.eventGroup,
+                            operationalBucket: nextItem.operationalBucket || undefined,
                             dueDate: nextItem.dueDate
                           });
                         }}

@@ -18,6 +18,11 @@ export type ActionItem = {
   title: string;
   type: string;
   workstream: string;
+  operationalBucket?: string;
+  /**
+   * Legacy Action View grouping field kept only for transitional compatibility.
+   * New domain logic should prefer eventInstanceId or operationalBucket.
+   */
   eventGroup?: string;
   legacyEventGroupMigrated?: boolean;
   eventInstanceId?: string;

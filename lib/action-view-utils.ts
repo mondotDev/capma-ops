@@ -1,5 +1,6 @@
 import type { ActionItem } from "@/lib/sample-data";
-import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
+import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
+import { matchesActionScope } from "@/lib/action-scopes";
 import {
   getActionItemEventGroupLabel,
   getActionItemSubEventLabel
@@ -72,8 +73,12 @@ export function getActionQueryValue(query?: string) {
   return query?.trim() || "";
 }
 
-export function getItemEventGroupLabel(item: ActionItem, eventInstances: EventInstance[] = []) {
-  return getActionItemEventGroupLabel(item, eventInstances);
+export function getItemEventGroupLabel(
+  item: ActionItem,
+  eventInstances: EventInstance[] = [],
+  eventPrograms: EventProgram[] = []
+) {
+  return getActionItemEventGroupLabel(item, eventInstances, eventPrograms);
 }
 
 export function getItemSubEventLabel(item: ActionItem, eventSubEvents: EventSubEvent[] = []) {
@@ -83,7 +88,8 @@ export function getItemSubEventLabel(item: ActionItem, eventSubEvents: EventSubE
 export function getVisibleActionItems(
   items: ActionItem[],
   filters: ActionViewFilters,
-  eventInstances: EventInstance[] = []
+  eventInstances: EventInstance[] = [],
+  eventPrograms: EventProgram[] = []
 ) {
   return items.filter((item) => {
     if (!filters.showCompleted && isTerminalStatus(item.status)) {
@@ -102,17 +108,21 @@ export function getVisibleActionItems(
       matchesActionFilter(item, filters.activeFilter) &&
       matchesActionFocus(item, filters.activeFocus) &&
       matchesActionLens(item, filters.activeLens) &&
-      matchesEventGroupLabel(getItemEventGroupLabel(item, eventInstances), filters.activeEventGroup) &&
+      matchesActionScope(item, filters.activeEventGroup, eventPrograms, eventInstances) &&
       matchesSearchQuery(item, filters.activeQuery)
     );
   });
 }
 
-export function groupItemsByEventGroup(items: ActionItem[], eventInstances: EventInstance[] = []) {
+export function groupItemsByEventGroup(
+  items: ActionItem[],
+  eventInstances: EventInstance[] = [],
+  eventPrograms: EventProgram[] = []
+) {
   const groups: { label: string; items: ActionItem[] }[] = [];
 
   for (const item of items) {
-    const groupLabel = getItemEventGroupLabel(item, eventInstances);
+    const groupLabel = getActionItemEventGroupLabel(item, eventInstances, eventPrograms);
     const existingGroup = groups.find((group) => group.label === groupLabel);
 
     if (existingGroup) {
@@ -155,12 +165,4 @@ export function getActionRowClassName(item: ActionItem) {
   }
 
   return undefined;
-}
-
-function matchesEventGroupLabel(groupLabel: string, eventGroup?: string) {
-  if (!eventGroup || eventGroup === "all") {
-    return true;
-  }
-
-  return groupLabel === eventGroup;
 }

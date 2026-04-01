@@ -5,11 +5,12 @@ import {
   type CollateralItem
 } from "@/lib/collateral-data";
 import { supportsCollateralEventType } from "@/lib/collateral-templates";
+import { matchesCollateralExecutionScope } from "@/lib/action-scopes";
 import {
   resolveActiveEventInstanceId,
+  type EventProgram,
   type EventInstance,
   type EventSubEvent,
-  type EventType
 } from "@/lib/event-instances";
 import {
   DEFAULT_OWNER,
@@ -59,8 +60,10 @@ export function getVisibleCollateralExecutionRows(input: {
   collateralItems: CollateralItem[];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
-  eventTypes: EventType[];
+  eventPrograms?: EventProgram[];
+  eventTypes?: EventProgram[];
 }) {
+  const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
   const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(
     input.activeEventInstanceId,
     input.eventInstances
@@ -72,10 +75,10 @@ export function getVisibleCollateralExecutionRows(input: {
     return [];
   }
 
-  const activeEventType =
-    input.eventTypes.find((eventType) => eventType.id === activeEventInstance.eventTypeId) ?? null;
+  const activeEventProgram =
+    eventPrograms.find((eventProgram) => eventProgram.id === activeEventInstance.eventTypeId) ?? null;
 
-  if (!activeEventType || !supportsCollateralEventType(activeEventType.id)) {
+  if (!activeEventProgram || !supportsCollateralEventType(activeEventProgram.id)) {
     return [];
   }
 
@@ -97,7 +100,7 @@ export function getVisibleCollateralExecutionRows(input: {
       collateralId: item.id,
       eventInstanceId: item.eventInstanceId,
       eventInstanceName: activeEventInstance.name,
-      eventTypeName: activeEventType?.name ?? "Event",
+      eventTypeName: activeEventProgram.name,
       subEventId: item.subEventId,
       subEventName: subEventNameById.get(item.subEventId) ?? "Unassigned",
       title: item.itemName,
@@ -108,7 +111,7 @@ export function getVisibleCollateralExecutionRows(input: {
       printer: item.printer,
       lastUpdated: item.lastUpdated,
       typeLabel: "Collateral",
-      workstreamLabel: activeEventType?.name ?? "Collateral",
+      workstreamLabel: activeEventProgram.name,
       eventGroupLabel: activeEventInstance.name
     }))
     .filter(
@@ -117,7 +120,12 @@ export function getVisibleCollateralExecutionRows(input: {
         matchesCollateralExecutionFocus(row, input.activeFocus) &&
         matchesCollateralExecutionLens(row, input.activeLens) &&
         matchesCollateralExecutionFilter(row, input.activeFilter) &&
-        matchesCollateralExecutionEventGroup(row, input.activeEventGroup) &&
+        matchesCollateralExecutionScope(
+          { eventInstanceId: row.eventInstanceId },
+          input.activeEventGroup,
+          eventPrograms,
+          input.eventInstances
+        ) &&
         matchesCollateralExecutionSearch(row, input.activeQuery)
     )
     .sort(sortCollateralExecutionRows);
@@ -197,14 +205,6 @@ function matchesCollateralExecutionLens(row: CollateralExecutionRow, lens: Actio
   }
 
   return false;
-}
-
-function matchesCollateralExecutionEventGroup(row: CollateralExecutionRow, activeEventGroup: string) {
-  if (!activeEventGroup || activeEventGroup === "all") {
-    return true;
-  }
-
-  return row.eventGroupLabel === activeEventGroup;
 }
 
 function matchesCollateralExecutionDueDate(row: CollateralExecutionRow, activeDueDate: string) {
