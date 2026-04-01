@@ -1,10 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppState } from "@/components/app-state";
 import type { CollateralProfileDeadlineFilter } from "@/components/collateral-profile-card";
 import type { CollateralSummaryFilter } from "@/components/collateral-summary-strip";
 import type { CollateralItem } from "@/lib/collateral-data";
+import {
+  getDashboardSessionReadSelection,
+  type DashboardSessionReadSelection
+} from "@/lib/firebase-dashboard-source";
 import {
   getActionListViewData,
   getSelectedActionItemWorkspace,
@@ -31,6 +35,13 @@ import { createLocalAppReadSource } from "@/lib/read-source/local-app-read-sourc
 import { getActionSummaryCounts, type ActionSummaryCounts } from "@/lib/ops-utils";
 import type { ActionViewFilters } from "@/lib/action-view-utils";
 import type { EventInstance, EventProgram } from "@/lib/event-instances";
+import type { DashboardSourceData } from "@/lib/read-source/app-read-source";
+
+const EMPTY_DASHBOARD_SOURCE: DashboardSourceData = {
+  items: [],
+  issues: [],
+  workstreamSchedules: []
+};
 
 function useLocalAppReadSource() {
   const {
@@ -76,17 +87,60 @@ export function useDashboardReadModel(): {
   dashboardSummary: DashboardLiveSummary;
   urgentPreviewItems: DashboardUrgentPreviewItem[];
   publicationIssueSummaryRows: PublicationIssueSummaryRow[];
+  isLoading: boolean;
+  source: "loading" | "local" | "remote";
 } {
   const readSource = useLocalAppReadSource();
-  const dashboardSource = useMemo(() => readSource.getDashboardSource(), [readSource]);
-  const dashboardSummary = useMemo(() => getDashboardLiveSummary(dashboardSource), [dashboardSource]);
-  const urgentPreviewItems = useMemo(() => getDashboardUrgentPreview(dashboardSource, 2), [dashboardSource]);
-  const publicationIssueSummaryRows = useMemo(() => getPublicationIssueSummary(dashboardSource), [dashboardSource]);
+  const localDashboardSource = useMemo(() => readSource.getDashboardSource(), [readSource]);
+  const [dashboardSessionSource, setDashboardSessionSource] = useState<DashboardSessionReadSelection | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void getDashboardSessionReadSelection().then((selection) => {
+      if (!isActive) {
+        return;
+      }
+
+      setDashboardSessionSource(selection);
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const dashboardSource = useMemo<DashboardSourceData | null>(() => {
+    if (!dashboardSessionSource) {
+      return null;
+    }
+
+    if (dashboardSessionSource.source === "remote") {
+      return dashboardSessionSource.dashboardSource;
+    }
+
+    return localDashboardSource;
+  }, [dashboardSessionSource, localDashboardSource]);
+  const resolvedDashboardSource = dashboardSource ?? EMPTY_DASHBOARD_SOURCE;
+  const dashboardSummary = useMemo(
+    () => getDashboardLiveSummary(resolvedDashboardSource),
+    [resolvedDashboardSource]
+  );
+  const urgentPreviewItems = useMemo(
+    () => getDashboardUrgentPreview(resolvedDashboardSource, 2),
+    [resolvedDashboardSource]
+  );
+  const publicationIssueSummaryRows = useMemo(
+    () => getPublicationIssueSummary(resolvedDashboardSource),
+    [resolvedDashboardSource]
+  );
 
   return {
     dashboardSummary,
     urgentPreviewItems,
-    publicationIssueSummaryRows
+    publicationIssueSummaryRows,
+    isLoading: dashboardSource === null,
+    source: dashboardSessionSource?.source ?? "loading"
   };
 }
 

@@ -11,7 +11,7 @@ import { formatShortDate } from "@/lib/ops-utils";
 export function DashboardView() {
   const router = useRouter();
   const { completeIssue, generateMissingDeliverablesForIssue, openIssue, setIssueStatus } = useAppState();
-  const { dashboardSummary, urgentPreviewItems, publicationIssueSummaryRows } = useDashboardReadModel();
+  const { dashboardSummary, urgentPreviewItems, publicationIssueSummaryRows, isLoading } = useDashboardReadModel();
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
@@ -19,6 +19,17 @@ export function DashboardView() {
     () => reorderVisibleIssues(publicationIssueSummaryRows, activePublicationIssue),
     [activePublicationIssue, publicationIssueSummaryRows]
   );
+
+  if (isLoading) {
+    return (
+      <section className="dashboard-grid">
+        <div className="card card--secondary">
+          <div className="card__title">DASHBOARD</div>
+          <div className="muted">Loading dashboard...</div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="dashboard-grid">
