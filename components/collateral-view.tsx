@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
+import { useCollateralWorkspaceReadModel } from "@/components/app-read-models";
 import {
   CollateralProfileCard,
   type CollateralProfileDeadlineFilter
@@ -18,17 +19,13 @@ import {
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
-  isCollateralTerminalStatus,
   normalizeCollateralWorkflowStatus,
   type CollateralItem,
-  type LegDayCollateralProfile
 } from "@/lib/collateral-data";
 import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
 import {
   createSuggestedEventInstanceName,
-  getUnassignedSubEventId,
   deriveEventDateRange,
-  resolveActiveEventInstanceId,
   type EventDateMode
 } from "@/lib/event-instances";
 import {
@@ -76,18 +73,12 @@ export function CollateralView({
   initialSelectedCollateralId?: string;
 }) {
   const {
-    activeEventInstanceId,
     addCollateralItem,
     applyDefaultTemplateToInstance,
-    collateralItems,
-    collateralProfiles,
     createEventInstance,
     defaultOwnerForNewItems,
     deleteCollateralItem,
     ensureEventInstanceUnassignedSubEvent,
-    eventInstances,
-    eventSubEvents,
-    eventTypes,
     setActiveEventInstanceId,
     setCollateralProfile,
     updateCollateralItem
@@ -113,25 +104,26 @@ export function CollateralView({
     collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
     eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
   }));
-  const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(activeEventInstanceId, eventInstances);
-  const selectedEventInstance =
-    eventInstances.find((instance) => instance.id === resolvedActiveEventInstanceId) ?? null;
-  const currentEventType =
-    eventTypes.find((eventType) => eventType.id === selectedEventInstance?.eventTypeId) ?? null;
-  const defaultTemplatePack = selectedEventInstance
-    ? getDefaultTemplatePackForEventType(selectedEventInstance.eventTypeId)
-    : null;
-  const supportedCreateEventTypes = useMemo(
-    () => eventTypes.filter((eventType) => supportsCollateralEventType(eventType.id)),
-    [eventTypes]
-  );
+  const {
+    workspaceBundle,
+    collateralListView,
+    selectedWorkspace,
+    eventTypes,
+    eventInstances
+  } = useCollateralWorkspaceReadModel({
+    activeSummaryFilter,
+    activeProfileDeadlineFilter,
+    selectedId,
+    draftCollateralItem
+  });
+  const resolvedActiveEventInstanceId = workspaceBundle.resolvedActiveEventInstanceId;
+  const selectedEventInstance = workspaceBundle.selectedEventInstance;
+  const currentEventType = workspaceBundle.currentEventType;
+  const defaultTemplatePack = workspaceBundle.defaultTemplatePack;
+  const supportedCreateEventTypes = workspaceBundle.supportedCreateEventTypes;
   const isSelectedCreateEventTypeSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
-  const isSelectedEventTypeSupported = selectedEventInstance
-    ? supportsCollateralEventType(selectedEventInstance.eventTypeId)
-    : false;
-  const activeProfile =
-    collateralProfiles[resolvedActiveEventInstanceId] ??
-    (selectedEventInstance?.eventTypeId === "legislative-day" ? getDefaultLegDayProfile(selectedEventInstance) : null);
+  const isSelectedEventTypeSupported = workspaceBundle.isSelectedEventTypeSupported;
+  const activeProfile = workspaceBundle.activeProfile;
 
   useEffect(() => {
     setIsActionsMenuOpen(false);
@@ -173,31 +165,6 @@ export function CollateralView({
     pendingOpenIntent.eventInstanceId,
     resolvedActiveEventInstanceId,
     setActiveEventInstanceId
-  ]);
-
-  useEffect(() => {
-    if (!pendingOpenIntent.collateralId) {
-      return;
-    }
-
-    if (pendingOpenIntent.eventInstanceId && pendingOpenIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
-      return;
-    }
-
-    if (
-      collateralItems.some(
-        (item) => item.id === pendingOpenIntent.collateralId && item.eventInstanceId === resolvedActiveEventInstanceId
-      )
-    ) {
-      setSelectedId((current) => (current === pendingOpenIntent.collateralId ? current : pendingOpenIntent.collateralId));
-    }
-
-    setPendingOpenIntent((current) => ({ ...current, collateralId: "" }));
-  }, [
-    collateralItems,
-    pendingOpenIntent.collateralId,
-    pendingOpenIntent.eventInstanceId,
-    resolvedActiveEventInstanceId,
   ]);
 
   useEffect(() => {
@@ -250,104 +217,48 @@ export function CollateralView({
     }));
   }, [instanceFormState.eventTypeId, supportedCreateEventTypes]);
 
-  const instanceSubEvents = useMemo(
-    () => eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === resolvedActiveEventInstanceId),
-    [resolvedActiveEventInstanceId, eventSubEvents]
-  );
-  const instanceItems = useMemo(
-    () => collateralItems.filter((item) => item.eventInstanceId === resolvedActiveEventInstanceId),
-    [resolvedActiveEventInstanceId, collateralItems]
-  );
-  const visibleInstanceItems = useMemo(() => {
-    if (!draftCollateralItem || draftCollateralItem.eventInstanceId !== resolvedActiveEventInstanceId) {
-      return instanceItems;
+  const instanceSubEvents = workspaceBundle.instanceSubEvents;
+  const instanceItems = collateralListView.instanceItems;
+  const visibleInstanceItems = collateralListView.visibleInstanceItems;
+  const groupedItems = collateralListView.groupedItems;
+  const summary = collateralListView.summary;
+  const selectedItem = selectedWorkspace.selectedItem;
+  const subEventNameById = selectedWorkspace.subEventNameById;
+  const selectedSubEventOptions = selectedWorkspace.subEventOptions;
+  const emptySubEventId = selectedWorkspace.emptySubEventId;
+  const selectedEventDateRange = workspaceBundle.selectedEventDateRange;
+
+  useEffect(() => {
+    if (!pendingOpenIntent.collateralId) {
+      return;
     }
 
-    return [draftCollateralItem, ...instanceItems];
-  }, [resolvedActiveEventInstanceId, draftCollateralItem, instanceItems]);
-  const subEventNameById = useMemo(
-    () => new Map(instanceSubEvents.map((subEvent) => [subEvent.id, subEvent.name])),
-    [instanceSubEvents]
-  );
-  const activeItems = useMemo(
-    () => instanceItems.filter((item) => !isCollateralTerminalStatus(item.status)),
-    [instanceItems]
-  );
-  const filteredVisibleItems = useMemo(
-    () =>
-      visibleInstanceItems.filter((item) =>
-        matchesCollateralSummaryFilter(item, activeSummaryFilter) &&
-        matchesCollateralProfileDeadlineFilter(item, activeProfile, activeProfileDeadlineFilter)
-      ),
-    [activeProfile, activeProfileDeadlineFilter, activeSummaryFilter, visibleInstanceItems]
-  );
-  const groupedItems = useMemo(
-    () => groupCollateralItems(filteredVisibleItems, instanceSubEvents, subEventNameById),
-    [filteredVisibleItems, instanceSubEvents, subEventNameById]
-  );
-  const selectedItem = visibleInstanceItems.find((item) => item.id === selectedId) ?? null;
-  const selectedEventDateRange =
-    selectedEventInstance && selectedEventInstance.startDate && selectedEventInstance.endDate
-      ? selectedEventInstance.startDate === selectedEventInstance.endDate
-        ? formatShortDate(selectedEventInstance.startDate)
-        : `${formatShortDate(selectedEventInstance.startDate)} - ${formatShortDate(selectedEventInstance.endDate)}`
-      : "";
+    if (pendingOpenIntent.eventInstanceId && pendingOpenIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
+      return;
+    }
+
+    if (instanceItems.some((item) => item.id === pendingOpenIntent.collateralId)) {
+      setSelectedId((current) => (current === pendingOpenIntent.collateralId ? current : pendingOpenIntent.collateralId));
+    }
+
+    setPendingOpenIntent((current) => ({ ...current, collateralId: "" }));
+  }, [
+    instanceItems,
+    pendingOpenIntent.collateralId,
+    pendingOpenIntent.eventInstanceId,
+    resolvedActiveEventInstanceId
+  ]);
 
   useEffect(() => {
     setIsEditingTitle(false);
     setTitleDraft(selectedItem?.itemName ?? "");
   }, [selectedItem?.id, selectedItem?.itemName]);
-  const summary = useMemo(
-    () => {
-      const atPrinterItems = activeItems.filter((item) => item.status === "Sent to Printer");
-      const parsedAtPrinterQuantities = atPrinterItems.map((item) => {
-        const trimmedQuantity = item.quantity.trim();
-        if (!trimmedQuantity || !/^\d+$/.test(trimmedQuantity)) {
-          return null;
-        }
-
-        return Number.parseInt(trimmedQuantity, 10);
-      });
-      const canShowAtPrinterQuantity =
-        atPrinterItems.length > 0 && parsedAtPrinterQuantities.every((quantity) => quantity !== null);
-
-      return {
-        active: activeItems.length,
-        needsAttention: activeItems.filter(
-          (item) => isCollateralBlocked(item) || isCollateralOverdue(item)
-        ).length,
-        atPrinter: atPrinterItems.length,
-        atPrinterQuantity: canShowAtPrinterQuantity
-          ? parsedAtPrinterQuantities.reduce((total, quantity) => total + (quantity ?? 0), 0)
-          : null,
-        readyForPrint: activeItems.filter((item) => item.status === "Ready for Print").length
-      };
-    },
-    [activeItems]
-  );
-  const eventInstancesByType = useMemo(() => {
-    const instancesByType = new Map<string, typeof eventInstances>();
-
-    for (const instance of [...eventInstances].sort((a, b) => a.startDate.localeCompare(b.startDate))) {
-      if (!instancesByType.has(instance.eventTypeId)) {
-        instancesByType.set(instance.eventTypeId, []);
-      }
-
-      instancesByType.get(instance.eventTypeId)!.push(instance);
-    }
-
-    return eventTypes
-      .map((eventType) => ({
-        eventType,
-        instances: instancesByType.get(eventType.id) ?? []
-      }))
-      .filter((group) => group.instances.length > 0);
-  }, [eventInstances, eventTypes]);
+  const eventInstancesByType = workspaceBundle.eventInstancesByType;
   const pendingTemplateInstance =
     pendingTemplateInstanceId
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
-  const hasAppliedTemplateItems = instanceItems.some((item) => Boolean(item.templateOriginId));
+  const hasAppliedTemplateItems = workspaceBundle.hasAppliedTemplateItems;
   const hasActiveCollateralFilters =
     activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none";
   const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
@@ -911,10 +822,10 @@ export function CollateralView({
                         onChange={(event) => patchCollateralItem(selectedItem.id, { subEventId: event.target.value })}
                         value={selectedItem.subEventId}
                       >
-                        {instanceSubEvents.length === 0 ? (
-                          <option value={getUnassignedSubEventId(resolvedActiveEventInstanceId)}>Unassigned</option>
+                        {selectedSubEventOptions.length === 0 ? (
+                          <option value={emptySubEventId}>Unassigned</option>
                         ) : null}
-                        {instanceSubEvents.map((subEvent) => (
+                        {selectedSubEventOptions.map((subEvent) => (
                           <option key={subEvent.id} value={subEvent.id}>
                             {subEvent.name}
                           </option>
@@ -1392,52 +1303,6 @@ export function CollateralView({
     );
   }
 
-function groupCollateralItems(
-  items: CollateralItem[],
-  subEvents: { id: string; name: string; sortOrder: number }[],
-  subEventNameById: Map<string, string>
-) {
-  const grouped = new Map<string, CollateralItem[]>();
-
-  for (const subEvent of subEvents) {
-    grouped.set(subEvent.name, []);
-  }
-
-  for (const item of items) {
-    const subEventName = subEventNameById.get(item.subEventId) ?? "Unassigned";
-
-    if (!grouped.has(subEventName)) {
-      grouped.set(subEventName, []);
-    }
-
-    grouped.get(subEventName)!.push(item);
-  }
-
-  return Array.from(grouped.entries())
-    .map(([subEvent, groupedItems]) => [
-      subEvent,
-      [...groupedItems].sort((a, b) => {
-        const aHasDeadline = a.dueDate.length > 0;
-        const bHasDeadline = b.dueDate.length > 0;
-
-        if (aHasDeadline !== bHasDeadline) {
-          return aHasDeadline ? -1 : 1;
-        }
-
-        if (aHasDeadline && bHasDeadline) {
-          const dateCompare = a.dueDate.localeCompare(b.dueDate);
-
-          if (dateCompare !== 0) {
-            return dateCompare;
-          }
-        }
-
-        return a.itemName.localeCompare(b.itemName);
-      })
-    ] as const)
-    .filter(([, groupedItems]) => groupedItems.length > 0);
-}
-
 function isInstanceFormValid(formState: CreateInstanceFormState) {
   const { startDate, endDate } = deriveEventDateRange(formState.dateMode, formState.dates);
 
@@ -1447,19 +1312,6 @@ function isInstanceFormValid(formState: CreateInstanceFormState) {
     startDate.length > 0 &&
     endDate.length > 0
   );
-}
-
-function getDefaultLegDayProfile(instance: { startDate: string; endDate: string } | null): LegDayCollateralProfile {
-  return {
-    eventStartDate: instance?.startDate ?? "",
-    eventEndDate: instance?.endDate ?? "",
-    roomBlockDeadline: "",
-    roomBlockNote: "",
-    logoDeadline: "",
-    logoDeadlineNote: "",
-    externalPrintingDue: "",
-    internalPrintingStart: ""
-  };
 }
 
 function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
@@ -1528,30 +1380,6 @@ function getCollateralDrawerDueText(item: CollateralItem) {
   return `Due ${formatShortDate(item.dueDate)}`;
 }
 
-function matchesCollateralSummaryFilter(item: CollateralItem, filter: CollateralSummaryFilter) {
-  if (filter === "all") {
-    return true;
-  }
-
-  if (filter === "active") {
-    return !isCollateralTerminalStatus(item.status);
-  }
-
-  if (filter === "needsAttention") {
-    return isCollateralBlocked(item) || isCollateralOverdue(item);
-  }
-
-  if (filter === "atPrinter") {
-    return item.status === "Sent to Printer";
-  }
-
-  if (filter === "readyForPrint") {
-    return item.status === "Ready for Print";
-  }
-
-  return true;
-}
-
 function getCollateralSummaryFilterLabel(filter: CollateralSummaryFilter) {
   if (filter === "active") {
     return "Active";
@@ -1570,47 +1398,6 @@ function getCollateralSummaryFilterLabel(filter: CollateralSummaryFilter) {
   }
 
   return "All";
-}
-
-function matchesCollateralProfileDeadlineFilter(
-  item: CollateralItem,
-  profile: LegDayCollateralProfile | null,
-  filter: CollateralProfileDeadlineFilter
-) {
-  if (filter === "none") {
-    return true;
-  }
-
-  if (isCollateralTerminalStatus(item.status) || item.dueDate.length === 0 || !profile) {
-    return false;
-  }
-
-  const targetDate = getProfileDeadlineDate(profile, filter);
-
-  if (!targetDate) {
-    return false;
-  }
-
-  return item.dueDate <= targetDate;
-}
-
-function getProfileDeadlineDate(
-  profile: LegDayCollateralProfile,
-  filter: CollateralProfileDeadlineFilter
-) {
-  if (filter === "logoDeadline") {
-    return profile.logoDeadline;
-  }
-
-  if (filter === "externalPrintingDue") {
-    return profile.externalPrintingDue;
-  }
-
-  if (filter === "internalPrintingStart") {
-    return profile.internalPrintingStart;
-  }
-
-  return "";
 }
 
 function getCollateralProfileDeadlineFilterLabel(filter: CollateralProfileDeadlineFilter) {

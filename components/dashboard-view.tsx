@@ -1,51 +1,23 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useDashboardReadModel } from "@/components/app-read-models";
 import { useAppState } from "@/components/app-state";
 import { DashboardStuckCard } from "@/components/dashboard-stuck-card";
-import {
-  formatDashboardItem,
-  getImmediateRiskPreview,
-  formatShortDate,
-  getDailyLoad,
-  getDashboardMetrics,
-  getWorkstreamDateContext,
-  getWorkstreamSummary,
-  getVisiblePublicationIssues,
-  isBlockedItem,
-  isItemDueSoon,
-  isOverdue,
-  isWaitingIssue
-} from "@/lib/ops-utils";
+import type { PublicationIssueSummaryRow } from "@/lib/queries/dashboard/dashboard-queries";
+import { formatShortDate } from "@/lib/ops-utils";
 
 export function DashboardView() {
   const router = useRouter();
-  const { completeIssue, generateMissingDeliverablesForIssue, items, issues, openIssue, setIssueStatus, workstreamSchedules } =
-    useAppState();
+  const { completeIssue, generateMissingDeliverablesForIssue, openIssue, setIssueStatus } = useAppState();
+  const { dashboardSummary, urgentPreviewItems, publicationIssueSummaryRows } = useDashboardReadModel();
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
-  const dashboardMetrics = getDashboardMetrics(items);
-  const extendedDailyLoad = getDailyLoad(items, 14);
-  const workstreamSummary = getWorkstreamSummary(items);
-  const highestLoadCount = Math.max(...extendedDailyLoad.map((entry) => entry.count), 0);
-  const overviewLoadRows = [extendedDailyLoad.slice(0, 7), extendedDailyLoad.slice(7, 14)];
-  const sponsorRiskCounts = {
-    total: dashboardMetrics.sponsorRiskItems.length,
-    overdue: dashboardMetrics.sponsorRiskItems.filter((item) => isOverdue(item.dueDate)).length,
-    dueSoon: dashboardMetrics.sponsorRiskItems.filter((item) => isItemDueSoon(item)).length,
-    waiting: dashboardMetrics.sponsorRiskItems.filter((item) => isWaitingIssue(item)).length
-  };
-  const productionRiskCounts = {
-    total: dashboardMetrics.productionRiskItems.length,
-    blocked: dashboardMetrics.productionRiskItems.filter((item) => isBlockedItem(item)).length,
-    dueSoon: dashboardMetrics.productionRiskItems.filter((item) => isItemDueSoon(item)).length,
-    waiting: dashboardMetrics.productionRiskItems.filter((item) => isWaitingIssue(item) && !isBlockedItem(item)).length
-  };
-  const visiblePublicationIssues = reorderVisibleIssues(
-    getVisiblePublicationIssues(issues),
-    activePublicationIssue
+  const visiblePublicationIssues = useMemo(
+    () => reorderVisibleIssues(publicationIssueSummaryRows, activePublicationIssue),
+    [activePublicationIssue, publicationIssueSummaryRows]
   );
 
   return (
@@ -55,7 +27,7 @@ export function DashboardView() {
           <button
             className="command-zone__header"
             onClick={() =>
-              router.push(dashboardMetrics.overdue > 0 ? "/action?filter=overdue" : "/action?filter=dueSoon")
+              router.push(dashboardSummary.overdue > 0 ? "/action?filter=overdue" : "/action?filter=dueSoon")
             }
             type="button"
           >
@@ -70,7 +42,7 @@ export function DashboardView() {
               type="button"
             >
               <span className="command-metric__label">Overdue</span>
-              <strong className="command-metric__value">{dashboardMetrics.overdue}</strong>
+              <strong className="command-metric__value">{dashboardSummary.overdue}</strong>
             </button>
             <button
               aria-label="Due Soon: active items due in the next three days"
@@ -80,38 +52,34 @@ export function DashboardView() {
               type="button"
             >
               <span className="command-metric__label">Due Soon</span>
-              <strong className="command-metric__value">{dashboardMetrics.dueSoon}</strong>
+              <strong className="command-metric__value">{dashboardSummary.dueSoon}</strong>
             </button>
             <button
               aria-label="Peak Day: highest number of active items due on a single day in the next seven days"
               className="command-metric command-metric--peak"
-              disabled={!dashboardMetrics.peakUpcomingLoadDate}
+              disabled={!dashboardSummary.peakUpcomingLoadDate}
               onClick={() => {
-                if (!dashboardMetrics.peakUpcomingLoadDate) {
+                if (!dashboardSummary.peakUpcomingLoadDate) {
                   return;
                 }
 
-                router.push(`/action?dueDate=${encodeURIComponent(dashboardMetrics.peakUpcomingLoadDate)}`);
+                router.push(`/action?dueDate=${encodeURIComponent(dashboardSummary.peakUpcomingLoadDate)}`);
               }}
               title="Highest number of active items due on a single day in the next seven days"
               type="button"
             >
               <span className="command-metric__label">Peak Day</span>
-              <strong className="command-metric__value">{dashboardMetrics.peakUpcomingLoadCount}</strong>
+              <strong className="command-metric__value">{dashboardSummary.peakUpcomingLoadCount}</strong>
             </button>
           </div>
           <div className="command-zone__list">
-            {dashboardMetrics.urgentItems.length > 0 ? (
-              dashboardMetrics.urgentItems.slice(0, 2).map((item) => {
-                const preview = getImmediateRiskPreview(item);
-
-                return (
-                  <div className="risk-preview" key={item.id} title={`${preview.title} - ${preview.meta}`}>
-                    <div className="risk-preview__title">{preview.title}</div>
-                    <div className="risk-preview__meta">{preview.meta}</div>
-                  </div>
-                );
-              })
+            {urgentPreviewItems.length > 0 ? (
+              urgentPreviewItems.map((item) => (
+                <div className="risk-preview" key={item.id} title={`${item.title} - ${item.meta}`}>
+                  <div className="risk-preview__title">{item.title}</div>
+                  <div className="risk-preview__meta">{item.meta}</div>
+                </div>
+              ))
             ) : (
               <div className="muted">No urgent items right now</div>
             )}
@@ -122,19 +90,19 @@ export function DashboardView() {
       <section className="dashboard-main-grid">
         <div className="dashboard-main-column dashboard-main-column--left">
           <DashboardStuckCard
-            blockedCount={dashboardMetrics.blockedCount}
+            blockedCount={dashboardSummary.blockedCount}
             onOpenBlocked={() => router.push("/action?filter=blocked")}
             onOpenWaiting={() => router.push("/action?filter=waiting")}
-            stuckReasonCounts={dashboardMetrics.stuckReasonCounts}
-            waitingCount={dashboardMetrics.waiting}
+            stuckReasonCounts={dashboardSummary.stuckReasonCounts}
+            waitingCount={dashboardSummary.waiting}
           />
 
           <div className="card card--secondary card--muted">
             <div className="card__title">WORKSTREAM SUMMARY</div>
             <div className="workstream-summary">
-              {workstreamSummary.length > 0 ? (
-                workstreamSummary.slice(0, 5).map((entry) => {
-                    const dateContext = getWorkstreamDateContext(entry.workstream, workstreamSchedules, issues);
+              {dashboardSummary.workstreamSummaryRows.length > 0 ? (
+                dashboardSummary.workstreamSummaryRows.slice(0, 5).map((entry) => {
+                    const dateContext = entry.dateContext;
 
                     return (
                       <div
@@ -171,15 +139,6 @@ export function DashboardView() {
             <div className="card__title">PUBLICATIONS</div>
             <div className="simple-list simple-list--tight">
               {visiblePublicationIssues.map((issue) => {
-                const issueProgress = dashboardMetrics.issueProgress[issue.label] ?? { complete: 0, total: 0 };
-                const progressPercent =
-                  issueProgress.total > 0 ? Math.round((issueProgress.complete / issueProgress.total) * 100) : 0;
-                const canCompleteIssue = issueProgress.total > 0 && issueProgress.complete === issueProgress.total;
-                const progressCopy =
-                  issueProgress.total > 0
-                    ? `${issueProgress.complete} of ${issueProgress.total} complete`
-                    : "No deliverables yet";
-
                 return (
                   <div
                     className={
@@ -203,13 +162,13 @@ export function DashboardView() {
                         </div>
                         <div className="publication-row__status-line">
                           <span className="publication-row__status">{issue.status}</span>
-                          <span className="publication-row__progress-copy">{progressCopy}</span>
+                          <span className="publication-row__progress-copy">{issue.progressCopy}</span>
                         </div>
                       </div>
                       <div aria-hidden="true" className="publication-row__progress">
-                        <span className="publication-row__progress-bar" style={{ width: `${progressPercent}%` }} />
+                        <span className="publication-row__progress-bar" style={{ width: `${issue.progressPercent}%` }} />
                       </div>
-                      {!issue.dueDate ? <div className="publication-row__warning">missing due date</div> : null}
+                      {issue.isMissingDueDate ? <div className="publication-row__warning">missing due date</div> : null}
                     </div>
                     <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
                       {issue.status === "Planned" ? (
@@ -277,7 +236,7 @@ export function DashboardView() {
                         {issue.status === "Open" && issuePendingCompletion !== issue.label ? (
                           <button
                             className={
-                              canCompleteIssue
+                              issue.canCompleteIssue
                                 ? "button-link button-link--inline-secondary publication-row__complete publication-row__complete--ready"
                                 : "button-link button-link--inline-secondary publication-row__complete"
                             }
@@ -338,16 +297,16 @@ export function DashboardView() {
             <div className="card__title">UPCOMING LOAD</div>
             <div className="load-section-label">Next 14 Days</div>
             <div className="load-grid" aria-label="Load over the next 14 days">
-              {overviewLoadRows.map((row, rowIndex) => (
+              {dashboardSummary.overviewLoadRows.map((row, rowIndex) => (
                 <div className="load-grid__row" key={`row-${rowIndex}`}>
                   <div className="load-grid__track">
                     {row.map((entry) => {
                       const loadLevel =
                         entry.count === 0
                           ? "load-grid__cell--zero"
-                          : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.75
+                          : dashboardSummary.highestLoadCount > 0 && entry.count / dashboardSummary.highestLoadCount >= 0.75
                             ? "load-grid__cell--high"
-                            : highestLoadCount > 0 && entry.count / highestLoadCount >= 0.4
+                            : dashboardSummary.highestLoadCount > 0 && entry.count / dashboardSummary.highestLoadCount >= 0.4
                               ? "load-grid__cell--medium"
                               : "load-grid__cell--low";
 
@@ -387,30 +346,32 @@ export function DashboardView() {
             className="card card--clickable card--secondary"
             onClick={() =>
               router.push(
-                dashboardMetrics.sponsorRiskItems.length > 0 ? "/action?focus=sponsor" : "/action?filter=waiting"
+                dashboardSummary.sponsorRisk.total > 0 ? "/action?focus=sponsor" : "/action?filter=waiting"
               )
             }
             type="button"
           >
             <div className="card__title">SPONSOR RISK</div>
             <div className="risk-summary">
-              {sponsorRiskCounts.total > 0 ? (
+              {dashboardSummary.sponsorRisk.total > 0 ? (
                 <>
                   <div className="risk-summary__top">
-                    <strong className="risk-summary__total">{sponsorRiskCounts.total}</strong>
+                    <strong className="risk-summary__total">{dashboardSummary.sponsorRisk.total}</strong>
                     <span className="risk-summary__label">Sponsor items at risk</span>
                   </div>
                   <div className="risk-summary__signals">
-                    <span className="risk-chip risk-chip--waiting">{sponsorRiskCounts.waiting} waiting</span>
-                    <span className="risk-chip risk-chip--due-soon">{sponsorRiskCounts.dueSoon} due soon</span>
-                    <span className="risk-chip risk-chip--overdue">{sponsorRiskCounts.overdue} overdue</span>
+                    <span className="risk-chip risk-chip--waiting">{dashboardSummary.sponsorRisk.waiting} waiting</span>
+                    <span className="risk-chip risk-chip--due-soon">{dashboardSummary.sponsorRisk.dueSoon} due soon</span>
+                    <span className="risk-chip risk-chip--overdue">{dashboardSummary.sponsorRisk.overdue} overdue</span>
                   </div>
-                  <div
-                    className="risk-summary__example detail-row--truncate"
-                    title={formatDashboardItem(dashboardMetrics.sponsorRiskItems[0])}
-                  >
-                    {formatDashboardItem(dashboardMetrics.sponsorRiskItems[0])}
-                  </div>
+                  {dashboardSummary.sponsorRisk.example ? (
+                    <div
+                      className="risk-summary__example detail-row--truncate"
+                      title={dashboardSummary.sponsorRisk.example}
+                    >
+                      {dashboardSummary.sponsorRisk.example}
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="muted">No sponsor risks flagged</div>
@@ -424,7 +385,7 @@ export function DashboardView() {
             className="card card--clickable card--secondary"
             onClick={() =>
               router.push(
-                dashboardMetrics.productionRiskItems.length > 0
+                dashboardSummary.productionRisk.total > 0
                   ? "/action?focus=production"
                   : "/action?filter=dueSoon"
               )
@@ -433,23 +394,25 @@ export function DashboardView() {
           >
             <div className="card__title">PRODUCTION RISK</div>
             <div className="risk-summary">
-              {productionRiskCounts.total > 0 ? (
+              {dashboardSummary.productionRisk.total > 0 ? (
                 <>
                   <div className="risk-summary__top">
-                    <strong className="risk-summary__total">{productionRiskCounts.total}</strong>
+                    <strong className="risk-summary__total">{dashboardSummary.productionRisk.total}</strong>
                     <span className="risk-summary__label">Production items at risk</span>
                   </div>
                   <div className="risk-summary__signals">
-                    <span className="risk-chip risk-chip--blocked">{productionRiskCounts.blocked} blocked</span>
-                    <span className="risk-chip risk-chip--waiting">{productionRiskCounts.waiting} waiting</span>
-                    <span className="risk-chip risk-chip--due-soon">{productionRiskCounts.dueSoon} due soon</span>
+                    <span className="risk-chip risk-chip--blocked">{dashboardSummary.productionRisk.blocked} blocked</span>
+                    <span className="risk-chip risk-chip--waiting">{dashboardSummary.productionRisk.waiting} waiting</span>
+                    <span className="risk-chip risk-chip--due-soon">{dashboardSummary.productionRisk.dueSoon} due soon</span>
                   </div>
-                  <div
-                    className="risk-summary__example detail-row--truncate"
-                    title={formatDashboardItem(dashboardMetrics.productionRiskItems[0])}
-                  >
-                    {formatDashboardItem(dashboardMetrics.productionRiskItems[0])}
-                  </div>
+                  {dashboardSummary.productionRisk.example ? (
+                    <div
+                      className="risk-summary__example detail-row--truncate"
+                      title={dashboardSummary.productionRisk.example}
+                    >
+                      {dashboardSummary.productionRisk.example}
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="muted">No production risks flagged</div>
@@ -511,7 +474,7 @@ function formatCompletionBlockedFeedback(issue: string, blockedDeliverables: str
 }
 
 function reorderVisibleIssues(
-  issues: ReturnType<typeof getVisiblePublicationIssues>,
+  issues: PublicationIssueSummaryRow[],
   activeIssue: string | null
 ) {
   if (!activeIssue) {

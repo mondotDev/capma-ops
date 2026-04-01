@@ -30,6 +30,21 @@ import {
   getActionItemEventGroupLabel,
   getActionItemSubEventLabel
 } from "../lib/events/event-labels";
+import {
+  getDashboardLiveSummary,
+  getDashboardUrgentPreview,
+  getPublicationIssueSummary
+} from "../lib/queries/dashboard/dashboard-queries";
+import {
+  getActionListViewData,
+  getSelectedActionItemWorkspace
+} from "../lib/queries/action/action-view-queries";
+import {
+  getCollateralEventInstanceWorkspaceBundle,
+  getCollateralInstanceListView,
+  getSelectedCollateralItemWorkspace
+} from "../lib/queries/collateral/collateral-workspace-queries";
+import { createLocalAppReadSource } from "../lib/read-source/local-app-read-source";
 import type { ActionItem } from "../lib/sample-data";
 import { localAppStateRepository } from "../lib/state/local-app-state-repository";
 import {
@@ -68,7 +83,8 @@ import {
   syncActionItemStatus,
   syncActionItemWorkstream,
   syncEventGroupWithWorkstream,
-  validateActionItemInput
+  validateActionItemInput,
+  type IssueRecord
 } from "../lib/ops-utils";
 import { normalizeActionWorkflowStatus } from "../lib/workflow-status";
 
@@ -1294,4 +1310,392 @@ test("event label helpers resolve linked event instance and sub-event names", ()
   assert.equal(getActionItemEventGroupLabel(item, state.eventInstances), "Legislative Day 2026");
   assert.equal(getActionItemSubEventLabel(item, state.eventSubEvents), "Legislative Visits");
   assert.equal(getItemEventGroupLabel(item, state.eventInstances), "Legislative Day 2026");
+});
+
+test("dashboard read-side summary returns live counts and preview-ready aggregates", () => {
+  const productionNoteEntry = createActionNoteEntry("Missing printer confirmation");
+  const items = [
+    createItem({
+      title: "Overdue sponsor follow-up",
+      workstream: "Membership Campaigns",
+      dueDate: "2026-03-28",
+      waitingOn: "Sponsor"
+    }),
+    createItem({
+      title: "Production proof review",
+      workstream: "Legislative Day",
+      dueDate: "2026-03-31",
+      blockedBy: "Printer proof",
+      noteEntries: productionNoteEntry ? [productionNoteEntry] : []
+    }),
+    createItem({
+      title: "Newsbrief draft",
+      workstream: "Newsbrief",
+      issue: "March 2026 Newsbrief",
+      dueDate: "2026-04-01",
+      status: "In Progress"
+    })
+  ];
+  const issues: IssueRecord[] = [
+    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+    { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
+  ];
+  const workstreamSchedules = getDefaultWorkstreamSchedules();
+
+  const summary = withMockedToday("2026-03-30T12:00:00", () =>
+    getDashboardLiveSummary({ items, issues, workstreamSchedules })
+  );
+
+  assert.equal(summary.overdue, 1);
+  assert.equal(summary.dueSoon, 2);
+  assert.equal(summary.blockedCount, 1);
+  assert.equal(summary.overviewLoadRows.length, 2);
+  assert.equal(summary.workstreamSummaryRows.length > 0, true);
+  assert.equal(summary.sponsorRisk.total, 1);
+  assert.equal(summary.productionRisk.total, 1);
+});
+
+test("dashboard urgent preview query returns preview-ready urgent rows", () => {
+  const items = [
+    createItem({
+      id: "urgent-1",
+      title: "Urgent overdue item",
+      workstream: "Legislative Day",
+      dueDate: "2026-03-28"
+    }),
+    createItem({
+      id: "urgent-2",
+      title: "Urgent due soon item",
+      workstream: "Best Pest Expo",
+      dueDate: "2026-03-31"
+    })
+  ];
+
+  const preview = withMockedToday("2026-03-30T12:00:00", () =>
+    getDashboardUrgentPreview(
+      { items, issues: [], workstreamSchedules: getDefaultWorkstreamSchedules() },
+      2
+    )
+  );
+
+  assert.deepEqual(preview.map((item) => item.id), ["urgent-1", "urgent-2"]);
+  assert.equal(preview[0]?.title, "Urgent overdue item");
+  assert.match(preview[0]?.meta ?? "", /Overdue/);
+});
+
+test("publication issue summary query returns progress-ready rows for visible publication issues", () => {
+  const items = [
+    createItem({
+      title: "Draft CEO message",
+      workstream: "Newsbrief",
+      issue: "March 2026 Newsbrief",
+      type: "Deliverable",
+      status: "Complete"
+    }),
+    createItem({
+      title: "Layout proof",
+      workstream: "Newsbrief",
+      issue: "March 2026 Newsbrief",
+      type: "Deliverable",
+      status: "In Progress"
+    })
+  ];
+  const issues: IssueRecord[] = [
+    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+    { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
+  ];
+
+  const publicationRows = withMockedToday("2026-03-30T12:00:00", () =>
+    getPublicationIssueSummary({
+      items,
+      issues,
+      workstreamSchedules: getDefaultWorkstreamSchedules()
+    })
+  );
+
+  assert.equal(publicationRows.length, 2);
+  assert.equal(publicationRows[0]?.label, "March 2026 Newsbrief");
+  assert.equal(publicationRows[0]?.completeCount, 1);
+  assert.equal(publicationRows[0]?.totalCount, 2);
+  assert.equal(publicationRows[0]?.progressPercent, 50);
+  assert.equal(publicationRows[0]?.canCompleteIssue, false);
+});
+
+test("action view list query returns grouped mixed rows and event options without loading drawer detail", () => {
+  const items = [
+    createItem({
+      id: "action-1",
+      title: "Leg Day action",
+      eventInstanceId: "legislative-day-2026",
+      dueDate: "2026-03-31",
+      owner: "Melissa"
+    }),
+    createItem({
+      id: "action-2",
+      title: "General ops action",
+      workstream: "General Operations",
+      eventGroup: "General Operations"
+    })
+  ];
+  const collateralItems: CollateralItem[] = [
+    {
+      id: "collateral-1",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits",
+      itemName: "Visit folder",
+      status: "Ready for Print",
+      owner: "Melissa",
+      blockedBy: "",
+      dueDate: "2026-03-31",
+      printer: "",
+      quantity: "",
+      updateType: "Reuse",
+      noteEntries: [],
+      lastUpdated: "2026-03-29"
+    }
+  ];
+  const state = createDefaultAppStateData();
+
+  const listView = withMockedToday("2026-03-30T12:00:00", () =>
+    getActionListViewData({
+      items,
+      collateralItems,
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventTypes: state.eventTypes,
+      activeEventInstanceId: "legislative-day-2026",
+      filters: {
+        activeDueDate: "",
+        activeEventGroup: "all",
+        activeFilter: "all",
+        activeFocus: "all",
+        activeLens: "all",
+        activeIssue: "",
+        activeQuery: "",
+        showCompleted: false
+      }
+    })
+  );
+
+  assert.equal(listView.visibleActionItemCount, 2);
+  assert.equal(listView.visibleExecutionCount, 3);
+  assert.equal(listView.visibleRows.length, 3);
+  assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day 2026"), true);
+  assert.equal(listView.eventGroupOptions.some((option) => option.value === "Legislative Day 2026"), true);
+});
+
+test("action item workspace query returns selected item detail and scoped edit options", () => {
+  const items = [
+    createItem({
+      id: "action-1",
+      title: "Linked event action",
+      workstream: "Newsbrief",
+      issue: "March 2026 Newsbrief",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits"
+    })
+  ];
+  const issues: IssueRecord[] = [
+    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 }
+  ];
+  const state = createDefaultAppStateData();
+
+  const workspace = getSelectedActionItemWorkspace({
+    selectedItem: items[0],
+    issues,
+    selectedItemSubEvents: state.eventSubEvents.filter(
+      (subEvent) => subEvent.eventInstanceId === "legislative-day-2026"
+    )
+  });
+
+  assert.equal(workspace.selectedItem?.id, "action-1");
+  assert.equal(workspace.selectedIssueRecord?.label, "March 2026 Newsbrief");
+  assert.equal(workspace.selectedItemIssueOptions.includes("March 2026 Newsbrief"), true);
+  assert.equal(
+    workspace.selectedItemSubEvents.some((subEvent) => subEvent.id === "leg-day-legislative-visits"),
+    true
+  );
+});
+
+test("local read source returns dashboard-only data without exposing unrelated snapshot fields", () => {
+  const state = createDefaultAppStateData();
+  const readSource = createLocalAppReadSource({
+    items: state.items,
+    issues: getGeneratedIssues(state.issueStatuses),
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    activeEventInstanceId: state.activeEventInstanceId,
+    eventTypes: state.eventTypes,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    workstreamSchedules: state.workstreamSchedules
+  });
+
+  const dashboardSource = readSource.getDashboardSource();
+
+  assert.deepEqual(Object.keys(dashboardSource).sort(), ["issues", "items", "workstreamSchedules"]);
+  assert.equal(Array.isArray(dashboardSource.items), true);
+  assert.equal(Array.isArray(dashboardSource.issues), true);
+  assert.equal(Array.isArray(dashboardSource.workstreamSchedules), true);
+});
+
+test("local read source separates action list data from selected action detail data", () => {
+  const state = createDefaultAppStateData();
+  const readSource = createLocalAppReadSource({
+    items: state.items,
+    issues: getGeneratedIssues(state.issueStatuses),
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    activeEventInstanceId: state.activeEventInstanceId,
+    eventTypes: state.eventTypes,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    workstreamSchedules: state.workstreamSchedules
+  });
+
+  const listSource = readSource.getActionListSource({
+    activeEventInstanceId: state.activeEventInstanceId
+  });
+  const detailSource = readSource.getActionDetailSource({
+    selectedId: state.items[0]?.id ?? null
+  });
+
+  assert.equal(Array.isArray(listSource.items), true);
+  assert.equal(Array.isArray(listSource.collateralItems), true);
+  assert.equal(detailSource.selectedItem?.id, state.items[0]?.id ?? null);
+  assert.equal(Array.isArray(detailSource.selectedItemSubEvents), true);
+});
+
+test("local read source scopes collateral workspace data to the active instance and separates detail data", () => {
+  const state = createDefaultAppStateData();
+  const readSource = createLocalAppReadSource({
+    items: state.items,
+    issues: getGeneratedIssues(state.issueStatuses),
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    activeEventInstanceId: "legislative-day-2026",
+    eventTypes: state.eventTypes,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    workstreamSchedules: state.workstreamSchedules
+  });
+
+  const workspaceSource = readSource.getCollateralWorkspaceSource({
+    activeEventInstanceId: "legislative-day-2026"
+  });
+  const detailSource = readSource.getCollateralDetailSource({
+    activeEventInstanceId: "legislative-day-2026",
+    selectedId: workspaceSource.collateralItems[0]?.id ?? null,
+    draftCollateralItem: null
+  });
+
+  assert.equal(
+    workspaceSource.collateralItems.every((item) => item.eventInstanceId === "legislative-day-2026"),
+    true
+  );
+  assert.equal(
+    workspaceSource.eventSubEvents.every((subEvent) => subEvent.eventInstanceId === "legislative-day-2026"),
+    true
+  );
+  assert.equal(detailSource.resolvedActiveEventInstanceId, "legislative-day-2026");
+  assert.equal(
+    detailSource.visibleInstanceItems.every((item) => item.eventInstanceId === "legislative-day-2026"),
+    true
+  );
+});
+
+test("collateral workspace bundle resolves the active instance and scoped metadata", () => {
+  const state = createDefaultAppStateData();
+
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: "legislative-day-2026",
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+
+  assert.equal(workspace.resolvedActiveEventInstanceId, "legislative-day-2026");
+  assert.equal(workspace.selectedEventInstance?.name, "Legislative Day 2026");
+  assert.equal(workspace.currentEventType?.name, "Legislative Day");
+  assert.equal(workspace.isSelectedEventTypeSupported, true);
+  assert.equal(workspace.instanceSubEvents.length > 0, true);
+  assert.equal(workspace.eventInstancesByType.length > 0, true);
+});
+
+test("collateral instance list query stays scoped to the active event instance", () => {
+  const state = createDefaultAppStateData();
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: "legislative-day-2026",
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+  const listView = getCollateralInstanceListView({
+    collateralItems: [
+      ...state.collateralItems,
+      {
+        id: "other-instance-item",
+        eventInstanceId: "different-instance",
+        subEventId: "different-instance-unassigned",
+        itemName: "Should not appear",
+        status: "Backlog",
+        owner: "Melissa",
+        blockedBy: "",
+        dueDate: "",
+        printer: "",
+        quantity: "",
+        updateType: "Reuse",
+        noteEntries: [],
+        lastUpdated: "2026-03-30"
+      }
+    ],
+    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
+    instanceSubEvents: workspace.instanceSubEvents,
+    activeProfile: workspace.activeProfile,
+    activeSummaryFilter: "all",
+    activeProfileDeadlineFilter: "none",
+    draftCollateralItem: null
+  });
+
+  assert.equal(
+    listView.instanceItems.every((item) => item.eventInstanceId === "legislative-day-2026"),
+    true
+  );
+  assert.equal(listView.groupedItems.length > 0, true);
+  assert.equal(typeof listView.summary.active, "number");
+});
+
+test("selected collateral workspace query returns selected item and sub-event options only for the active instance", () => {
+  const state = createDefaultAppStateData();
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: "legislative-day-2026",
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+  const listView = getCollateralInstanceListView({
+    collateralItems: state.collateralItems,
+    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
+    instanceSubEvents: workspace.instanceSubEvents,
+    activeProfile: workspace.activeProfile,
+    activeSummaryFilter: "all",
+    activeProfileDeadlineFilter: "none",
+    draftCollateralItem: null
+  });
+  const selectedWorkspace = getSelectedCollateralItemWorkspace({
+    selectedId: listView.visibleInstanceItems[0]?.id ?? null,
+    visibleInstanceItems: listView.visibleInstanceItems,
+    instanceSubEvents: workspace.instanceSubEvents,
+    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId
+  });
+
+  assert.ok(selectedWorkspace.selectedItem);
+  assert.equal(selectedWorkspace.subEventOptions.length, workspace.instanceSubEvents.length);
+  assert.equal(selectedWorkspace.emptySubEventId, "legislative-day-2026-unassigned");
 });

@@ -3,14 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
+import { useActionViewReadModel } from "@/components/app-read-models";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
-import { getVisibleCollateralExecutionRows } from "@/lib/collateral-execution-view";
-import {
-  getVisibleActionViewRows,
-  groupActionViewRowsByEventGroup,
-  isSelectableActionViewRow
-} from "@/lib/action-view-rows";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getActionDueDateValue,
@@ -18,9 +13,7 @@ import {
   getActionFilterValue,
   getActionFocusValue,
   getActionLensValue,
-  getActionQueryValue,
-  getItemEventGroupLabel,
-  getVisibleActionItems
+  getActionQueryValue
 } from "@/lib/action-view-utils";
 import {
   createActionNoteEntry,
@@ -32,9 +25,7 @@ import {
   EVENT_GROUP_OPTIONS,
   formatDueLabel,
   formatShortDate,
-  getActionSummaryCounts,
   getContextualDueDateLabel,
-  getIssuesForWorkstream,
   getOwnerOptions,
   LOCAL_FALLBACK_NOTE_AUTHOR,
   isBlockedItem,
@@ -101,15 +92,8 @@ export function ActionView({
   initialQuery?: string;
 }) {
   const {
-    activeEventInstanceId,
     bulkUpdateItems,
-    collateralItems,
     deleteItem,
-    eventInstances,
-    eventSubEvents,
-    eventTypes,
-    items,
-    issues,
     updateItem
   } = useAppState();
   const router = useRouter();
@@ -133,105 +117,38 @@ export function ActionView({
   const activeDueDate = getActionDueDateValue(initialDueDate);
   const activeEventGroup = getActionEventGroupValue(initialEventGroup);
   const activeQuery = getActionQueryValue(initialQuery);
-  const summaryCounts = useMemo(() => getActionSummaryCounts(items), [items]);
   const activeIssue = initialIssue?.trim() || "";
-
-  const visibleItems = useMemo(
-    () =>
-      getVisibleActionItems(items, {
-        activeDueDate,
-        activeEventGroup,
-        activeFilter,
-        activeFocus,
-        activeLens,
-        activeIssue,
-        activeQuery: "",
-        showCompleted
-      }, eventInstances),
-    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, eventInstances, items, showCompleted]
-  );
-  const visibleCollateralExecutionItems = useMemo(
-    () =>
-      getVisibleCollateralExecutionRows({
-        activeDueDate,
-        activeEventGroup,
-        activeEventInstanceId,
-        activeFilter,
-        activeFocus,
-        activeIssue,
-        activeLens,
-        activeQuery,
-        collateralItems,
-        eventInstances,
-        eventSubEvents,
-        eventTypes
-      }),
-    [
+  const actionListFilters = useMemo(
+    () => ({
       activeDueDate,
       activeEventGroup,
-      activeEventInstanceId,
       activeFilter,
       activeFocus,
-      activeIssue,
       activeLens,
+      activeIssue,
       activeQuery,
-      collateralItems,
-      eventInstances,
-      eventSubEvents,
-      eventTypes
-    ]
+      showCompleted
+    }),
+    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, activeQuery, showCompleted]
   );
-  const eventGroupOptions = useMemo(() => {
-    const optionValues = new Set<string>(["all"]);
-
-    items
-      .map((item) => getItemEventGroupLabel(item, eventInstances).trim())
-      .filter((value): value is string => Boolean(value))
-      .forEach((value) => optionValues.add(value));
-
-    visibleCollateralExecutionItems
-      .map((item) => item.eventGroupLabel.trim())
-      .filter((value) => Boolean(value))
-      .forEach((value) => optionValues.add(value));
-
-    return [...optionValues].map((value) => ({
-      label: value === "all" ? "All Events" : value,
-      value
-    }));
-  }, [items, visibleCollateralExecutionItems]);
-  const visibleExecutionCount = visibleItems.length + visibleCollateralExecutionItems.length;
-  const visibleRows = useMemo(
-    () =>
-      getVisibleActionViewRows({
-        actionItems: visibleItems,
-        collateralRows: visibleCollateralExecutionItems,
-        eventInstances,
-        eventSubEvents,
-        activeQuery
-      }),
-    [activeQuery, eventInstances, eventSubEvents, visibleCollateralExecutionItems, visibleItems]
-  );
-  const visibleItemById = useMemo(
-    () => new Map(visibleItems.map((item) => [item.id, item])),
-    [visibleItems]
-  );
-  const groupedRows = useMemo(() => groupActionViewRowsByEventGroup(visibleRows), [visibleRows]);
-  const visibleSelectableRows = useMemo(
-    () => visibleRows.filter(isSelectableActionViewRow),
-    [visibleRows]
-  );
-  const selectedItem = visibleItems.find((item) => item.id === selectedId) ?? null;
-  const selectedIssueRecord = selectedItem?.issue
-    ? issues.find((issue) => issue.label === selectedItem.issue) ?? null
-    : null;
-  const selectedItemIssueOptions = selectedItem ? getIssuesForWorkstream(selectedItem.workstream) : [];
-  const selectedItemSubEvents = useMemo(
-    () =>
-      selectedItem?.eventInstanceId
-        ? eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === selectedItem.eventInstanceId)
-        : [],
-    [eventSubEvents, selectedItem?.eventInstanceId]
-  );
+  const {
+    actionListView,
+    selectedWorkspace,
+    summaryCounts,
+    eventInstances
+  } = useActionViewReadModel({
+    filters: actionListFilters,
+    selectedId
+  });
+  const eventGroupOptions = actionListView.eventGroupOptions;
+  const visibleExecutionCount = actionListView.visibleExecutionCount;
+  const visibleRows = actionListView.visibleRows;
+  const groupedRows = actionListView.groupedRows;
+  const visibleSelectableRows = actionListView.visibleSelectableRows;
+  const selectedItem = selectedWorkspace.selectedItem;
+  const selectedIssueRecord = selectedWorkspace.selectedIssueRecord;
+  const selectedItemIssueOptions = selectedWorkspace.selectedItemIssueOptions;
+  const selectedItemSubEvents = selectedWorkspace.selectedItemSubEvents;
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
     () => selectedItemIds.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)),
@@ -455,7 +372,7 @@ export function ActionView({
             <div>
               <div className="issue-context__title">{activeIssue}</div>
               <div className="issue-context__meta">
-                {visibleItems.length} {visibleItems.length === 1 ? "item" : "items"}
+                {actionListView.visibleActionItemCount} {actionListView.visibleActionItemCount === 1 ? "item" : "items"}
               </div>
             </div>
             <button className="button-link button-link--inline-secondary" onClick={clearIssueFilter} type="button">
@@ -812,8 +729,7 @@ export function ActionView({
                                     aria-label={`Waiting on for ${row.title}`}
                                     className={
                                       isWaitingMissingReason(
-                                        visibleItemById.get(row.actionItemId) ??
-                                          ({ status: row.statusLabel, waitingOn: row.waitingLabel } as ActionItem)
+                                        { status: row.statusLabel, waitingOn: row.waitingLabel } as ActionItem
                                       )
                                         ? "cell-select cell-select--required"
                                         : row.statusLabel !== "Waiting"
@@ -825,8 +741,7 @@ export function ActionView({
                                   >
                                     <option value="">
                                       {isWaitingMissingReason(
-                                        visibleItemById.get(row.actionItemId) ??
-                                          ({ status: row.statusLabel, waitingOn: row.waitingLabel } as ActionItem)
+                                        { status: row.statusLabel, waitingOn: row.waitingLabel } as ActionItem
                                       )
                                         ? "Required"
                                         : "None"}

@@ -1,0 +1,74 @@
+import type {
+  CollateralItem,
+  LegDayCollateralProfile
+} from "@/lib/collateral-data";
+import type {
+  EventInstance,
+  EventSubEvent,
+  EventType
+} from "@/lib/event-instances";
+import type { ActionItem } from "@/lib/sample-data";
+import type { CollateralProfilesByInstance } from "@/lib/state/app-state-types";
+import type { IssueRecord, WorkstreamSchedule } from "@/lib/ops-utils";
+
+export type DashboardSourceData = {
+  items: ActionItem[];
+  issues: IssueRecord[];
+  workstreamSchedules: WorkstreamSchedule[];
+};
+
+export type ActionListSourceData = {
+  items: ActionItem[];
+  collateralItems: CollateralItem[];
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
+  eventTypes: EventType[];
+};
+
+export type ActionDetailSourceData = {
+  selectedItem: ActionItem | null;
+  issues: IssueRecord[];
+  selectedItemSubEvents: EventSubEvent[];
+};
+
+export type CollateralWorkspaceSourceData = {
+  activeEventInstanceId: string;
+  collateralItems: CollateralItem[];
+  collateralProfiles: Partial<CollateralProfilesByInstance>;
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
+  eventTypes: EventType[];
+};
+
+export type CollateralDetailSourceData = {
+  selectedId: string | null;
+  visibleInstanceItems: CollateralItem[];
+  instanceSubEvents: EventSubEvent[];
+  resolvedActiveEventInstanceId: string;
+};
+
+export type AppReadSourceSnapshot = {
+  items: ActionItem[];
+  issues: IssueRecord[];
+  collateralItems: CollateralItem[];
+  collateralProfiles: CollateralProfilesByInstance;
+  activeEventInstanceId: string;
+  eventTypes: EventType[];
+  eventInstances: EventInstance[];
+  eventSubEvents: EventSubEvent[];
+  workstreamSchedules: WorkstreamSchedule[];
+};
+
+export interface AppReadSource {
+  getDashboardSource(): DashboardSourceData;
+  getActionListSource(input: { activeEventInstanceId: string }): ActionListSourceData;
+  getActionDetailSource(input: { selectedId: string | null }): ActionDetailSourceData;
+  getCollateralWorkspaceSource(input: { activeEventInstanceId: string }): CollateralWorkspaceSourceData;
+  getCollateralDetailSource(input: {
+    activeEventInstanceId: string;
+    selectedId: string | null;
+    draftCollateralItem: CollateralItem | null;
+  }): CollateralDetailSourceData;
+}
+
+export type { LegDayCollateralProfile };
