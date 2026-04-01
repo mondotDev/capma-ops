@@ -1,4 +1,5 @@
 import {
+  isActionViewCollateralStatus,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
@@ -41,13 +42,6 @@ export type CollateralExecutionRow = {
   eventGroupLabel: string;
 };
 
-const SURFACED_COLLATERAL_STATUSES = new Set<CollateralItem["status"]>([
-  "In Design",
-  "Waiting",
-  "Blocked",
-  "Ready for Print"
-]);
-
 export function getVisibleCollateralExecutionRows(input: {
   activeDueDate: string;
   activeEventGroup: string;
@@ -88,11 +82,13 @@ export function getVisibleCollateralExecutionRows(input: {
       .map((subEvent) => [subEvent.id, subEvent.name])
   );
 
+  // Action View is the shared execution lane, not the full collateral workspace.
+  // Only the execution subset for the active instance surfaces here.
   return input.collateralItems
     .filter(
       (item) =>
         item.eventInstanceId === resolvedActiveEventInstanceId &&
-        SURFACED_COLLATERAL_STATUSES.has(item.status)
+        isActionViewCollateralStatus(item.status)
     )
     .map<CollateralExecutionRow>((item) => ({
       kind: "collateral",

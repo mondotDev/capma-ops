@@ -49,6 +49,7 @@ class LocalAppStateRepository implements AppStateRepository {
 
     return {
       items: normalizeActionItems(parsedState.items, {
+        eventPrograms: parsedState.eventTypes,
         eventInstances: parsedState.eventInstances,
         eventSubEvents: parsedState.eventSubEvents
       }),
@@ -85,6 +86,7 @@ class LocalAppStateRepository implements AppStateRepository {
             normalizeItem: normalizeActionItemFields
           }),
           {
+            eventPrograms: result.state.eventTypes,
             eventInstances: result.state.eventInstances,
             eventSubEvents: result.state.eventSubEvents
           }

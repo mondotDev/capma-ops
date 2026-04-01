@@ -1,4 +1,5 @@
 import { doc, getDoc } from "firebase/firestore";
+import type { DashboardExecutionItem } from "@/lib/dashboard-execution-items";
 import type { DashboardSourceData } from "@/lib/read-source/app-read-source";
 import type { ActionItem } from "@/lib/sample-data";
 import {
@@ -25,11 +26,31 @@ export type DashboardItemDTO = {
 };
 
 type DashboardProjectionDocument = {
+  executionItems: DashboardExecutionItemDTO[];
   items: DashboardItemDTO[];
   issues: IssueRecord[];
   workstreamSchedules: WorkstreamSchedule[];
   updatedAt?: string;
   schemaVersion?: number | string;
+};
+
+export type DashboardExecutionItemDTO = {
+  id: string;
+  kind: "action" | "collateral";
+  title: string;
+  workstream: string;
+  dueDate: string;
+  status: string;
+  blockedBy: string;
+  waitingOn: string;
+  lastUpdated: string;
+  isBlocked: boolean;
+  isWaiting: boolean;
+  isOverdue: boolean;
+  isDueSoon: boolean;
+  isTerminal: boolean;
+  isMissingDueDate: boolean;
+  isProductionRisk: boolean;
 };
 
 export type DashboardSessionReadSelection =
@@ -112,6 +133,7 @@ export async function loadFirebaseDashboardSourceWithDependencies(input: {
     }
 
     return {
+      executionItems: parsedProjection.executionItems.map(mapDashboardExecutionItemDto),
       items: parsedProjection.items.map(mapDashboardItemDtoToActionItem),
       issues: parsedProjection.issues,
       workstreamSchedules: normalizeWorkstreamSchedules(parsedProjection.workstreamSchedules)
@@ -147,6 +169,8 @@ export function parseDashboardProjectionDocument(value: unknown): DashboardProje
   const projection = value as Partial<DashboardProjectionDocument>;
 
   if (
+    !Array.isArray(projection.executionItems) ||
+    !projection.executionItems.every(isDashboardExecutionItemDto) ||
     !Array.isArray(projection.items) ||
     !projection.items.every(isDashboardItemDto) ||
     !Array.isArray(projection.issues) ||
@@ -167,6 +191,7 @@ export function parseDashboardProjectionDocument(value: unknown): DashboardProje
   }
 
   return {
+    executionItems: projection.executionItems.map((item) => ({ ...item })),
     items: projection.items.map((item) => ({ ...item })),
     issues: projection.issues.map((issue) => ({ ...issue })),
     workstreamSchedules: projection.workstreamSchedules.map((schedule) => ({
@@ -176,6 +201,33 @@ export function parseDashboardProjectionDocument(value: unknown): DashboardProje
     updatedAt: projection.updatedAt,
     schemaVersion: projection.schemaVersion
   };
+}
+
+function isDashboardExecutionItemDto(value: unknown): value is DashboardExecutionItemDTO {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const item = value as Partial<DashboardExecutionItemDTO>;
+
+  return (
+    typeof item.id === "string" &&
+    (item.kind === "action" || item.kind === "collateral") &&
+    typeof item.title === "string" &&
+    typeof item.workstream === "string" &&
+    typeof item.dueDate === "string" &&
+    typeof item.status === "string" &&
+    typeof item.blockedBy === "string" &&
+    typeof item.waitingOn === "string" &&
+    typeof item.lastUpdated === "string" &&
+    typeof item.isBlocked === "boolean" &&
+    typeof item.isWaiting === "boolean" &&
+    typeof item.isOverdue === "boolean" &&
+    typeof item.isDueSoon === "boolean" &&
+    typeof item.isTerminal === "boolean" &&
+    typeof item.isMissingDueDate === "boolean" &&
+    typeof item.isProductionRisk === "boolean"
+  );
 }
 
 function isDashboardItemDto(value: unknown): value is DashboardItemDTO {
@@ -254,4 +306,8 @@ function mapDashboardItemDtoToActionItem(item: DashboardItemDTO): ActionItem {
     lastUpdated: item.lastUpdated,
     noteEntries: []
   });
+}
+
+function mapDashboardExecutionItemDto(item: DashboardExecutionItemDTO): DashboardExecutionItem {
+  return { ...item };
 }

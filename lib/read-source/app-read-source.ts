@@ -7,11 +7,13 @@ import type {
   EventProgram,
   EventSubEvent,
 } from "@/lib/event-instances";
+import type { DashboardExecutionItem } from "@/lib/dashboard-execution-items";
 import type { ActionItem } from "@/lib/sample-data";
 import type { CollateralProfilesByInstance } from "@/lib/state/app-state-types";
 import type { IssueRecord, WorkstreamSchedule } from "@/lib/ops-utils";
 
 export type DashboardSourceData = {
+  executionItems: DashboardExecutionItem[];
   items: ActionItem[];
   issues: IssueRecord[];
   workstreamSchedules: WorkstreamSchedule[];

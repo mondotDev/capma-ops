@@ -8,6 +8,8 @@ import {
   normalizeActionItems
 } from "../lib/action-item-mutations";
 import {
+  ACTION_VIEW_COLLATERAL_STATUS_OPTIONS,
+  isActionViewCollateralStatus,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
@@ -15,6 +17,7 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
+import { buildDashboardExecutionItems } from "../lib/dashboard-execution-items";
 import {
   getVisibleActionViewRows,
   isSelectableActionViewRow
@@ -274,6 +277,18 @@ test("collateral blocked helper treats status and blockedBy as the same blocked 
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "" })), false);
 });
 
+test("action view collateral status contract stays explicit and narrow", () => {
+  assert.deepEqual(ACTION_VIEW_COLLATERAL_STATUS_OPTIONS, [
+    "In Design",
+    "Waiting",
+    "Blocked",
+    "Ready for Print"
+  ]);
+  assert.equal(isActionViewCollateralStatus("In Design"), true);
+  assert.equal(isActionViewCollateralStatus("Backlog"), false);
+  assert.equal(isActionViewCollateralStatus("Sent to Printer"), false);
+});
+
 test("legacy imports restore action items without silently seeding collateral records", () => {
   const parsed = parseImportedAppState([createItem()]);
 
@@ -425,6 +440,42 @@ test("collateral execution rows surface only qualifying statuses for the active 
   });
 
   assert.deepEqual(rows.map((row) => row.collateralId).sort(), ["a", "b"]);
+});
+
+test("non-surfaced collateral statuses remain collateral-only in action view", () => {
+  const rows = getVisibleCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: "legislative-day-2026",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    collateralItems: [
+      createCollateralItem({ id: "backlog", status: "Backlog" }),
+      createCollateralItem({ id: "sent", status: "Sent to Printer" }),
+      createCollateralItem({ id: "complete", status: "Complete" }),
+      createCollateralItem({ id: "cut", status: "Cut" })
+    ],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+    ],
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+  });
+
+  assert.deepEqual(rows, []);
 });
 
 test("collateral execution rows participate in action filters without becoming native action items", () => {
@@ -626,6 +677,150 @@ test("normalizeActionEventLinks clears invalid event-instance and sub-event refe
   assert.equal(normalized.eventInstanceId, undefined);
   assert.equal(normalized.subEventId, undefined);
   assert.equal(normalized.title, "Follow up with sponsor");
+});
+
+test("event-linked action items normalize to their event workstream and clear operational bucket drift", () => {
+  const state = createDefaultAppStateData();
+
+  const [normalized] = normalizeActionItems(
+    [
+      createItem({
+        id: "drifted-event-item",
+        workstream: "General Operations",
+        operationalBucket: "General Operations",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-legislative-visits"
+      })
+    ],
+    {
+      eventPrograms: state.eventTypes,
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  );
+
+  assert.equal(normalized?.workstream, "Legislative Day");
+  assert.equal(normalized?.operationalBucket, undefined);
+  assert.equal(normalized?.eventInstanceId, "legislative-day-2026");
+  assert.equal(normalized?.subEventId, "leg-day-legislative-visits");
+});
+
+test("assigning an event instance reconciles workstream meaning and clears operational bucket", () => {
+  const state = createDefaultAppStateData();
+
+  const updated = applyActionItemUpdates(
+    createItem({
+      id: "assign-event-instance",
+      workstream: "General Operations",
+      operationalBucket: "General Operations"
+    }),
+    {
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits",
+      operationalBucket: undefined,
+      legacyEventGroupMigrated: true
+    },
+    {
+      eventPrograms: state.eventTypes,
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  );
+
+  assert.equal(updated.workstream, "Legislative Day");
+  assert.equal(updated.operationalBucket, undefined);
+  assert.equal(updated.eventInstanceId, "legislative-day-2026");
+  assert.equal(updated.subEventId, "leg-day-legislative-visits");
+});
+
+test("changing workstream away from an event program clears event linkage", () => {
+  const state = createDefaultAppStateData();
+
+  const updated = applyActionItemUpdates(
+    createItem({
+      id: "clear-event-link",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits"
+    }),
+    {
+      workstream: "General Operations"
+    },
+    {
+      eventPrograms: state.eventTypes,
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  );
+
+  assert.equal(updated.workstream, "General Operations");
+  assert.equal(updated.eventInstanceId, undefined);
+  assert.equal(updated.subEventId, undefined);
+  assert.equal(updated.operationalBucket, "General Operations");
+});
+
+test("assigning an operational bucket clears conflicting event-linked meaning", () => {
+  const state = createDefaultAppStateData();
+
+  const updated = applyActionItemUpdates(
+    createItem({
+      id: "bucket-wins",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits"
+    }),
+    {
+      operationalBucket: "Membership Campaigns"
+    },
+    {
+      eventPrograms: state.eventTypes,
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  );
+
+  assert.equal(updated.workstream, "Membership Campaigns");
+  assert.equal(updated.operationalBucket, "Membership Campaigns");
+  assert.equal(updated.eventInstanceId, undefined);
+  assert.equal(updated.subEventId, undefined);
+});
+
+test("normalized action items stay consistent between action view scope labels and dashboard workstream summaries", () => {
+  const state = createDefaultAppStateData();
+  const [normalized] = normalizeActionItems(
+    [
+      createItem({
+        id: "cross-screen-consistency",
+        workstream: "General Operations",
+        operationalBucket: "General Operations",
+        eventInstanceId: "legislative-day-2026"
+      })
+    ],
+    {
+      eventPrograms: state.eventTypes,
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  );
+  const executionItems = buildDashboardExecutionItems({
+    items: [normalized!],
+    collateralItems: [],
+    activeEventInstanceId: "legislative-day-2026",
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventPrograms: state.eventTypes
+  });
+  const dashboardSummary = withMockedToday("2026-03-30T12:00:00", () =>
+    getDashboardLiveSummary({
+      executionItems,
+      items: [normalized!],
+      issues: [],
+      workstreamSchedules: getDefaultWorkstreamSchedules()
+    })
+  );
+
+  assert.equal(getItemEventGroupLabel(normalized!, state.eventInstances, state.eventTypes), "Legislative Day 2026");
+  assert.equal(dashboardSummary.workstreamSummaryRows[0]?.workstream, "Legislative Day");
 });
 
 test("getItemEventGroupLabel prefers linked event instance name over legacy event group", () => {
@@ -1321,6 +1516,7 @@ test("event label helpers resolve linked event instance and sub-event names", ()
 
 test("dashboard read-side summary returns live counts and preview-ready aggregates", () => {
   const productionNoteEntry = createActionNoteEntry("Missing printer confirmation");
+  const state = createDefaultAppStateData();
   const items = [
     createItem({
       title: "Overdue sponsor follow-up",
@@ -1348,21 +1544,44 @@ test("dashboard read-side summary returns live counts and preview-ready aggregat
     { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
   ];
   const workstreamSchedules = getDefaultWorkstreamSchedules();
+  const collateralItems = [
+    createCollateralItem({
+      id: "collateral-ready-proof",
+      status: "Ready for Print",
+      dueDate: "2026-03-31"
+    }),
+    createCollateralItem({
+      id: "collateral-backlog-hidden",
+      status: "Backlog",
+      dueDate: "2026-03-31"
+    })
+  ];
+  const executionItems = withMockedToday("2026-03-30T12:00:00", () =>
+    buildDashboardExecutionItems({
+      items,
+      collateralItems,
+      activeEventInstanceId: "legislative-day-2026",
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventPrograms: state.eventTypes
+    })
+  );
 
   const summary = withMockedToday("2026-03-30T12:00:00", () =>
-    getDashboardLiveSummary({ items, issues, workstreamSchedules })
+    getDashboardLiveSummary({ executionItems, items, issues, workstreamSchedules })
   );
 
   assert.equal(summary.overdue, 1);
-  assert.equal(summary.dueSoon, 2);
+  assert.equal(summary.dueSoon, 3);
   assert.equal(summary.blockedCount, 1);
   assert.equal(summary.overviewLoadRows.length, 2);
   assert.equal(summary.workstreamSummaryRows.length > 0, true);
   assert.equal(summary.sponsorRisk.total, 1);
-  assert.equal(summary.productionRisk.total, 1);
+  assert.equal(summary.productionRisk.total, 2);
 });
 
 test("dashboard urgent preview query returns preview-ready urgent rows", () => {
+  const state = createDefaultAppStateData();
   const items = [
     createItem({
       id: "urgent-1",
@@ -1377,15 +1596,41 @@ test("dashboard urgent preview query returns preview-ready urgent rows", () => {
       dueDate: "2026-03-31"
     })
   ];
+  const executionItems = withMockedToday("2026-03-30T12:00:00", () =>
+    buildDashboardExecutionItems({
+      items,
+      collateralItems: [
+        createCollateralItem({
+          id: "urgent-collateral",
+          status: "Ready for Print",
+          dueDate: "2026-03-31"
+        }),
+        createCollateralItem({
+          id: "hidden-backlog-collateral",
+          status: "Backlog",
+          dueDate: "2026-03-31"
+        })
+      ],
+      activeEventInstanceId: "legislative-day-2026",
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventPrograms: state.eventTypes
+    })
+  );
 
   const preview = withMockedToday("2026-03-30T12:00:00", () =>
     getDashboardUrgentPreview(
-      { items, issues: [], workstreamSchedules: getDefaultWorkstreamSchedules() },
-      2
+      { executionItems, items, issues: [], workstreamSchedules: getDefaultWorkstreamSchedules() },
+      3
     )
   );
 
-  assert.deepEqual(preview.map((item) => item.id), ["urgent-1", "urgent-2"]);
+  assert.deepEqual(preview.map((item) => item.id), [
+    "urgent-1",
+    "collateral-execution-urgent-collateral",
+    "urgent-2"
+  ]);
+  assert.equal(preview.some((item) => item.id === "collateral-execution-hidden-backlog-collateral"), false);
   assert.equal(preview[0]?.title, "Urgent overdue item");
   assert.match(preview[0]?.meta ?? "", /Overdue/);
 });
@@ -1414,6 +1659,7 @@ test("publication issue summary query returns progress-ready rows for visible pu
 
   const publicationRows = withMockedToday("2026-03-30T12:00:00", () =>
     getPublicationIssueSummary({
+      executionItems: [],
       items,
       issues,
       workstreamSchedules: getDefaultWorkstreamSchedules()
@@ -1492,6 +1738,26 @@ test("dashboard firebase projection parser accepts the minimal valid payload", (
   const parsed = parseDashboardProjectionDocument({
     schemaVersion: 1,
     updatedAt: "2026-04-01T12:00:00.000Z",
+    executionItems: [
+      {
+        id: "execution-remote-1",
+        kind: "action",
+        title: "Remote execution item",
+        workstream: "General Operations",
+        dueDate: "2026-04-02",
+        status: "Waiting",
+        blockedBy: "Vendor",
+        waitingOn: "Vendor",
+        lastUpdated: "2026-04-01",
+        isBlocked: true,
+        isWaiting: true,
+        isOverdue: false,
+        isDueSoon: true,
+        isTerminal: false,
+        isMissingDueDate: false,
+        isProductionRisk: false
+      }
+    ],
     items: [
       {
         id: "remote-1",
@@ -1520,6 +1786,7 @@ test("dashboard firebase projection parser accepts the minimal valid payload", (
   });
 
   assert.ok(parsed);
+  assert.equal(parsed?.executionItems.length, 1);
   assert.equal(parsed?.items.length, 1);
   assert.equal(parsed?.issues.length, 1);
   assert.equal(parsed?.workstreamSchedules.length > 0, true);
@@ -1531,6 +1798,26 @@ test("dashboard firebase read slice maps a valid remote payload into dashboard s
     firebaseConfigured: true,
     getDb: () => ({}) as never,
     getProjectionDocument: async () => ({
+      executionItems: [
+        {
+          id: "execution-remote-1",
+          kind: "action",
+          title: "Remote blocked task",
+          workstream: "General Operations",
+          dueDate: "2026-04-02",
+          status: "Waiting",
+          blockedBy: "Vendor",
+          waitingOn: "Vendor",
+          lastUpdated: "2026-04-01",
+          isBlocked: true,
+          isWaiting: true,
+          isOverdue: false,
+          isDueSoon: true,
+          isTerminal: false,
+          isMissingDueDate: false,
+          isProductionRisk: false
+        }
+      ],
       items: [
         {
           id: "remote-1",
@@ -1560,6 +1847,8 @@ test("dashboard firebase read slice maps a valid remote payload into dashboard s
   });
 
   assert.ok(source);
+  assert.equal(source?.executionItems.length, 1);
+  assert.equal(source?.executionItems[0]?.id, "execution-remote-1");
   assert.equal(source?.items.length, 1);
   assert.equal(source?.items[0]?.id, "remote-1");
   assert.equal(source?.items[0]?.noteEntries.length, 0);
@@ -1576,6 +1865,7 @@ test("dashboard session source selection stays fixed after startup", async () =>
     return {
       source: "remote",
       dashboardSource: {
+        executionItems: [],
         items: [createItem({ id: "remote-session-item" })],
         issues: [],
         workstreamSchedules: getDefaultWorkstreamSchedules()
@@ -1656,8 +1946,69 @@ test("action view list query returns grouped mixed rows and event options withou
   assert.equal(listView.visibleActionItemCount, 2);
   assert.equal(listView.visibleExecutionCount, 3);
   assert.equal(listView.visibleRows.length, 3);
+  assert.deepEqual(listView.summaryCounts, {
+    overdue: 0,
+    dueSoon: 3,
+    blocked: 0,
+    waiting: 0,
+    totalActive: 3
+  });
   assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day 2026"), true);
   assert.equal(listView.eventGroupOptions.some((option) => option.value === "Legislative Day 2026"), true);
+});
+
+test("action view list summary counts follow the visible mixed operational lane", () => {
+  const state = createDefaultAppStateData();
+
+  const listView = withMockedToday("2026-03-30T12:00:00", () =>
+    getActionListViewData({
+      items: [
+        createItem({
+          id: "blocked-native",
+          title: "Blocked native action",
+          isBlocked: true,
+          blockedBy: "Approval",
+          dueDate: "2026-03-31"
+        }),
+        createItem({
+          id: "completed-native",
+          title: "Completed native action",
+          status: "Complete",
+          dueDate: "2026-03-31"
+        })
+      ],
+      collateralItems: [
+        createCollateralItem({
+          id: "waiting-collateral",
+          status: "Waiting",
+          dueDate: "2026-03-31"
+        })
+      ],
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventTypes: state.eventTypes,
+      activeEventInstanceId: "legislative-day-2026",
+      filters: {
+        activeDueDate: "",
+        activeEventGroup: "all",
+        activeFilter: "all",
+        activeFocus: "all",
+        activeLens: "all",
+        activeIssue: "",
+        activeQuery: "",
+        showCompleted: true
+      }
+    })
+  );
+
+  assert.equal(listView.visibleRows.length, 3);
+  assert.deepEqual(listView.summaryCounts, {
+    overdue: 0,
+    dueSoon: 2,
+    blocked: 1,
+    waiting: 1,
+    totalActive: 2
+  });
 });
 
 test("action item workspace query returns selected item detail and scoped edit options", () => {
@@ -1709,7 +2060,8 @@ test("local read source returns dashboard-only data without exposing unrelated s
 
   const dashboardSource = readSource.getDashboardSource();
 
-  assert.deepEqual(Object.keys(dashboardSource).sort(), ["issues", "items", "workstreamSchedules"]);
+  assert.deepEqual(Object.keys(dashboardSource).sort(), ["executionItems", "issues", "items", "workstreamSchedules"]);
+  assert.equal(Array.isArray(dashboardSource.executionItems), true);
   assert.equal(Array.isArray(dashboardSource.items), true);
   assert.equal(Array.isArray(dashboardSource.issues), true);
   assert.equal(Array.isArray(dashboardSource.workstreamSchedules), true);

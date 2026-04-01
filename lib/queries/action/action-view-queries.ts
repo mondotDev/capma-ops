@@ -16,7 +16,11 @@ import {
 } from "@/lib/action-view-utils";
 import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
-import { getIssuesForWorkstream, type IssueRecord } from "@/lib/ops-utils";
+import {
+  getIssuesForWorkstream,
+  type ActionSummaryCounts,
+  type IssueRecord
+} from "@/lib/ops-utils";
 
 export type ActionListQueryInput = {
   items: ActionItem[];
@@ -48,6 +52,7 @@ type CollateralExecutionQueryInput = {
 export type ActionListViewData = {
   eventGroupOptions: { label: string; value: string }[];
   groupedRows: { label: string; items: ActionViewRow[] }[];
+  summaryCounts: ActionSummaryCounts;
   visibleActionItemCount: number;
   visibleExecutionCount: number;
   visibleRows: ActionViewRow[];
@@ -121,6 +126,7 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
       value: scope.value
     })),
     groupedRows: groupActionViewRowsByEventGroup(visibleRows),
+    summaryCounts: getVisibleActionSummaryCounts(visibleRows),
     visibleActionItemCount: visibleItems.length,
     visibleExecutionCount: visibleItems.length + collateralRows.length,
     visibleRows,
@@ -144,5 +150,17 @@ export function getSelectedActionItemWorkspace(input: {
     selectedIssueRecord,
     selectedItemIssueOptions,
     selectedItemSubEvents: input.selectedItemSubEvents
+  };
+}
+
+function getVisibleActionSummaryCounts(rows: ActionViewRow[]): ActionSummaryCounts {
+  const activeRows = rows.filter((row) => !row.isTerminal);
+
+  return {
+    overdue: activeRows.filter((row) => row.isOverdue).length,
+    dueSoon: activeRows.filter((row) => row.isDueSoon).length,
+    blocked: activeRows.filter((row) => row.isBlocked).length,
+    waiting: activeRows.filter((row) => row.isWaiting).length,
+    totalActive: activeRows.length
   };
 }

@@ -200,7 +200,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   function addItem(item: NewActionItem) {
     enablePersistence();
-    setItems((current) => prependActionItem(current, item));
+    setItems((current) =>
+      prependActionItem(current, item, {
+        eventInstances,
+        eventPrograms: eventTypes,
+        eventSubEvents
+      })
+    );
   }
 
   function deleteItem(id: string) {
@@ -458,7 +464,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     applyDefaultTemplateToInstance,
     bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => {
       enablePersistence();
-      setItems((current) => applyBulkActionItemUpdates(current, ids, updates));
+      setItems((current) =>
+        applyBulkActionItemUpdates(current, ids, updates, {
+          eventInstances,
+          eventPrograms: eventTypes,
+          eventSubEvents
+        })
+      );
     },
     createEventInstance,
     deleteItem,
@@ -512,7 +524,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     updateCollateralItem,
     updateItem: (id: string, updates: Partial<ActionItem>) => {
       enablePersistence();
-      setItems((current) => updateActionItemById(current, id, updates));
+      setItems((current) =>
+        updateActionItemById(current, id, updates, {
+          eventInstances,
+          eventPrograms: eventTypes,
+          eventSubEvents
+        })
+      );
     }
     }),
     [activeEventInstanceId, collateralItems, collateralProfiles, defaultOwnerForNewItems, eventFamilies, eventInstances, eventSubEvents, eventTypes, issueStatuses, items, workstreamSchedules]

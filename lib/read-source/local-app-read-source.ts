@@ -1,3 +1,4 @@
+import { buildDashboardExecutionItems } from "@/lib/dashboard-execution-items";
 import { resolveActiveEventInstanceId } from "@/lib/event-instances";
 import type { CollateralItem } from "@/lib/collateral-data";
 import type {
@@ -15,6 +16,14 @@ class LocalAppReadSource implements AppReadSource {
 
   getDashboardSource(): DashboardSourceData {
     return {
+      executionItems: buildDashboardExecutionItems({
+        items: this.snapshot.items,
+        collateralItems: this.snapshot.collateralItems,
+        activeEventInstanceId: this.snapshot.activeEventInstanceId,
+        eventInstances: this.snapshot.eventInstances,
+        eventSubEvents: this.snapshot.eventSubEvents,
+        eventPrograms: this.snapshot.eventPrograms ?? this.snapshot.eventTypes ?? []
+      }),
       items: this.snapshot.items,
       issues: this.snapshot.issues,
       workstreamSchedules: this.snapshot.workstreamSchedules

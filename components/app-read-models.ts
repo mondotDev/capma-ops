@@ -32,12 +32,13 @@ import {
   type PublicationIssueSummaryRow
 } from "@/lib/queries/dashboard/dashboard-queries";
 import { createLocalAppReadSource } from "@/lib/read-source/local-app-read-source";
-import { getActionSummaryCounts, type ActionSummaryCounts } from "@/lib/ops-utils";
+import type { ActionSummaryCounts } from "@/lib/ops-utils";
 import type { ActionViewFilters } from "@/lib/action-view-utils";
 import type { EventInstance, EventProgram } from "@/lib/event-instances";
 import type { DashboardSourceData } from "@/lib/read-source/app-read-source";
 
 const EMPTY_DASHBOARD_SOURCE: DashboardSourceData = {
+  executionItems: [],
   items: [],
   issues: [],
   workstreamSchedules: []
@@ -190,12 +191,11 @@ export function useActionViewReadModel(input: {
       }),
     [actionDetailSource]
   );
-  const summaryCounts = useMemo(() => getActionSummaryCounts(actionListSource.items), [actionListSource.items]);
 
   return {
     actionListView,
     selectedWorkspace,
-    summaryCounts,
+    summaryCounts: actionListView.summaryCounts,
     eventInstances: actionListSource.eventInstances,
     activeEventInstanceId
   };

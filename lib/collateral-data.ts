@@ -29,6 +29,15 @@ export const COLLATERAL_UPDATE_TYPE_OPTIONS = [
 
 export type CollateralStatus = (typeof COLLATERAL_STATUS_OPTIONS)[number];
 
+// Action View intentionally surfaces only the execution-relevant subset of
+// collateral work. Full inventory and planning statuses stay in Collateral.
+export const ACTION_VIEW_COLLATERAL_STATUS_OPTIONS = [
+  "In Design",
+  "Waiting",
+  "Blocked",
+  "Ready for Print"
+] as const satisfies readonly CollateralStatus[];
+
 export type CollateralItem = {
   id: string;
   eventInstanceId: string;
@@ -134,6 +143,10 @@ export function normalizeCollateralWorkflowStatus(status: string): NormalizedWor
   }
 
   return "active";
+}
+
+export function isActionViewCollateralStatus(status: string): status is CollateralStatus {
+  return ACTION_VIEW_COLLATERAL_STATUS_OPTIONS.some((option) => option === status);
 }
 
 export function isCollateralTerminalStatus(status: string) {

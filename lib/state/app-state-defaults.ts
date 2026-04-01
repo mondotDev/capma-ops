@@ -5,6 +5,7 @@ import {
 import {
   initialEventFamilies,
   initialEventInstances,
+  initialEventPrograms,
   initialEventSubEvents,
   initialEventTypes
 } from "@/lib/event-instances";
@@ -20,6 +21,7 @@ import type { AppStateData, CollateralProfilesByInstance } from "@/lib/state/app
 
 export function createDefaultActionItems() {
   return normalizeActionItems(initialActionItems, {
+    eventPrograms: initialEventPrograms,
     eventInstances: initialEventInstances,
     eventSubEvents: initialEventSubEvents
   });

@@ -52,6 +52,18 @@ Mutation screens remain local until reads and writes can move together.
   - a same-authority guarantee for workspace list/detail/context
   - explicit rules for template apply and create-instance visibility after mutation
 
+## Action View / Collateral Boundary
+
+- Action View is the shared execution lane, not the full collateral workspace.
+- Collateral remains the source of truth for full instance inventory, planning, and production detail.
+- Action View surfaces only the execution subset of collateral work in these statuses:
+  - `In Design`
+  - `Waiting`
+  - `Blocked`
+  - `Ready for Print`
+- `Backlog`, `Sent to Printer`, `Complete`, and `Cut` remain Collateral-only.
+- Current behavior is intentionally scoped to the active event instance. Broader multi-instance program surfacing is deferred until a later slice.
+
 ### Settings
 
 - Current authority: local only.
@@ -179,3 +191,4 @@ Expansion must be blocked if any of these are true:
 - It depends on a future write migration to make current UX make sense.
 - It introduces remote reads to a screen with drafts, generated items, or bulk edits.
 - It cannot be validated without touching multiple screens at once.
+
