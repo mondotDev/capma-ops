@@ -1,4 +1,4 @@
-import { doc, getDoc, getFirestore } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import type { DashboardSourceData } from "@/lib/read-source/app-read-source";
 import type { ActionItem } from "@/lib/sample-data";
 import {
@@ -7,7 +7,7 @@ import {
   type IssueRecord,
   type WorkstreamSchedule
 } from "@/lib/ops-utils";
-import { getFirebaseApp, isFirebaseConfigured } from "@/lib/firebase";
+import { getFirestoreDb, isDashboardReadsEnabled, isFirebaseConfigured } from "@/lib/firebase";
 
 export type DashboardItemDTO = {
   id: string;
@@ -41,7 +41,6 @@ export type DashboardSessionReadSelection =
       dashboardSource: DashboardSourceData;
     };
 
-const DASHBOARD_READS_ENABLED = process.env.NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED === "true";
 /**
  * Temporary bootstrap path for the first Firebase read slice only.
  * Do not casually expand this projection into a general-purpose app document.
@@ -68,12 +67,17 @@ export function getDashboardSessionReadSelection(): Promise<DashboardSessionRead
 }
 
 export async function loadFirebaseDashboardSource(): Promise<DashboardSourceData | null> {
-  if (!DASHBOARD_READS_ENABLED || !isFirebaseConfigured()) {
+  if (!isDashboardReadsEnabled() || !isFirebaseConfigured()) {
     return null;
   }
 
   try {
-    const firestore = getFirestore(getFirebaseApp());
+    const firestore = getFirestoreDb();
+
+    if (!firestore) {
+      return null;
+    }
+
     const snapshot = await getDoc(doc(firestore, DASHBOARD_PROJECTION_COLLECTION, DASHBOARD_PROJECTION_DOCUMENT));
 
     if (!snapshot.exists()) {
