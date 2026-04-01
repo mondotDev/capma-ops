@@ -53,3 +53,7 @@ Required for the current narrow Firebase slice:
 - `NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED`
 
 If the config is missing or `NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED=false`, the app stays on the existing local-first dashboard path.
+
+## Firebase boundary
+
+Dashboard is intentionally the only Firebase-backed read slice right now. Action View, Collateral, Settings, and all writes stay local-first until the app has an explicit read/write coherence policy for mutation-heavy screens. See [docs/firebase-read-slices.md](/C:/dev/capma-ops/docs/firebase-read-slices.md).

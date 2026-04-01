@@ -154,6 +154,8 @@ export function useActionViewReadModel(input: {
   eventInstances: EventInstance[];
   activeEventInstanceId: string;
 } {
+  // Keep Action View fully local until there is an explicit read/write coherence policy
+  // for mutation-heavy screens. Do not add Firebase list/detail reads here yet.
   const { activeEventInstanceId } = useAppState();
   const readSource = useLocalAppReadSource();
   const actionListSource = useMemo(
@@ -205,6 +207,8 @@ export function useCollateralWorkspaceReadModel(input: {
   eventPrograms: EventProgram[];
   eventInstances: EventInstance[];
 } {
+  // Keep Collateral fully local until Action View-style coherence rules are defined.
+  // Collateral is an operational workspace, not a safe remote-read-only surface yet.
   const { activeEventInstanceId } = useAppState();
   const readSource = useLocalAppReadSource();
   const workspaceSource = useMemo(
