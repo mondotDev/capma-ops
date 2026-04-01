@@ -51,13 +51,15 @@ const DASHBOARD_PROJECTION_DOCUMENT = "current";
 let cachedDashboardSessionSelection: DashboardSessionReadSelection | null = null;
 let cachedDashboardSessionSelectionPromise: Promise<DashboardSessionReadSelection> | null = null;
 
-export function getDashboardSessionReadSelection(): Promise<DashboardSessionReadSelection> {
+export function getDashboardSessionReadSelection(
+  resolveSelection: () => Promise<DashboardSessionReadSelection> = resolveDashboardSessionReadSelection
+): Promise<DashboardSessionReadSelection> {
   if (cachedDashboardSessionSelection) {
     return Promise.resolve(cachedDashboardSessionSelection);
   }
 
   if (!cachedDashboardSessionSelectionPromise) {
-    cachedDashboardSessionSelectionPromise = resolveDashboardSessionReadSelection().then((selection) => {
+    cachedDashboardSessionSelectionPromise = resolveSelection().then((selection) => {
       cachedDashboardSessionSelection = selection;
       return selection;
     });
@@ -67,24 +69,43 @@ export function getDashboardSessionReadSelection(): Promise<DashboardSessionRead
 }
 
 export async function loadFirebaseDashboardSource(): Promise<DashboardSourceData | null> {
-  if (!isDashboardReadsEnabled() || !isFirebaseConfigured()) {
+  return loadFirebaseDashboardSourceWithDependencies({
+    dashboardReadsEnabled: isDashboardReadsEnabled(),
+    firebaseConfigured: isFirebaseConfigured(),
+    getDb: getFirestoreDb,
+    getProjectionDocument: async (firestore) => {
+      const snapshot = await getDoc(doc(firestore, DASHBOARD_PROJECTION_COLLECTION, DASHBOARD_PROJECTION_DOCUMENT));
+      return snapshot.exists() ? snapshot.data() : null;
+    }
+  });
+}
+
+export async function loadFirebaseDashboardSourceWithDependencies(input: {
+  dashboardReadsEnabled: boolean;
+  firebaseConfigured: boolean;
+  getDb: () => ReturnType<typeof getFirestoreDb>;
+  getProjectionDocument: (
+    firestore: NonNullable<ReturnType<typeof getFirestoreDb>>
+  ) => Promise<unknown | null>;
+}): Promise<DashboardSourceData | null> {
+  if (!input.dashboardReadsEnabled || !input.firebaseConfigured) {
     return null;
   }
 
   try {
-    const firestore = getFirestoreDb();
+    const firestore = input.getDb();
 
     if (!firestore) {
       return null;
     }
 
-    const snapshot = await getDoc(doc(firestore, DASHBOARD_PROJECTION_COLLECTION, DASHBOARD_PROJECTION_DOCUMENT));
+    const projectionDocument = await input.getProjectionDocument(firestore);
 
-    if (!snapshot.exists()) {
+    if (!projectionDocument) {
       return null;
     }
 
-    const parsedProjection = parseDashboardProjectionDocument(snapshot.data());
+    const parsedProjection = parseDashboardProjectionDocument(projectionDocument);
 
     if (!parsedProjection) {
       return null;
@@ -113,7 +134,12 @@ async function resolveDashboardSessionReadSelection(): Promise<DashboardSessionR
   };
 }
 
-function parseDashboardProjectionDocument(value: unknown): DashboardProjectionDocument | null {
+export function resetDashboardSessionReadSelectionForTests() {
+  cachedDashboardSessionSelection = null;
+  cachedDashboardSessionSelectionPromise = null;
+}
+
+export function parseDashboardProjectionDocument(value: unknown): DashboardProjectionDocument | null {
   if (!value || typeof value !== "object") {
     return null;
   }

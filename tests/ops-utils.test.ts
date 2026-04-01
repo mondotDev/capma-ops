@@ -36,6 +36,13 @@ import {
   getPublicationIssueSummary
 } from "../lib/queries/dashboard/dashboard-queries";
 import {
+  getDashboardSessionReadSelection,
+  loadFirebaseDashboardSourceWithDependencies,
+  parseDashboardProjectionDocument,
+  resetDashboardSessionReadSelectionForTests,
+  type DashboardSessionReadSelection
+} from "../lib/firebase-dashboard-source";
+import {
   getActionListViewData,
   getSelectedActionItemWorkspace
 } from "../lib/queries/action/action-view-queries";
@@ -1419,6 +1426,175 @@ test("publication issue summary query returns progress-ready rows for visible pu
   assert.equal(publicationRows[0]?.totalCount, 2);
   assert.equal(publicationRows[0]?.progressPercent, 50);
   assert.equal(publicationRows[0]?.canCompleteIssue, false);
+});
+
+test("dashboard firebase read slice falls back cleanly when the feature flag is off", async () => {
+  let projectionReadAttempted = false;
+
+  const source = await loadFirebaseDashboardSourceWithDependencies({
+    dashboardReadsEnabled: false,
+    firebaseConfigured: true,
+    getDb: () => ({}) as never,
+    getProjectionDocument: async () => {
+      projectionReadAttempted = true;
+      return null;
+    }
+  });
+
+  assert.equal(source, null);
+  assert.equal(projectionReadAttempted, false);
+});
+
+test("dashboard firebase read slice falls back cleanly when config is missing", async () => {
+  let projectionReadAttempted = false;
+
+  const source = await loadFirebaseDashboardSourceWithDependencies({
+    dashboardReadsEnabled: true,
+    firebaseConfigured: false,
+    getDb: () => ({}) as never,
+    getProjectionDocument: async () => {
+      projectionReadAttempted = true;
+      return null;
+    }
+  });
+
+  assert.equal(source, null);
+  assert.equal(projectionReadAttempted, false);
+});
+
+test("dashboard firebase read slice falls back cleanly when the projection document is missing", async () => {
+  const source = await loadFirebaseDashboardSourceWithDependencies({
+    dashboardReadsEnabled: true,
+    firebaseConfigured: true,
+    getDb: () => ({}) as never,
+    getProjectionDocument: async () => null
+  });
+
+  assert.equal(source, null);
+});
+
+test("dashboard firebase read slice rejects malformed payloads and falls back to local", async () => {
+  const source = await loadFirebaseDashboardSourceWithDependencies({
+    dashboardReadsEnabled: true,
+    firebaseConfigured: true,
+    getDb: () => ({}) as never,
+    getProjectionDocument: async () => ({
+      items: [{ id: "broken-item", title: "Broken" }],
+      issues: [],
+      workstreamSchedules: []
+    })
+  });
+
+  assert.equal(source, null);
+});
+
+test("dashboard firebase projection parser accepts the minimal valid payload", () => {
+  const parsed = parseDashboardProjectionDocument({
+    schemaVersion: 1,
+    updatedAt: "2026-04-01T12:00:00.000Z",
+    items: [
+      {
+        id: "remote-1",
+        title: "Remote item",
+        type: "Task",
+        workstream: "General Operations",
+        dueDate: "2026-04-02",
+        status: "Waiting",
+        owner: "Melissa",
+        waitingOn: "Vendor",
+        isBlocked: true,
+        blockedBy: "Vendor",
+        lastUpdated: "2026-04-01"
+      }
+    ],
+    issues: [
+      {
+        label: "April 2026 Newsbrief",
+        status: "Open",
+        dueDate: "2026-04-18",
+        workstream: "Newsbrief",
+        year: 2026
+      }
+    ],
+    workstreamSchedules: getDefaultWorkstreamSchedules()
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed?.items.length, 1);
+  assert.equal(parsed?.issues.length, 1);
+  assert.equal(parsed?.workstreamSchedules.length > 0, true);
+});
+
+test("dashboard firebase read slice maps a valid remote payload into dashboard source data", async () => {
+  const source = await loadFirebaseDashboardSourceWithDependencies({
+    dashboardReadsEnabled: true,
+    firebaseConfigured: true,
+    getDb: () => ({}) as never,
+    getProjectionDocument: async () => ({
+      items: [
+        {
+          id: "remote-1",
+          title: "Remote blocked task",
+          type: "Task",
+          workstream: "General Operations",
+          dueDate: "2026-04-02",
+          status: "Waiting",
+          owner: "Melissa",
+          waitingOn: "Vendor",
+          isBlocked: true,
+          blockedBy: "Vendor",
+          lastUpdated: "2026-04-01"
+        }
+      ],
+      issues: [
+        {
+          label: "April 2026 Newsbrief",
+          status: "Open",
+          dueDate: "2026-04-18",
+          workstream: "Newsbrief",
+          year: 2026
+        }
+      ],
+      workstreamSchedules: getDefaultWorkstreamSchedules()
+    })
+  });
+
+  assert.ok(source);
+  assert.equal(source?.items.length, 1);
+  assert.equal(source?.items[0]?.id, "remote-1");
+  assert.equal(source?.items[0]?.noteEntries.length, 0);
+  assert.equal(source?.items[0]?.isBlocked, true);
+  assert.equal(source?.issues[0]?.label, "April 2026 Newsbrief");
+});
+
+test("dashboard session source selection stays fixed after startup", async () => {
+  resetDashboardSessionReadSelectionForTests();
+  let resolverCalls = 0;
+
+  const initialSelection = await getDashboardSessionReadSelection(async () => {
+    resolverCalls += 1;
+    return {
+      source: "remote",
+      dashboardSource: {
+        items: [createItem({ id: "remote-session-item" })],
+        issues: [],
+        workstreamSchedules: getDefaultWorkstreamSchedules()
+      }
+    } satisfies DashboardSessionReadSelection;
+  });
+
+  const laterSelection = await getDashboardSessionReadSelection(async () => {
+    resolverCalls += 1;
+    return { source: "local" } satisfies DashboardSessionReadSelection;
+  });
+
+  assert.equal(resolverCalls, 1);
+  assert.equal(initialSelection.source, "remote");
+  assert.equal(laterSelection.source, "remote");
+  if (laterSelection.source === "remote") {
+    assert.equal(laterSelection.dashboardSource.items[0]?.id, "remote-session-item");
+  }
+  resetDashboardSessionReadSelectionForTests();
 });
 
 test("action view list query returns grouped mixed rows and event options without loading drawer detail", () => {
