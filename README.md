@@ -57,3 +57,9 @@ If the config is missing or `NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED=false`
 ## Firebase boundary
 
 Dashboard is intentionally the only Firebase-backed read slice right now. Action View, Collateral, Settings, and all writes stay local-first until the app has an explicit read/write coherence policy for mutation-heavy screens. See [docs/firebase-read-slices.md](/C:/dev/capma-ops/docs/firebase-read-slices.md).
+
+
+## Architecture Guardrails
+
+- Read/write coherence policy for work surfaces: [docs/read-write-coherence.md](/C:/dev/capma-ops/docs/read-write-coherence.md)
+

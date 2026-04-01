@@ -1,5 +1,7 @@
 # Firebase Read Slice Guardrails
 
+See [read-write-coherence.md](/C:/dev/capma-ops/docs/read-write-coherence.md) for the repo policy that governs mutation-capable surfaces. Firebase expansion is gated by that coherence policy, not by screen order or convenience.
+
 ## Current state
 
 - Dashboard is the only Firebase-backed read slice.
@@ -48,3 +50,4 @@ Even then:
 - not Collateral
 - not Settings
 - not multiple screens in one slice
+

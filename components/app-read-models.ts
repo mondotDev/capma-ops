@@ -144,6 +144,12 @@ export function useDashboardReadModel(): {
   };
 }
 
+// Guardrail:
+// Mutation-capable surfaces (Action View, Collateral, Settings)
+// must remain single-authority per session.
+// Do not introduce remote reads here unless writes move with it.
+// See docs/read-write-coherence.md
+
 export function useActionViewReadModel(input: {
   filters: ActionViewFilters;
   selectedId: string | null;
@@ -268,3 +274,4 @@ export function useCollateralWorkspaceReadModel(input: {
     eventInstances: workspaceSource.eventInstances
   };
 }
+
