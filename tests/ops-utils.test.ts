@@ -24,6 +24,9 @@ import {
 } from "../lib/action-view-rows";
 import {
   getActionMeaningUiState,
+  getQuickAddMeaningUiState,
+  getSoonestUpcomingEventInstanceIdForWorkstream,
+  reconcileQuickAddEventSelectionOnWorkstreamChange,
   shouldClearEventLinkOnWorkstreamChange
 } from "../lib/action/action-item-ux";
 import { getVisibleCollateralExecutionRows } from "../lib/collateral-execution-view";
@@ -32,6 +35,7 @@ import {
   openPublicationIssue,
   setPublicationIssueStatus
 } from "../lib/publication-issue-actions";
+import { openNativeDateInputPicker } from "../lib/date-input";
 import { parseImportedAppState } from "../lib/app-transfer";
 import {
   getActionItemEventGroupLabel,
@@ -1005,6 +1009,241 @@ test("quick add workstream updates clear event linkage immediately and keep disa
   assert.equal(eventLinkedUi.operationalBucketDisabled, true);
   assert.equal(nonEventUi.subEventDisabled, true);
   assert.equal(nonEventUi.operationalBucketDisabled, false);
+});
+
+test("quick add auto-selects the soonest upcoming event instance for an event workstream", () => {
+  const eventPrograms = createDefaultAppStateData().eventTypes;
+  const eventInstances = [
+    {
+      id: "legislative-day-2025",
+      eventTypeId: "legislative-day",
+      name: "Legislative Day 2025",
+      dateMode: "single" as const,
+      dates: ["2025-04-20"],
+      startDate: "2025-04-20",
+      endDate: "2025-04-20"
+    },
+    {
+      id: "legislative-day-2026",
+      eventTypeId: "legislative-day",
+      name: "Legislative Day 2026",
+      dateMode: "single" as const,
+      dates: ["2026-04-21"],
+      startDate: "2026-04-21",
+      endDate: "2026-04-21"
+    },
+    {
+      id: "legislative-day-2027",
+      eventTypeId: "legislative-day",
+      name: "Legislative Day 2027",
+      dateMode: "single" as const,
+      dates: ["2027-04-20"],
+      startDate: "2027-04-20",
+      endDate: "2027-04-20"
+    }
+  ];
+
+  assert.equal(
+    getSoonestUpcomingEventInstanceIdForWorkstream({
+      workstream: "Legislative Day",
+      eventInstances,
+      eventPrograms,
+      today: "2026-02-01"
+    }),
+    "legislative-day-2026"
+  );
+});
+
+test("quick add preserves a manual event-instance override within the same event program", () => {
+  const eventPrograms = createDefaultAppStateData().eventTypes;
+  const eventInstances = [
+    {
+      id: "first-friday-march-2026",
+      eventTypeId: "first-friday",
+      name: "March 2026 First Friday",
+      dateMode: "single" as const,
+      dates: ["2026-03-06"],
+      startDate: "2026-03-06",
+      endDate: "2026-03-06"
+    },
+    {
+      id: "first-friday-april-2026",
+      eventTypeId: "first-friday",
+      name: "April 2026 First Friday",
+      dateMode: "single" as const,
+      dates: ["2026-04-03"],
+      startDate: "2026-04-03",
+      endDate: "2026-04-03"
+    }
+  ];
+
+  const nextSelection = reconcileQuickAddEventSelectionOnWorkstreamChange({
+    currentEventInstanceId: "first-friday-april-2026",
+    currentSubEventId: "first-friday-main",
+    nextWorkstream: "First Friday",
+    manualSelection: {
+      eventProgramId: "first-friday",
+      eventInstanceId: "first-friday-april-2026"
+    },
+    eventInstances,
+    eventPrograms,
+    today: "2026-02-01"
+  });
+
+  assert.equal(nextSelection.eventInstanceId, "first-friday-april-2026");
+  assert.equal(nextSelection.subEventId, "first-friday-main");
+});
+
+test("quick add switches to the soonest relevant instance when the workstream changes to a different event program", () => {
+  const eventPrograms = createDefaultAppStateData().eventTypes;
+  const eventInstances = [
+    {
+      id: "legislative-day-2026",
+      eventTypeId: "legislative-day",
+      name: "Legislative Day 2026",
+      dateMode: "single" as const,
+      dates: ["2026-04-21"],
+      startDate: "2026-04-21",
+      endDate: "2026-04-21"
+    },
+    {
+      id: "first-friday-march-2026",
+      eventTypeId: "first-friday",
+      name: "March 2026 First Friday",
+      dateMode: "single" as const,
+      dates: ["2026-03-06"],
+      startDate: "2026-03-06",
+      endDate: "2026-03-06"
+    }
+  ];
+
+  const nextSelection = reconcileQuickAddEventSelectionOnWorkstreamChange({
+    currentEventInstanceId: "legislative-day-2026",
+    currentSubEventId: "leg-day-legislative-visits",
+    nextWorkstream: "First Friday",
+    manualSelection: {
+      eventProgramId: null,
+      eventInstanceId: ""
+    },
+    eventInstances,
+    eventPrograms,
+    today: "2026-02-01"
+  });
+
+  assert.equal(nextSelection.eventInstanceId, "first-friday-march-2026");
+  assert.equal(nextSelection.subEventId, "");
+});
+
+test("quick add clears event linkage when switching to a non-event workstream", () => {
+  const state = createDefaultAppStateData();
+
+  const nextSelection = reconcileQuickAddEventSelectionOnWorkstreamChange({
+    currentEventInstanceId: "legislative-day-2026",
+    currentSubEventId: "leg-day-legislative-visits",
+    nextWorkstream: "General Ops",
+    manualSelection: {
+      eventProgramId: null,
+      eventInstanceId: ""
+    },
+    eventInstances: state.eventInstances,
+    eventPrograms: state.eventTypes,
+    today: "2026-02-01"
+  });
+
+  assert.equal(nextSelection.eventInstanceId, "");
+  assert.equal(nextSelection.subEventId, "");
+});
+
+test("quick add leaves the event instance empty when no upcoming instance exists for the selected event workstream", () => {
+  const eventPrograms = createDefaultAppStateData().eventTypes;
+  const eventInstances = [
+    {
+      id: "legislative-day-2025",
+      eventTypeId: "legislative-day",
+      name: "Legislative Day 2025",
+      dateMode: "single" as const,
+      dates: ["2025-04-20"],
+      startDate: "2025-04-20",
+      endDate: "2025-04-20"
+    }
+  ];
+
+  const nextSelection = reconcileQuickAddEventSelectionOnWorkstreamChange({
+    currentEventInstanceId: "",
+    currentSubEventId: "",
+    nextWorkstream: "Legislative Day",
+    manualSelection: {
+      eventProgramId: null,
+      eventInstanceId: ""
+    },
+    eventInstances,
+    eventPrograms,
+    today: "2026-02-01"
+  });
+
+  assert.equal(nextSelection.eventInstanceId, "");
+  assert.equal(nextSelection.subEventId, "");
+});
+
+test("quick add meaning ui treats event and non-event paths differently after workstream selection", () => {
+  const eventPrograms = createDefaultAppStateData().eventTypes;
+
+  const beforeSelection = getQuickAddMeaningUiState({
+    workstream: "",
+    eventInstanceId: "",
+    eventPrograms
+  });
+  const eventPath = getQuickAddMeaningUiState({
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026",
+    eventPrograms
+  });
+  const nonEventPath = getQuickAddMeaningUiState({
+    workstream: "General Operations",
+    eventInstanceId: "",
+    eventPrograms
+  });
+
+  assert.equal(beforeSelection.eventPathMuted, true);
+  assert.equal(beforeSelection.operationalPathMuted, true);
+  assert.equal(beforeSelection.contextualHint, "Choose a workstream first to guide the event vs non-event fields.");
+
+  assert.equal(eventPath.eventPathActive, true);
+  assert.equal(eventPath.operationalPathMuted, true);
+  assert.equal(eventPath.operationalBucketDisabled, true);
+
+  assert.equal(nonEventPath.operationalPathActive, true);
+  assert.equal(nonEventPath.eventPathMuted, true);
+  assert.equal(nonEventPath.operationalBucketDisabled, false);
+});
+
+test("native date picker helper focuses the input and opens the picker when available", () => {
+  let focused = false;
+  let pickerOpened = false;
+
+  openNativeDateInputPicker({
+    focus() {
+      focused = true;
+    },
+    showPicker() {
+      pickerOpened = true;
+    }
+  } as HTMLInputElement);
+
+  assert.equal(focused, true);
+  assert.equal(pickerOpened, true);
+});
+
+test("native date picker helper still focuses when showPicker is unavailable", () => {
+  let focused = false;
+
+  openNativeDateInputPicker({
+    focus() {
+      focused = true;
+    }
+  } as HTMLInputElement);
+
+  assert.equal(focused, true);
 });
 
 test("normalizeCollateralItem preserves template origin metadata", () => {

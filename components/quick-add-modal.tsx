@@ -1,8 +1,9 @@
 "use client";
 
-import type { FormEvent } from "react";
-import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
-import { ACTION_ITEM_MEANING_HINT, getActionMeaningUiState } from "@/lib/action/action-item-ux";
+import { useRef, type FormEvent } from "react";
+import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
+import { ACTION_ITEM_MEANING_HINT, getQuickAddMeaningUiState } from "@/lib/action/action-item-ux";
+import { openNativeDateInputPicker } from "@/lib/date-input";
 import type { ActionItemValidation, IssueRecord } from "@/lib/ops-utils";
 import {
   getContextualDueDateLabel,
@@ -39,6 +40,7 @@ type QuickAddModalProps = {
   validation: ActionItemValidation;
   availableIssues: string[];
   availableEventInstances: EventInstance[];
+  availableEventPrograms: EventProgram[];
   availableSubEvents: EventSubEvent[];
   selectedIssueRecord: IssueRecord | null;
   canGenerateDeliverables: boolean;
@@ -55,6 +57,7 @@ export function QuickAddModal({
   validation,
   availableIssues,
   availableEventInstances,
+  availableEventPrograms,
   availableSubEvents,
   selectedIssueRecord,
   canGenerateDeliverables,
@@ -64,11 +67,17 @@ export function QuickAddModal({
   onFieldChange,
   onGenerateDeliverables
 }: QuickAddModalProps) {
+  const blockedByInputRef = useRef<HTMLInputElement | null>(null);
+
   if (!isOpen) {
     return null;
   }
 
-  const meaningUi = getActionMeaningUiState(formState.eventInstanceId);
+  const meaningUi = getQuickAddMeaningUiState({
+    workstream: formState.workstream,
+    eventInstanceId: formState.eventInstanceId,
+    eventPrograms: availableEventPrograms
+  });
 
   return (
     <div className="modal-layer" role="presentation">
@@ -97,8 +106,15 @@ export function QuickAddModal({
         </div>
 
         <form className="quick-add-form" onSubmit={onSubmit}>
-          <div className="quick-add-grid">
-            <div className="field">
+          <section className="quick-add-section quick-add-section--primary" aria-labelledby="quick-add-core">
+            <div className="quick-add-section__header">
+              <h3 className="quick-add-section__title" id="quick-add-core">
+                Core Details
+              </h3>
+              <p className="quick-add-section__copy">Start with the item basics, then add context only where it helps.</p>
+            </div>
+            <div className="quick-add-grid quick-add-grid--core">
+              <div className="field">
               <label htmlFor="quick-add-type">Item Type</label>
               <select
                 className={validation.type ? "field-control field-control--invalid" : "field-control"}
@@ -115,7 +131,7 @@ export function QuickAddModal({
               </select>
             </div>
 
-            <div className="field field--wide">
+              <div className="field field--wide quick-add-field--title">
               <label htmlFor="quick-add-title-input">Title</label>
               <input
                 className={validation.title ? "field-control field-control--invalid" : "field-control"}
@@ -125,7 +141,7 @@ export function QuickAddModal({
               />
             </div>
 
-            <div className="field">
+              <div className="field">
               <label htmlFor="quick-add-workstream">Workstream</label>
               <select
                 className={validation.workstream ? "field-control field-control--invalid" : "field-control"}
@@ -141,11 +157,21 @@ export function QuickAddModal({
                 ))}
               </select>
             </div>
+            </div>
+          </section>
 
-            <div className="field">
+          <section className="quick-add-section quick-add-section--context" aria-labelledby="quick-add-context">
+            <div className="quick-add-section__header">
+              <h3 className="quick-add-section__title" id="quick-add-context">
+                Context
+              </h3>
+              <p className="quick-add-section__copy">{meaningUi.contextualHint}</p>
+            </div>
+            <div className="quick-add-grid quick-add-grid--context">
+            <div className={meaningUi.eventPathActive ? "field field--active" : meaningUi.eventPathMuted ? "field field--secondary" : "field"}>
               <label htmlFor="quick-add-event-instance">Event Instance</label>
               <select
-                className="field-control"
+                className={meaningUi.eventPathMuted ? "field-control field-control--muted" : "field-control"}
                 id="quick-add-event-instance"
                 onChange={(event) => {
                   const nextEventInstanceId = event.target.value;
@@ -162,9 +188,10 @@ export function QuickAddModal({
                   </option>
                 ))}
               </select>
+              {meaningUi.eventPathActive ? <div className="field-hint">Matching upcoming instance selected when available.</div> : null}
             </div>
 
-            <div className="field">
+            <div className={meaningUi.eventPathActive ? "field field--active" : "field field--secondary"}>
               <label htmlFor="quick-add-sub-event">Sub-Event</label>
               <select
                 className={meaningUi.subEventDisabled ? "field-control field-control--muted" : "field-control"}
@@ -182,10 +209,22 @@ export function QuickAddModal({
               </select>
             </div>
 
-            <div className="field">
+            <div
+              className={
+                meaningUi.operationalPathActive
+                  ? "field field--active"
+                  : meaningUi.operationalPathMuted
+                    ? "field field--secondary"
+                    : "field"
+              }
+            >
               <label htmlFor="quick-add-operational-bucket">Operational Bucket</label>
               <select
-                className={!meaningUi.operationalBucketDisabled ? "field-control" : "field-control field-control--muted"}
+                className={
+                  !meaningUi.operationalBucketDisabled && !meaningUi.operationalPathMuted
+                    ? "field-control"
+                    : "field-control field-control--muted"
+                }
                 disabled={meaningUi.operationalBucketDisabled}
                 id="quick-add-operational-bucket"
                 onChange={(event) => onFieldChange("operationalBucket", event.target.value)}
@@ -202,9 +241,18 @@ export function QuickAddModal({
             </div>
 
             <div className="field field--wide">
-              <div className="field-hint">{ACTION_ITEM_MEANING_HINT}</div>
+              <div className="field-hint quick-add-context-hint">{ACTION_ITEM_MEANING_HINT}</div>
             </div>
+            </div>
+          </section>
 
+          <section className="quick-add-section quick-add-section--workflow" aria-labelledby="quick-add-workflow">
+            <div className="quick-add-section__header">
+              <h3 className="quick-add-section__title" id="quick-add-workflow">
+                Workflow
+              </h3>
+            </div>
+            <div className="quick-add-grid quick-add-grid--workflow">
             {availableIssues.length > 0 ? (
               <div className="field">
                 <label htmlFor="quick-add-issue">Issue</label>
@@ -230,13 +278,14 @@ export function QuickAddModal({
               </div>
             ) : null}
 
-            <div className="field">
+            <div className="field quick-add-field--date">
               <label htmlFor="quick-add-due-date">
                 {getContextualDueDateLabel(formState.status, formState.isBlocked)}
               </label>
               <input
                 className={validation.dueDate ? "field-control field-control--invalid" : "field-control"}
                 id="quick-add-due-date"
+                onClick={(event) => openNativeDateInputPicker(event.currentTarget)}
                 onChange={(event) => onFieldChange("dueDate", event.target.value)}
                 type="date"
                 value={formState.dueDate}
@@ -248,7 +297,7 @@ export function QuickAddModal({
               ) : null}
             </div>
 
-            <div className="field">
+            <div className="field quick-add-field--secondary">
               <label htmlFor="quick-add-owner">Owner</label>
               <select
                 className={validation.owner ? "field-control field-control--invalid" : "field-control"}
@@ -280,7 +329,7 @@ export function QuickAddModal({
               </select>
             </div>
 
-            <div className="field">
+            <div className="field quick-add-field--secondary">
               <label htmlFor="quick-add-waiting-on">Waiting On</label>
               <select
                 className={
@@ -302,30 +351,59 @@ export function QuickAddModal({
                 ))}
               </select>
             </div>
+            </div>
+          </section>
 
-            <div className="field">
-              <label className="toggle" htmlFor="quick-add-blocked">
-                <input
-                  checked={formState.isBlocked}
-                  id="quick-add-blocked"
-                  onChange={(event) => onFieldChange("isBlocked", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Blocked</span>
-              </label>
+          <section className="quick-add-section quick-add-section--support" aria-labelledby="quick-add-support">
+            <div className="quick-add-section__header">
+              <h3 className="quick-add-section__title" id="quick-add-support">
+                Support
+              </h3>
+            </div>
+            <div className="quick-add-grid quick-add-grid--support">
+            <div
+              className={`quick-add-blocked-group field--wide${formState.isBlocked ? " quick-add-blocked-group--active" : ""}`}
+            >
+              <div className="field field--secondary quick-add-field--compact">
+                <label className="toggle" htmlFor="quick-add-blocked">
+                  <input
+                    checked={formState.isBlocked}
+                    id="quick-add-blocked"
+                    onChange={(event) => {
+                      const nextChecked = event.target.checked;
+                      onFieldChange("isBlocked", nextChecked);
+
+                      if (!nextChecked) {
+                        onFieldChange("blockedBy", "");
+                        return;
+                      }
+
+                      requestAnimationFrame(() => {
+                        blockedByInputRef.current?.focus();
+                        blockedByInputRef.current?.select();
+                      });
+                    }}
+                    type="checkbox"
+                  />
+                  <span>Blocked</span>
+                </label>
+              </div>
+
+              {formState.isBlocked ? (
+                <div className="field field--secondary quick-add-blocked-group__detail">
+                  <label htmlFor="quick-add-blocked-by">Blocked By</label>
+                  <input
+                    className="field-control"
+                    id="quick-add-blocked-by"
+                    onChange={(event) => onFieldChange("blockedBy", event.target.value)}
+                    ref={blockedByInputRef}
+                    value={formState.blockedBy}
+                  />
+                </div>
+              ) : null}
             </div>
 
-            <div className="field">
-              <label htmlFor="quick-add-blocked-by">Blocked By</label>
-              <input
-                className="field-control"
-                id="quick-add-blocked-by"
-                onChange={(event) => onFieldChange("blockedBy", event.target.value)}
-                value={formState.blockedBy}
-              />
-            </div>
-
-            <div className="field field--wide">
+            <div className="field field--wide field--secondary">
               <label htmlFor="quick-add-notes">Initial Note</label>
               <textarea
                 className="field-control"
@@ -335,7 +413,8 @@ export function QuickAddModal({
                 value={formState.notes}
               />
             </div>
-          </div>
+            </div>
+          </section>
 
           <div className="quick-add-validation">
             {validation.isValid ? (

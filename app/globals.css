@@ -274,6 +274,52 @@ textarea {
   gap: 16px;
 }
 
+.quick-add-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background: #fcfdff;
+}
+
+.quick-add-section--primary {
+  background:
+    linear-gradient(180deg, rgba(242, 247, 252, 0.92), rgba(255, 255, 255, 0.98));
+  border-color: rgba(0, 59, 109, 0.12);
+}
+
+.quick-add-section--context {
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.quick-add-section--support {
+  background: #fbfcfe;
+}
+
+.quick-add-section__header {
+  display: grid;
+  gap: 4px;
+}
+
+.quick-add-section__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6b7785;
+}
+
+.quick-add-section__copy {
+  margin: 0;
+  max-width: 56ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #617286;
+}
+
 .quick-add-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -282,6 +328,68 @@ textarea {
 
 .field--wide {
   grid-column: 1 / -1;
+}
+
+.field--active label {
+  color: #21466d;
+}
+
+.field--active .field-control {
+  border-color: #c7d7e7;
+  box-shadow: 0 0 0 1px rgba(0, 59, 109, 0.08);
+  background: #fdfefe;
+}
+
+.quick-add-section--context .field--active {
+  padding: 12px;
+  border: 1px solid rgba(0, 59, 109, 0.1);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.field--secondary label,
+.field--secondary .field-hint {
+  color: #8a97a5;
+}
+
+.quick-add-section--support .field--secondary .field-control,
+.quick-add-field--secondary .field-control {
+  background: #fbfcfe;
+}
+
+.quick-add-field--title .field-control {
+  min-height: 46px;
+  font-size: 16px;
+}
+
+.quick-add-field--date .field-control {
+  font-weight: 600;
+}
+
+.quick-add-field--compact {
+  align-self: end;
+}
+
+.quick-add-blocked-group {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.quick-add-blocked-group--active {
+  border-color: rgba(180, 83, 9, 0.2);
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.72), rgba(255, 255, 255, 0.98));
+}
+
+.quick-add-blocked-group__detail {
+  margin-top: -2px;
+}
+
+.quick-add-context-hint {
+  max-width: 64ch;
 }
 
 .field-control {
@@ -307,6 +415,7 @@ textarea {
 .field-control--muted {
   background: #f8fafc;
   color: var(--muted);
+  border-color: #e4ebf2;
 }
 
 .field-control--invalid {
@@ -319,6 +428,7 @@ textarea {
   gap: 6px;
   min-height: 20px;
   font-size: 13px;
+  padding: 4px 2px 0;
 }
 
 .quick-add-validation__message {
@@ -3173,6 +3283,10 @@ textarea,
   .quick-add-modal {
     max-height: calc(100vh - 24px);
     padding: 18px;
+  }
+
+  .quick-add-section {
+    padding: 14px;
   }
 
   .quick-add-grid {

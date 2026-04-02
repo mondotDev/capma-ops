@@ -6,7 +6,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
 import { QuickAddModal, type QuickAddFormState } from "@/components/quick-add-modal";
-import { shouldClearEventLinkOnWorkstreamChange } from "@/lib/action/action-item-ux";
+import {
+  getEventProgramForWorkstream,
+  reconcileQuickAddEventSelectionOnWorkstreamChange,
+  type QuickAddManualEventSelection
+} from "@/lib/action/action-item-ux";
 import {
   SCHEDULED_WORKSTREAM_OPTIONS,
   type WorkstreamSchedule,
@@ -48,6 +52,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [settingsFeedback, setSettingsFeedback] = useState("");
   const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
   const [generationFeedback, setGenerationFeedback] = useState<string>("");
+  const quickAddManualEventSelectionRef = useRef<QuickAddManualEventSelection>({
+    eventProgramId: null,
+    eventInstanceId: ""
+  });
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const validation = useMemo(() => validateActionItemInput(formState), [formState]);
   const availableIssues = useMemo(() => getIssuesForWorkstream(formState.workstream), [formState.workstream]);
@@ -83,12 +91,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function openQuickAdd() {
     setFormState(createInitialFormState());
+    quickAddManualEventSelectionRef.current = { eventProgramId: null, eventInstanceId: "" };
     setGenerationFeedback("");
     setIsQuickAddOpen(true);
   }
 
   function closeQuickAdd() {
     setIsQuickAddOpen(false);
+    quickAddManualEventSelectionRef.current = { eventProgramId: null, eventInstanceId: "" };
     setGenerationFeedback("");
   }
 
@@ -254,22 +264,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (field === "workstream") {
         const nextWorkstream = value as string;
         const nextState = syncActionItemWorkstream(current, nextWorkstream);
-        const shouldClearEventLink = shouldClearEventLinkOnWorkstreamChange({
-          eventInstanceId: current.eventInstanceId || undefined,
+        const nextEventSelection = reconcileQuickAddEventSelectionOnWorkstreamChange({
+          currentEventInstanceId: current.eventInstanceId,
+          currentSubEventId: current.subEventId,
           nextWorkstream,
+          manualSelection: quickAddManualEventSelectionRef.current,
           eventInstances,
           eventPrograms: eventTypes
         });
+        quickAddManualEventSelectionRef.current = nextEventSelection.manualSelection;
 
         return {
           ...nextState,
-          eventInstanceId: shouldClearEventLink ? "" : current.eventInstanceId,
-          subEventId: shouldClearEventLink ? "" : current.subEventId
+          eventInstanceId: nextEventSelection.eventInstanceId,
+          subEventId: nextEventSelection.subEventId
         };
       }
 
       if (field === "issue") {
         return syncActionItemIssue(current, value as string);
+      }
+
+      if (field === "eventInstanceId") {
+        const currentEventProgram = getEventProgramForWorkstream(current.workstream, eventTypes);
+        quickAddManualEventSelectionRef.current = {
+          eventProgramId: currentEventProgram?.id ?? null,
+          eventInstanceId: value as string
+        };
       }
 
       return {
@@ -359,6 +380,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <QuickAddModal
           availableIssues={availableIssues}
           availableEventInstances={eventInstances}
+          availableEventPrograms={eventTypes}
           availableSubEvents={availableQuickAddSubEvents}
           canGenerateDeliverables={canGenerateDeliverables}
           formState={formState}
