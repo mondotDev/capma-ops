@@ -5,9 +5,11 @@ import {
 } from "@/lib/collateral-execution-view";
 import {
   getVisibleActionViewRows,
+  groupActionViewRowsByDueDate,
   groupActionViewRowsByEventGroup,
   isSelectableActionViewRow,
   type ActionViewRow,
+  type ActionViewRowGroup,
   type NativeActionViewRow
 } from "@/lib/action-view-rows";
 import {
@@ -56,12 +58,13 @@ type CollateralExecutionQueryInput = {
 
 export type ActionListViewData = {
   eventGroupOptions: { label: string; value: string }[];
-  groupedRows: { label: string; items: ActionViewRow[] }[];
+  groupedRows: ActionViewRowGroup[];
   summaryCounts: ActionSummaryCounts;
   visibleActionItemCount: number;
   visibleExecutionCount: number;
   visibleRows: ActionViewRow[];
   visibleSelectableRows: NativeActionViewRow[];
+  collisionReview: CollisionReviewSummary | null;
 };
 
 export type ActionDetailWorkspaceData = {
@@ -85,6 +88,22 @@ export type PublicationIssueWorkspaceSummary = {
   canCompleteIssue: boolean;
   visiblePublicationIssues: IssueRecord[];
   isPublicationIssue: true;
+};
+
+export type CollisionReviewSummary = {
+  reviewWindowDays: number;
+  totalDueSoonRows: number;
+  overloadedDateCount: number;
+  ownerCollisionCount: number;
+  overloadedDates: CollisionReviewDateSummary[];
+  selectedDate: CollisionReviewDateSummary | null;
+};
+
+export type CollisionReviewDateSummary = {
+  date: string;
+  totalCount: number;
+  ownerCollisionCount: number;
+  owners: { owner: string; count: number }[];
 };
 
 export function getActionCollateralExecutionRows(input: Omit<CollateralExecutionQueryInput, "collateralItems"> & {
@@ -144,18 +163,23 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     eventInstances: input.eventInstances,
     collateralExecutionInstanceIds: collateralRows.map((row) => row.eventInstanceId)
   });
+  const collisionReview = getCollisionReviewSummary(visibleRows, input.filters.activeDueDate);
 
   return {
     eventGroupOptions: actionScopes.map((scope) => ({
       label: scope.label,
       value: scope.value
     })),
-    groupedRows: groupActionViewRowsByEventGroup(visibleRows),
+    groupedRows:
+      input.filters.activeLens === "reviewCollisions"
+        ? groupActionViewRowsByDueDate(visibleRows)
+        : groupActionViewRowsByEventGroup(visibleRows),
     summaryCounts: getVisibleActionSummaryCounts(visibleRows),
     visibleActionItemCount: visibleItems.length,
     visibleExecutionCount: visibleItems.length + collateralRows.length,
     visibleRows,
-    visibleSelectableRows
+    visibleSelectableRows,
+    collisionReview: input.filters.activeLens === "reviewCollisions" ? collisionReview : null
   };
 }
 
@@ -258,5 +282,46 @@ function getVisibleActionSummaryCounts(rows: ActionViewRow[]): ActionSummaryCoun
     blocked: activeRows.filter((row) => row.isBlocked).length,
     waiting: activeRows.filter((row) => row.isWaiting).length,
     totalActive: activeRows.length
+  };
+}
+
+function getCollisionReviewSummary(rows: ActionViewRow[], activeDueDate: string): CollisionReviewSummary {
+  const dueDatedRows = rows.filter((row) => Boolean(row.dueDate) && !row.isTerminal);
+  const rowsByDate = new Map<string, ActionViewRow[]>();
+
+  for (const row of dueDatedRows) {
+    if (!rowsByDate.has(row.dueDate)) {
+      rowsByDate.set(row.dueDate, []);
+    }
+
+    rowsByDate.get(row.dueDate)!.push(row);
+  }
+
+  const dateSummaries = Array.from(rowsByDate, ([date, dateRows]) => {
+    const ownerCounts = new Map<string, number>();
+
+    for (const row of dateRows) {
+      const owner = row.owner.trim() || "Unassigned";
+      ownerCounts.set(owner, (ownerCounts.get(owner) ?? 0) + 1);
+    }
+
+    const owners = Array.from(ownerCounts, ([owner, count]) => ({ owner, count }))
+      .sort((left, right) => right.count - left.count || left.owner.localeCompare(right.owner));
+
+    return {
+      date,
+      totalCount: dateRows.length,
+      ownerCollisionCount: owners.filter((owner) => owner.count > 1).length,
+      owners
+    };
+  }).sort((left, right) => right.totalCount - left.totalCount || left.date.localeCompare(right.date));
+
+  return {
+    reviewWindowDays: 14,
+    totalDueSoonRows: dueDatedRows.length,
+    overloadedDateCount: dateSummaries.filter((entry) => entry.totalCount > 1).length,
+    ownerCollisionCount: dateSummaries.reduce((total, entry) => total + entry.ownerCollisionCount, 0),
+    overloadedDates: dateSummaries.filter((entry) => entry.totalCount > 1).slice(0, 5),
+    selectedDate: activeDueDate ? dateSummaries.find((entry) => entry.date === activeDueDate) ?? null : null
   };
 }

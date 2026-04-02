@@ -14,6 +14,7 @@ import {
 import { getActionScopeLabelByValue } from "@/lib/action-scopes";
 import type { ActionItem } from "@/lib/sample-data";
 import {
+  getCollisionReviewHref,
   getActionDueDateValue,
   getActionEventGroupValue,
   getActionFilterValue,
@@ -59,6 +60,7 @@ const LENS_OPTIONS: { label: string; value: ActionLens }[] = [
   { label: "All Work", value: "all" },
   { label: "Execution Now", value: "executionNow" },
   { label: "Planned Later", value: "plannedLater" },
+  { label: "Review: Collisions", value: "reviewCollisions" },
   { label: "Review: No Due Date", value: "reviewMissingDueDate" },
   { label: "Review: Waiting Too Long", value: "reviewWaitingTooLong" },
   { label: "Review: Stale", value: "reviewStale" }
@@ -162,6 +164,7 @@ export function ActionView({
   const visibleRows = actionListView.visibleRows;
   const groupedRows = actionListView.groupedRows;
   const visibleSelectableRows = actionListView.visibleSelectableRows;
+  const collisionReview = actionListView.collisionReview;
   const selectedItem = selectedWorkspace.selectedItem;
   const selectedIssueRecord = selectedWorkspace.selectedIssueRecord;
   const selectedItemIssueOptions = selectedWorkspace.selectedItemIssueOptions;
@@ -345,6 +348,14 @@ export function ActionView({
 
   function clearDueDateFilter() {
     updateQuery(activeFilter, activeFocus, activeLens, activeEventGroup, "", activeQuery);
+  }
+
+  function clearCollisionReview() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("lens");
+    params.delete("dueDate");
+    const query = params.toString();
+    router.replace(query ? `/action?${query}` : "/action");
   }
 
   function clearSearchQuery() {
@@ -669,6 +680,82 @@ export function ActionView({
           </span>
         </div>
 
+        {collisionReview ? (
+          <div className="card card--secondary collision-review">
+            <div className="collision-review__header">
+              <div>
+                <div className="card__title">DEADLINE COLLISION REVIEW</div>
+                <div className="collision-review__title">
+                  {collisionReview.selectedDate
+                    ? `Reviewing ${formatShortDate(collisionReview.selectedDate.date)}`
+                    : `Next ${collisionReview.reviewWindowDays} days`}
+                </div>
+                <div className="collision-review__meta">
+                  {collisionReview.selectedDate
+                    ? `${collisionReview.selectedDate.totalCount} ${collisionReview.selectedDate.totalCount === 1 ? "item" : "items"} due`
+                    : `${collisionReview.totalDueSoonRows} due-dated execution items in review window`}
+                </div>
+              </div>
+              {(activeDueDate || activeLens === "reviewCollisions") ? (
+                <button className="button-link button-link--inline-secondary" onClick={clearCollisionReview} type="button">
+                  Back to all work
+                </button>
+              ) : null}
+            </div>
+            <div className="collision-review__signals">
+              <span className="summary-chip summary-chip--due-soon">
+                <span className="summary-chip__label">Dates With Collisions</span>
+                <strong className="summary-chip__value">{collisionReview.overloadedDateCount}</strong>
+              </span>
+              <span className="summary-chip summary-chip--blocked">
+                <span className="summary-chip__label">Owners Double-Booked</span>
+                <strong className="summary-chip__value">{collisionReview.ownerCollisionCount}</strong>
+              </span>
+              {collisionReview.selectedDate ? (
+                <span className="summary-chip">
+                  <span className="summary-chip__label">Selected Date</span>
+                  <strong className="summary-chip__value">{collisionReview.selectedDate.totalCount} due</strong>
+                </span>
+              ) : null}
+            </div>
+            <div className="collision-review__list">
+              {(collisionReview.selectedDate ? [collisionReview.selectedDate] : collisionReview.overloadedDates).length > 0 ? (
+                (collisionReview.selectedDate ? [collisionReview.selectedDate] : collisionReview.overloadedDates).map((entry) => (
+                  <button
+                    className={
+                      entry.date === activeDueDate
+                        ? "collision-review__date collision-review__date--active"
+                        : "collision-review__date"
+                    }
+                    key={entry.date}
+                    onClick={() => router.replace(getCollisionReviewHref(entry.date))}
+                    type="button"
+                  >
+                    <div className="collision-review__date-top">
+                      <strong>{formatShortDate(entry.date)}</strong>
+                      <span>{entry.totalCount} due</span>
+                    </div>
+                    <div className="collision-review__date-meta">
+                      {entry.ownerCollisionCount > 0
+                        ? `${entry.ownerCollisionCount} ${entry.ownerCollisionCount === 1 ? "owner" : "owners"} carrying multiple items`
+                        : "No owner collisions yet"}
+                    </div>
+                    <div className="collision-review__owners">
+                      {entry.owners.slice(0, 3).map((owner) => (
+                        <span className="collision-review__owner-pill" key={`${entry.date}-${owner.owner}`}>
+                          {owner.owner} · {owner.count}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="muted">No upcoming collisions in the current view.</div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
         {selectedVisibleIds.length > 0 ? (
           <div className="bulk-action-bar">
             <strong>{selectedVisibleIds.length} selected</strong>
@@ -855,7 +942,7 @@ export function ActionView({
                             type="button"
                           >
                             <span>{isCollapsed ? "Show" : "Hide"}</span>
-                            <strong>{group.label}</strong>
+                            <strong>{activeLens === "reviewCollisions" ? formatShortDate(group.label) : group.label}</strong>
                             <span>{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
                           </button>
                         </td>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useDashboardReadModel } from "@/components/app-read-models";
 import { useAppActions } from "@/components/app-state";
 import { DashboardStuckCard } from "@/components/dashboard-stuck-card";
+import { getCollisionReviewHref } from "@/lib/action-view-utils";
 import type { PublicationIssueSummaryRow } from "@/lib/queries/dashboard/dashboard-queries";
 import { formatShortDate } from "@/lib/ops-utils";
 
@@ -74,7 +75,7 @@ export function DashboardView() {
                   return;
                 }
 
-                router.push(`/action?dueDate=${encodeURIComponent(dashboardSummary.peakUpcomingLoadDate)}`);
+                router.push(getCollisionReviewHref(dashboardSummary.peakUpcomingLoadDate));
               }}
               title="Highest number of active items due on a single day in the next seven days"
               type="button"
@@ -327,7 +328,7 @@ export function DashboardView() {
                           className={`load-grid__cell ${loadLevel}`}
                           disabled={entry.count === 0}
                           key={entry.date}
-                          onClick={() => router.push(`/action?dueDate=${encodeURIComponent(entry.date)}`)}
+                          onClick={() => router.push(getCollisionReviewHref(entry.date))}
                           type="button"
                         >
                           <span className="load-grid__swatch" />

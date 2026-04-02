@@ -51,6 +51,7 @@ export function getActionLensValue(lens?: string): ActionLens {
   if (
     lens === "executionNow" ||
     lens === "plannedLater" ||
+    lens === "reviewCollisions" ||
     lens === "reviewMissingDueDate" ||
     lens === "reviewWaitingTooLong" ||
     lens === "reviewStale"
@@ -71,6 +72,17 @@ export function getActionDueDateValue(dueDate?: string) {
 
 export function getActionQueryValue(query?: string) {
   return query?.trim() || "";
+}
+
+export function getCollisionReviewHref(dueDate?: string) {
+  const params = new URLSearchParams();
+  params.set("lens", "reviewCollisions");
+
+  if (dueDate?.trim()) {
+    params.set("dueDate", dueDate.trim());
+  }
+
+  return `/action?${params.toString()}`;
 }
 
 export function getItemEventGroupLabel(

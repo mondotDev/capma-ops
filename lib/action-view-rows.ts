@@ -73,6 +73,7 @@ export type CollateralActionViewRow = {
 };
 
 export type ActionViewRow = NativeActionViewRow | CollateralActionViewRow;
+export type ActionViewRowGroup = { label: string; items: ActionViewRow[] };
 
 export function getVisibleActionViewRows(input: {
   actionItems: ActionItem[];
@@ -95,17 +96,20 @@ export function getVisibleActionViewRows(input: {
 }
 
 export function groupActionViewRowsByEventGroup(rows: ActionViewRow[]) {
-  const grouped = new Map<string, ActionViewRow[]>();
+  return groupActionViewRowsByLabel(rows, (row) => row.eventGroupLabel);
+}
 
-  for (const row of rows) {
-    if (!grouped.has(row.eventGroupLabel)) {
-      grouped.set(row.eventGroupLabel, []);
-    }
+export function groupActionViewRowsByDueDate(rows: ActionViewRow[]): ActionViewRowGroup[] {
+  const grouped = groupActionViewRowsByLabel(
+    rows,
+    (row) => row.dueDate || "No Due Date",
+    (left, right) => left.localeCompare(right)
+  );
 
-    grouped.get(row.eventGroupLabel)!.push(row);
-  }
-
-  return Array.from(grouped, ([label, items]) => ({ label, items }));
+  return grouped.map((group) => ({
+    label: group.label,
+    items: [...group.items].sort(sortActionViewRowsForCollisionReview)
+  }));
 }
 
 export function isSelectableActionViewRow(row: ActionViewRow): row is NativeActionViewRow {
@@ -202,6 +206,46 @@ function sortActionViewRows(a: ActionViewRow, b: ActionViewRow) {
   }
 
   return a.title.localeCompare(b.title);
+}
+
+function groupActionViewRowsByLabel(
+  rows: ActionViewRow[],
+  getLabel: (row: ActionViewRow) => string,
+  sortLabels?: (left: string, right: string) => number
+): ActionViewRowGroup[] {
+  const grouped = new Map<string, ActionViewRow[]>();
+
+  for (const row of rows) {
+    const label = getLabel(row);
+
+    if (!grouped.has(label)) {
+      grouped.set(label, []);
+    }
+
+    grouped.get(label)!.push(row);
+  }
+
+  const entries = Array.from(grouped, ([label, items]) => ({ label, items }));
+
+  if (sortLabels) {
+    entries.sort((left, right) => sortLabels(left.label, right.label));
+  }
+
+  return entries;
+}
+
+function sortActionViewRowsForCollisionReview(a: ActionViewRow, b: ActionViewRow) {
+  const ownerDelta = getActionViewRowOwnerLabel(a).localeCompare(getActionViewRowOwnerLabel(b));
+
+  if (ownerDelta !== 0) {
+    return ownerDelta;
+  }
+
+  return sortActionViewRows(a, b);
+}
+
+function getActionViewRowOwnerLabel(row: ActionViewRow) {
+  return row.owner.trim() || "Unassigned";
 }
 
 function getActionViewRowPriority(row: ActionViewRow) {

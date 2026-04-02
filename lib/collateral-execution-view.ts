@@ -18,6 +18,7 @@ import {
   type ActionFilter,
   type ActionFocus,
   type ActionLens,
+  isDateWithinUpcomingWindow,
   normalizeOwnerValue
 } from "@/lib/ops-utils";
 
@@ -200,6 +201,10 @@ function matchesCollateralExecutionFocus(row: CollateralExecutionRow, focus: Act
 function matchesCollateralExecutionLens(row: CollateralExecutionRow, lens: ActionLens) {
   if (lens === "all" || lens === "executionNow") {
     return true;
+  }
+
+  if (lens === "reviewCollisions") {
+    return isDateWithinUpcomingWindow(row.dueDate, 14);
   }
 
   return false;

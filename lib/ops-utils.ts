@@ -145,6 +145,7 @@ export type ActionLens =
   | "all"
   | "executionNow"
   | "plannedLater"
+  | "reviewCollisions"
   | "reviewMissingDueDate"
   | "reviewWaitingTooLong"
   | "reviewStale";
@@ -320,6 +321,15 @@ export function isItemDueSoon(item: ActionItem) {
   }
 
   return isDueSoon(item.dueDate);
+}
+
+export function isDateWithinUpcomingWindow(dueDate: string, days = 14) {
+  if (!hasDueDate(dueDate)) {
+    return false;
+  }
+
+  const daysAway = daysUntil(dueDate);
+  return daysAway >= 0 && daysAway <= days;
 }
 
 export function isWaitingIssue(item: ActionItem) {
@@ -1308,6 +1318,10 @@ export function matchesActionLens(item: ActionItem, lens: ActionLens) {
 
   if (lens === "reviewMissingDueDate") {
     return !hasDueDate(item.dueDate);
+  }
+
+  if (lens === "reviewCollisions") {
+    return isDateWithinUpcomingWindow(item.dueDate, 14);
   }
 
   if (lens === "reviewWaitingTooLong") {

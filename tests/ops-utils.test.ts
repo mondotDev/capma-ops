@@ -78,6 +78,7 @@ import {
 import type { AppStateRepository } from "../lib/state/app-state-repository";
 import { createDefaultAppStateData } from "../lib/state/app-state-defaults";
 import {
+  getCollisionReviewHref,
   getItemEventGroupLabel,
   getVisibleActionItems,
 } from "../lib/action-view-utils";
@@ -2609,6 +2610,97 @@ test("action view list summary counts follow the visible mixed operational lane"
     blocked: 1,
     waiting: 1,
     totalActive: 2
+  });
+});
+
+test("review collisions lens keeps only active upcoming due-dated work", () => {
+  withMockedToday("2026-03-30T12:00:00", () => {
+    assert.equal(matchesActionLens(createItem({ dueDate: "2026-04-02" }), "reviewCollisions"), true);
+    assert.equal(matchesActionLens(createItem({ dueDate: "2026-04-14" }), "reviewCollisions"), false);
+    assert.equal(matchesActionLens(createItem({ dueDate: "2026-03-29" }), "reviewCollisions"), false);
+    assert.equal(matchesActionLens(createItem({ dueDate: "" }), "reviewCollisions"), false);
+    assert.equal(matchesActionLens(createItem({ dueDate: "2026-04-02", status: "Complete" }), "reviewCollisions"), false);
+  });
+});
+
+test("collision review href keeps action view in review mode and preserves date drill-ins", () => {
+  assert.equal(getCollisionReviewHref(), "/action?lens=reviewCollisions");
+  assert.equal(
+    getCollisionReviewHref("2026-04-02"),
+    "/action?lens=reviewCollisions&dueDate=2026-04-02"
+  );
+});
+
+test("action view collision review summarizes overloaded dates and groups rows by due date", () => {
+  const state = createDefaultAppStateData();
+
+  const listView = withMockedToday("2026-03-30T12:00:00", () =>
+    getActionListViewData({
+      items: [
+        createItem({
+          id: "collision-action-1",
+          title: "Owner one first task",
+          dueDate: "2026-04-02",
+          owner: "Melissa"
+        }),
+        createItem({
+          id: "collision-action-2",
+          title: "Owner one second task",
+          dueDate: "2026-04-02",
+          owner: "Melissa"
+        }),
+        createItem({
+          id: "collision-action-3",
+          title: "Another day task",
+          dueDate: "2026-04-03",
+          owner: "Brandon"
+        }),
+        createItem({
+          id: "not-in-review-window",
+          title: "Far future task",
+          dueDate: "2026-04-20",
+          owner: "Melissa"
+        })
+      ],
+      collateralItems: [
+        createCollateralItem({
+          id: "collision-collateral",
+          status: "Ready for Print",
+          dueDate: "2026-04-02",
+          owner: "Melissa"
+        })
+      ],
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventTypes: state.eventTypes,
+      activeEventInstanceId: "legislative-day-2026",
+      filters: {
+        activeDueDate: "",
+        activeEventGroup: "all",
+        activeFilter: "all",
+        activeFocus: "all",
+        activeLens: "reviewCollisions",
+        activeIssue: "",
+        activeQuery: "",
+        showCompleted: false
+      }
+    })
+  );
+
+  assert.equal(listView.visibleRows.length, 4);
+  assert.deepEqual(
+    listView.groupedRows.map((group) => group.label),
+    ["2026-04-02", "2026-04-03"]
+  );
+  assert.ok(listView.collisionReview);
+  assert.equal(listView.collisionReview?.totalDueSoonRows, 4);
+  assert.equal(listView.collisionReview?.overloadedDateCount, 1);
+  assert.equal(listView.collisionReview?.ownerCollisionCount, 1);
+  assert.deepEqual(listView.collisionReview?.overloadedDates[0], {
+    date: "2026-04-02",
+    totalCount: 3,
+    ownerCollisionCount: 1,
+    owners: [{ owner: "Melissa", count: 3 }]
   });
 });
 
