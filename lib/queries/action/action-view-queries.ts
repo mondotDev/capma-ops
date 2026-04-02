@@ -42,6 +42,7 @@ type CollateralExecutionQueryInput = {
   activeIssue: string;
   activeLens: ActionViewFilters["activeLens"];
   activeQuery: string;
+  applySearch?: boolean;
   collateralItems: Parameters<typeof getVisibleCollateralExecutionRows>[0]["collateralItems"];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
@@ -80,6 +81,7 @@ export function getActionCollateralExecutionRows(input: Omit<CollateralExecution
     activeIssue: input.activeIssue,
     activeLens: input.activeLens,
     activeQuery: input.activeQuery,
+    applySearch: input.applySearch,
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
     eventSubEvents: input.eventSubEvents,
@@ -89,7 +91,9 @@ export function getActionCollateralExecutionRows(input: Omit<CollateralExecution
 
 export function getActionListViewData(input: ActionListQueryInput): ActionListViewData {
   const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
-  const visibleItems = getVisibleActionItems(input.items, input.filters, input.eventInstances, eventPrograms);
+  const visibleItems = getVisibleActionItems(input.items, input.filters, input.eventInstances, eventPrograms, {
+    includeSearch: false
+  });
   const collateralRows = getActionCollateralExecutionRows({
     activeDueDate: input.filters.activeDueDate,
     activeEventGroup: input.filters.activeEventGroup,
@@ -99,6 +103,7 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     activeIssue: input.filters.activeIssue,
     activeLens: input.filters.activeLens,
     activeQuery: input.filters.activeQuery,
+    applySearch: false,
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
     eventSubEvents: input.eventSubEvents,

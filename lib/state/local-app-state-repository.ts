@@ -96,7 +96,13 @@ class LocalAppStateRepository implements AppStateRepository {
   }
 
   save(state: AppStateData) {
-    savePersistedAppState(state);
+    const result = savePersistedAppState(state);
+
+    if (!result.ok && typeof console !== "undefined") {
+      console.warn(
+        `CAPMA Ops Hub could not persist local state (${result.status}). Continuing with in-memory state for this session.`
+      );
+    }
   }
 }
 

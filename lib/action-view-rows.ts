@@ -42,7 +42,6 @@ export type NativeActionViewRow = {
   subEventLabel: string;
   workstreamLabel: string;
   typeLabel: string;
-  searchValues: string[];
 };
 
 export type CollateralActionViewRow = {
@@ -71,7 +70,6 @@ export type CollateralActionViewRow = {
   badgeLabel: "Collateral";
   typeLabel: "Collateral";
   eventInstanceName: string;
-  searchValues: string[];
 };
 
 export type ActionViewRow = NativeActionViewRow | CollateralActionViewRow;
@@ -97,23 +95,17 @@ export function getVisibleActionViewRows(input: {
 }
 
 export function groupActionViewRowsByEventGroup(rows: ActionViewRow[]) {
-  const groups: { label: string; items: ActionViewRow[] }[] = [];
+  const grouped = new Map<string, ActionViewRow[]>();
 
   for (const row of rows) {
-    const existingGroup = groups.find((group) => group.label === row.eventGroupLabel);
-
-    if (existingGroup) {
-      existingGroup.items.push(row);
-      continue;
+    if (!grouped.has(row.eventGroupLabel)) {
+      grouped.set(row.eventGroupLabel, []);
     }
 
-    groups.push({
-      label: row.eventGroupLabel,
-      items: [row]
-    });
+    grouped.get(row.eventGroupLabel)!.push(row);
   }
 
-  return groups;
+  return Array.from(grouped, ([label, items]) => ({ label, items }));
 }
 
 export function isSelectableActionViewRow(row: ActionViewRow): row is NativeActionViewRow {
@@ -128,6 +120,7 @@ function mapActionItemToRow(
 ): NativeActionViewRow {
   const dueLabel = !isTerminalStatus(item.status) ? formatDueLabel(item) : "";
   const linkedSubEventLabel = getItemSubEventLabel(item, eventSubEvents);
+  const eventGroupLabel = getItemEventGroupLabel(item, eventInstances, eventPrograms);
 
   return {
     id: item.id,
@@ -139,7 +132,7 @@ function mapActionItemToRow(
     dueDate: item.dueDate,
     owner: item.owner,
     statusLabel: item.status,
-    eventGroupLabel: getItemEventGroupLabel(item, eventInstances, eventPrograms),
+    eventGroupLabel,
     lastUpdated: item.lastUpdated,
     dueLabel,
     rowClassName: getActionRowClassName(item),
@@ -153,20 +146,7 @@ function mapActionItemToRow(
     issueLabel: item.issue ?? "",
     subEventLabel: linkedSubEventLabel,
     workstreamLabel: item.workstream,
-    typeLabel: item.type,
-    searchValues: [
-      item.title,
-      item.status,
-      item.owner,
-      item.waitingOn,
-      item.type,
-      item.workstream,
-      item.issue ?? "",
-      item.operationalBucket ?? "",
-      item.eventGroup ?? "",
-      getItemEventGroupLabel(item, eventInstances, eventPrograms),
-      linkedSubEventLabel
-    ]
+    typeLabel: item.type
   };
 }
 
@@ -198,18 +178,7 @@ function mapCollateralRow(row: CollateralExecutionRow): CollateralActionViewRow 
     blockedBy: row.blockedBy,
     badgeLabel: "Collateral",
     typeLabel: "Collateral",
-    eventInstanceName: row.eventInstanceName,
-    searchValues: [
-      row.title,
-      row.status,
-      row.owner,
-      row.subEventName,
-      row.eventInstanceName,
-      row.eventTypeName,
-      row.printer,
-      row.blockedBy,
-      row.typeLabel
-    ]
+    eventInstanceName: row.eventInstanceName
   };
 }
 
@@ -262,7 +231,32 @@ function matchesActionViewRowSearch(row: ActionViewRow, query?: string) {
     return true;
   }
 
-  return row.searchValues
+  if (row.kind === "action") {
+    return [
+      row.title,
+      row.statusLabel,
+      row.owner,
+      row.waitingLabel,
+      row.typeLabel,
+      row.workstreamLabel,
+      row.issueLabel,
+      row.eventGroupLabel,
+      row.subEventLabel
+    ]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(normalizedQuery));
+  }
+
+  return [
+    row.title,
+    row.statusLabel,
+    row.owner,
+    row.subEventName,
+    row.eventInstanceName,
+    row.printer,
+    row.blockedBy,
+    row.typeLabel
+  ]
     .filter(Boolean)
     .some((value) => value.toLowerCase().includes(normalizedQuery));
 }

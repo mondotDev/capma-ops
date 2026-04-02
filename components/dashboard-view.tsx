@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDashboardReadModel } from "@/components/app-read-models";
-import { useAppState } from "@/components/app-state";
+import { useAppActions } from "@/components/app-state";
 import { DashboardStuckCard } from "@/components/dashboard-stuck-card";
 import type { PublicationIssueSummaryRow } from "@/lib/queries/dashboard/dashboard-queries";
 import { formatShortDate } from "@/lib/ops-utils";
 
 export function DashboardView() {
   const router = useRouter();
-  const { completeIssue, generateMissingDeliverablesForIssue, openIssue, setIssueStatus } = useAppState();
+  const { completeIssue, generateMissingDeliverablesForIssue, openIssue, setIssueStatus } = useAppActions();
   const { dashboardSummary, urgentPreviewItems, publicationIssueSummaryRows, isLoading } = useDashboardReadModel();
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);

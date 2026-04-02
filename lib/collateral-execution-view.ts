@@ -51,12 +51,14 @@ export function getVisibleCollateralExecutionRows(input: {
   activeIssue: string;
   activeLens: ActionLens;
   activeQuery: string;
+  applySearch?: boolean;
   collateralItems: CollateralItem[];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
   eventPrograms?: EventProgram[];
   eventTypes?: EventProgram[];
 }) {
+  const applySearch = input.applySearch ?? true;
   const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
   const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(
     input.activeEventInstanceId,
@@ -122,7 +124,7 @@ export function getVisibleCollateralExecutionRows(input: {
           eventPrograms,
           input.eventInstances
         ) &&
-        matchesCollateralExecutionSearch(row, input.activeQuery)
+        (!applySearch || matchesCollateralExecutionSearch(row, input.activeQuery))
     )
     .sort(sortCollateralExecutionRows);
 }

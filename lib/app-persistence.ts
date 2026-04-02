@@ -43,6 +43,10 @@ export type LoadPersistedAppStateResult = {
   shouldPersist: boolean;
 };
 
+export type SavePersistedAppStateResult =
+  | { ok: true; status: "written" | "unchanged" }
+  | { ok: false; status: "quota-exceeded" | "storage-error" };
+
 export const APP_STATE_STORAGE_KEY = "capma-ops-state";
 export const APP_STATE_BACKUP_STORAGE_KEY = "capma-ops-state-backup";
 
@@ -100,9 +104,9 @@ export function loadPersistedAppState(
   };
 }
 
-export function savePersistedAppState(state: PersistedAppState) {
+export function savePersistedAppState(state: PersistedAppState): SavePersistedAppStateResult {
   if (typeof window === "undefined") {
-    return;
+    return { ok: false, status: "storage-error" };
   }
 
   const serializedState = JSON.stringify({
@@ -123,14 +127,30 @@ export function savePersistedAppState(state: PersistedAppState) {
   const currentPrimaryState = window.localStorage.getItem(APP_STATE_STORAGE_KEY);
   const currentBackupState = window.localStorage.getItem(APP_STATE_BACKUP_STORAGE_KEY);
 
-  if (currentPrimaryState) {
-    window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, currentPrimaryState);
+  if (currentPrimaryState === serializedState && (!currentBackupState || currentBackupState === serializedState)) {
+    return { ok: true, status: "unchanged" };
   }
 
-  window.localStorage.setItem(APP_STATE_STORAGE_KEY, serializedState);
+  try {
+    if (currentPrimaryState && currentPrimaryState !== serializedState && currentBackupState !== currentPrimaryState) {
+      window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, currentPrimaryState);
+    }
 
-  if (!currentPrimaryState && !currentBackupState) {
-    window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, serializedState);
+    if (currentPrimaryState !== serializedState) {
+      window.localStorage.setItem(APP_STATE_STORAGE_KEY, serializedState);
+    }
+
+    if (!currentPrimaryState && !currentBackupState) {
+      window.localStorage.setItem(APP_STATE_BACKUP_STORAGE_KEY, serializedState);
+    }
+
+    return { ok: true, status: "written" };
+  } catch (error) {
+    if (isQuotaExceededError(error)) {
+      return { ok: false, status: "quota-exceeded" };
+    }
+
+    return { ok: false, status: "storage-error" };
   }
 }
 
@@ -257,6 +277,21 @@ function isEventSubEventRecord(value: unknown): value is EventSubEvent {
     typeof subEvent.eventInstanceId === "string" &&
     typeof subEvent.name === "string" &&
     typeof subEvent.sortOrder === "number"
+  );
+}
+
+function isQuotaExceededError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const exception = error as Partial<DOMException> & { code?: number };
+
+  return (
+    exception.name === "QuotaExceededError" ||
+    exception.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    exception.code === 22 ||
+    exception.code === 1014
   );
 }
 

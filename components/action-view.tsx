@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { useActionViewReadModel } from "@/components/app-read-models";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
-import { useAppState } from "@/components/app-state";
+import { useAppActions } from "@/components/app-state";
 import {
   ACTION_ITEM_MEANING_HINT,
   getActionMeaningUiState,
@@ -100,9 +100,8 @@ export function ActionView({
   const {
     bulkUpdateItems,
     deleteItem,
-    eventTypes,
     updateItem
-  } = useAppState();
+  } = useAppActions();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -142,7 +141,8 @@ export function ActionView({
     actionListView,
     selectedWorkspace,
     summaryCounts,
-    eventInstances
+    eventInstances,
+    eventPrograms
   } = useActionViewReadModel({
     filters: actionListFilters,
     selectedId
@@ -982,7 +982,7 @@ export function ActionView({
                             eventInstanceId: selectedItem.eventInstanceId,
                             nextWorkstream,
                             eventInstances,
-                            eventPrograms: eventTypes
+                            eventPrograms
                           });
 
                           updateItem(selectedItem.id, {

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AppStateSnapshot } from "@/lib/app-transfer";
 import {
   completePublicationIssue,
@@ -67,6 +67,8 @@ import type {
   ImportAppStateResult
 } from "@/lib/state/app-state-types";
 
+const APP_STATE_PERSIST_DEBOUNCE_MS = 250;
+
 export function clearPersistedAppState() {
   getAppStateRepository().clear();
 }
@@ -113,7 +115,25 @@ type AppStateContextValue = {
   updateItem: (id: string, updates: Partial<ActionItem>) => void;
 };
 
-const AppStateContext = createContext<AppStateContextValue | undefined>(undefined);
+type AppStateValuesContextValue = Pick<
+  AppStateContextValue,
+  | "activeEventInstanceId"
+  | "collateralItems"
+  | "collateralProfiles"
+  | "defaultOwnerForNewItems"
+  | "eventFamilies"
+  | "eventInstances"
+  | "eventSubEvents"
+  | "eventTypes"
+  | "issues"
+  | "items"
+  | "workstreamSchedules"
+>;
+
+type AppStateActionsContextValue = Omit<AppStateContextValue, keyof AppStateValuesContextValue>;
+
+const AppStateValuesContext = createContext<AppStateValuesContextValue | undefined>(undefined);
+const AppStateActionsContext = createContext<AppStateActionsContextValue | undefined>(undefined);
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ActionItem[]>(createDefaultActionItems);
@@ -129,7 +149,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [workstreamSchedules, setWorkstreamSchedulesState] = useState<WorkstreamSchedule[]>(getDefaultWorkstreamSchedules);
   const [hasHydrated, setHasHydrated] = useState(false);
   const [shouldPersist, setShouldPersist] = useState(true);
-  const appStateRepository = getAppStateRepository();
+  const appStateRepository = useMemo(() => getAppStateRepository(), []);
+  const pendingPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPersistStateRef = useRef<AppStateData | null>(null);
+  const itemsRef = useRef(items);
+  const issueStatusesRef = useRef(issueStatuses);
+  const collateralItemsRef = useRef(collateralItems);
+  const collateralProfilesRef = useRef(collateralProfiles);
+  const activeEventInstanceIdRef = useRef(activeEventInstanceId);
+  const defaultOwnerForNewItemsRef = useRef(defaultOwnerForNewItems);
+  const eventFamiliesRef = useRef(eventFamilies);
+  const eventTypesRef = useRef(eventTypes);
+  const eventInstancesRef = useRef(eventInstances);
+  const eventSubEventsRef = useRef(eventSubEvents);
+  const workstreamSchedulesRef = useRef(workstreamSchedules);
+
+  itemsRef.current = items;
+  issueStatusesRef.current = issueStatuses;
+  collateralItemsRef.current = collateralItems;
+  collateralProfilesRef.current = collateralProfiles;
+  activeEventInstanceIdRef.current = activeEventInstanceId;
+  defaultOwnerForNewItemsRef.current = defaultOwnerForNewItems;
+  eventFamiliesRef.current = eventFamilies;
+  eventTypesRef.current = eventTypes;
+  eventInstancesRef.current = eventInstances;
+  eventSubEventsRef.current = eventSubEvents;
+  workstreamSchedulesRef.current = workstreamSchedules;
 
   useEffect(() => {
     const loadResult = appStateRepository.load();
@@ -142,12 +187,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setHasHydrated(true);
   }, []);
 
-  useEffect(() => {
-    if (!hasHydrated || !shouldPersist) {
-      return;
-    }
-
-    appStateRepository.save({
+  const persistableState = useMemo<AppStateData>(
+    () => ({
       items,
       issueStatuses,
       collateralItems,
@@ -159,8 +200,75 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       eventInstances,
       eventSubEvents,
       workstreamSchedules
-    });
-  }, [activeEventInstanceId, collateralItems, collateralProfiles, defaultOwnerForNewItems, eventFamilies, eventInstances, eventSubEvents, eventTypes, hasHydrated, issueStatuses, items, shouldPersist, workstreamSchedules]);
+    }),
+    [
+      activeEventInstanceId,
+      collateralItems,
+      collateralProfiles,
+      defaultOwnerForNewItems,
+      eventFamilies,
+      eventInstances,
+      eventSubEvents,
+      eventTypes,
+      issueStatuses,
+      items,
+      workstreamSchedules
+    ]
+  );
+
+  useEffect(() => {
+    if (!hasHydrated || !shouldPersist) {
+      return;
+    }
+
+    pendingPersistStateRef.current = persistableState;
+
+    if (pendingPersistTimeoutRef.current !== null) {
+      clearTimeout(pendingPersistTimeoutRef.current);
+    }
+
+    pendingPersistTimeoutRef.current = setTimeout(() => {
+      if (pendingPersistStateRef.current) {
+        appStateRepository.save(pendingPersistStateRef.current);
+      }
+
+      pendingPersistTimeoutRef.current = null;
+    }, APP_STATE_PERSIST_DEBOUNCE_MS);
+
+    return () => {
+      if (pendingPersistTimeoutRef.current !== null) {
+        clearTimeout(pendingPersistTimeoutRef.current);
+        pendingPersistTimeoutRef.current = null;
+      }
+    };
+  }, [appStateRepository, hasHydrated, persistableState, shouldPersist]);
+
+  useEffect(() => {
+    if (!hasHydrated || !shouldPersist) {
+      return;
+    }
+
+    const flushPendingPersistence = () => {
+      if (!pendingPersistStateRef.current) {
+        return;
+      }
+
+      if (pendingPersistTimeoutRef.current !== null) {
+        clearTimeout(pendingPersistTimeoutRef.current);
+        pendingPersistTimeoutRef.current = null;
+      }
+
+      appStateRepository.save(pendingPersistStateRef.current);
+    };
+
+    window.addEventListener("pagehide", flushPendingPersistence);
+    window.addEventListener("beforeunload", flushPendingPersistence);
+
+    return () => {
+      window.removeEventListener("pagehide", flushPendingPersistence);
+      window.removeEventListener("beforeunload", flushPendingPersistence);
+    };
+  }, [appStateRepository, hasHydrated, shouldPersist]);
 
   useEffect(() => {
     const resolvedInstanceId = resolveActiveEventInstanceId(activeEventInstanceId, eventInstances);
@@ -170,11 +278,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeEventInstanceId, eventInstances]);
 
-  function enablePersistence() {
-    setShouldPersist(true);
-  }
+  const issues = useMemo(() => getGeneratedIssues(issueStatuses), [issueStatuses]);
 
-  function hydrateAppState(state: AppStateData) {
+  const enablePersistence = useCallback(() => {
+    setShouldPersist(true);
+  }, []);
+
+  const hydrateAppState = useCallback((state: AppStateData) => {
     setItems(state.items);
     setIssueStatuses(state.issueStatuses);
     setCollateralItems(state.collateralItems);
@@ -186,35 +296,35 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setEventInstances(state.eventInstances);
     setEventSubEvents(state.eventSubEvents);
     setWorkstreamSchedulesState(state.workstreamSchedules);
-  }
+  }, []);
 
-  function setActiveEventInstanceId(instanceId: string) {
+  const setActiveEventInstanceId = useCallback((instanceId: string) => {
     enablePersistence();
     setActiveEventInstanceIdState(instanceId);
-  }
+  }, [enablePersistence]);
 
-  function setDefaultOwnerForNewItems(owner: string) {
+  const setDefaultOwnerForNewItems = useCallback((owner: string) => {
     enablePersistence();
     setDefaultOwnerForNewItemsState(owner);
-  }
+  }, [enablePersistence]);
 
-  function addItem(item: NewActionItem) {
+  const addItem = useCallback((item: NewActionItem) => {
     enablePersistence();
     setItems((current) =>
       prependActionItem(current, item, {
-        eventInstances,
-        eventPrograms: eventTypes,
-        eventSubEvents
+        eventInstances: eventInstancesRef.current,
+        eventPrograms: eventTypesRef.current,
+        eventSubEvents: eventSubEventsRef.current
       })
     );
-  }
+  }, [enablePersistence]);
 
-  function deleteItem(id: string) {
+  const deleteItem = useCallback((id: string) => {
     enablePersistence();
     setItems((current) => deleteActionItemById(current, id));
-  }
+  }, [enablePersistence]);
 
-  function addCollateralItem(item: Omit<CollateralItem, "id" | "lastUpdated">) {
+  const addCollateralItem = useCallback((item: Omit<CollateralItem, "id" | "lastUpdated">) => {
     enablePersistence();
     const nextId = `collateral-${crypto.randomUUID()}`;
     setCollateralItems((current) => [
@@ -227,9 +337,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     ]);
 
     return nextId;
-  }
+  }, [enablePersistence]);
 
-  function ensureEventInstanceUnassignedSubEvent(instanceId: string) {
+  const ensureEventInstanceUnassignedSubEvent = useCallback((instanceId: string) => {
     enablePersistence();
     const nextId = getUnassignedSubEventId(instanceId);
     setEventSubEvents((current) => {
@@ -241,9 +351,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
 
     return nextId;
-  }
+  }, [enablePersistence]);
 
-  function updateCollateralItem(id: string, updates: Partial<CollateralItem>) {
+  const updateCollateralItem = useCallback((id: string, updates: Partial<CollateralItem>) => {
     enablePersistence();
     setCollateralItems((current) =>
       current.map((item) =>
@@ -256,14 +366,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           : item
       )
     );
-  }
+  }, [enablePersistence]);
 
-  function deleteCollateralItem(id: string) {
+  const deleteCollateralItem = useCallback((id: string) => {
     enablePersistence();
     setCollateralItems((current) => current.filter((item) => item.id !== id));
-  }
+  }, [enablePersistence]);
 
-  function createEventInstance(input: CreateEventInstanceInput) {
+  const createEventInstance = useCallback((input: CreateEventInstanceInput) => {
     enablePersistence();
     const { dates, startDate, endDate } = deriveEventDateRange(input.dateMode, input.dates);
     const nextId = `${slugify(input.instanceName)}-${crypto.randomUUID().slice(0, 8)}`;
@@ -295,10 +405,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     setActiveEventInstanceIdState(nextId);
     return nextId;
-  }
+  }, [enablePersistence]);
 
-  function applyDefaultTemplateToInstance(instanceId: string) {
-    const instance = eventInstances.find((entry) => entry.id === instanceId);
+  const applyDefaultTemplateToInstance = useCallback((instanceId: string) => {
+    const instance = eventInstancesRef.current.find((entry) => entry.id === instanceId);
 
     if (!instance) {
       return false;
@@ -313,12 +423,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const templateSubEvents = getTemplateSubEventsForPack(pack.id);
     const templateItems = getTemplateItemsForPack(pack.id);
     const existingItemOrigins = new Set(
-      collateralItems
+      collateralItemsRef.current
         .filter((item) => item.eventInstanceId === instanceId && item.templateOriginId)
         .map((item) => item.templateOriginId as string)
     );
     const existingByName = new Map(
-      eventSubEvents
+      eventSubEventsRef.current
         .filter((subEvent) => subEvent.eventInstanceId === instanceId)
         .map((subEvent) => [subEvent.name, subEvent.id])
     );
@@ -357,7 +467,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           templateOriginId: templateItem.id,
           itemName: templateItem.name,
           status: templateItem.defaultStatus as CollateralItem["status"],
-          owner: defaultOwnerForNewItems,
+          owner: defaultOwnerForNewItemsRef.current,
           blockedBy: "",
           dueDate: "",
           printer: templateItem.defaultPrinter,
@@ -371,9 +481,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
 
     return true;
-  }
+  }, []);
 
-  function generateIssueDeliverables(issue: string): GenerateDeliverablesResult {
+  const generateIssueDeliverables = useCallback((issue: string): GenerateDeliverablesResult => {
     enablePersistence();
     let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
     setItems((current) => {
@@ -383,13 +493,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
 
     return result;
-  }
+  }, [enablePersistence]);
 
-  function generateMissingDeliverablesForIssue(issue: string): GenerateDeliverablesResult {
+  const generateMissingDeliverablesForIssue = useCallback((issue: string): GenerateDeliverablesResult => {
     return generateIssueDeliverables(issue);
-  }
+  }, [generateIssueDeliverables]);
 
-  function openIssue(issue: string): GenerateDeliverablesResult {
+  const openIssue = useCallback((issue: string): GenerateDeliverablesResult => {
     enablePersistence();
     let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
 
@@ -407,9 +517,25 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
 
     return result;
-  }
+  }, [enablePersistence]);
 
-  function setIssueStatus(issue: string, status: IssueStatus) {
+  const completeIssue = useCallback((issue: string) => {
+    enablePersistence();
+    let result: CompletePublicationIssueResult = {
+      issueStatuses: issueStatusesRef.current,
+      blockedDeliverables: [],
+      completed: false
+    };
+
+    setIssueStatuses((current) => {
+      result = completePublicationIssue(itemsRef.current, current, issue);
+      return result.issueStatuses;
+    });
+
+    return result;
+  }, [enablePersistence]);
+
+  const setIssueStatus = useCallback((issue: string, status: IssueStatus) => {
     enablePersistence();
     if (status === "Complete") {
       return completeIssue(issue);
@@ -418,38 +544,86 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setIssueStatuses((current) => setPublicationIssueStatus(current, issue, status));
 
     return {
-      issueStatuses,
+      issueStatuses: issueStatusesRef.current,
       blockedDeliverables: [],
       completed: true
     };
-  }
+  }, [completeIssue, enablePersistence]);
 
-  function completeIssue(issue: string) {
-    enablePersistence();
-    let result: CompletePublicationIssueResult = {
-      issueStatuses,
-      blockedDeliverables: [],
-      completed: false
-    };
-
-    setIssueStatuses((current) => {
-      result = completePublicationIssue(items, current, issue);
-      return result.issueStatuses;
-    });
-
-    return result;
-  }
-
-  function resetAppState() {
+  const resetAppState = useCallback(() => {
     appStateRepository.clear();
     enablePersistence();
     hydrateAppState(createDefaultAppStateData());
-  }
+  }, [appStateRepository, enablePersistence, hydrateAppState]);
 
-  const value = useMemo(
+  const bulkUpdateItems = useCallback((ids: string[], updates: Partial<ActionItem>) => {
+    enablePersistence();
+    setItems((current) =>
+      applyBulkActionItemUpdates(current, ids, updates, {
+        eventInstances: eventInstancesRef.current,
+        eventPrograms: eventTypesRef.current,
+        eventSubEvents: eventSubEventsRef.current
+      })
+    );
+  }, [enablePersistence]);
+
+  const exportAppStateSnapshot = useCallback(
+    () =>
+      appStateRepository.export({
+        items: itemsRef.current,
+        issueStatuses: issueStatusesRef.current,
+        collateralItems: collateralItemsRef.current,
+        collateralProfiles: collateralProfilesRef.current,
+        activeEventInstanceId: activeEventInstanceIdRef.current,
+        defaultOwnerForNewItems: defaultOwnerForNewItemsRef.current,
+        eventFamilies: eventFamiliesRef.current,
+        eventTypes: eventTypesRef.current,
+        eventInstances: eventInstancesRef.current,
+        eventSubEvents: eventSubEventsRef.current,
+        workstreamSchedules: workstreamSchedulesRef.current
+      }),
+    [appStateRepository]
+  );
+
+  const importAppStateSnapshot = useCallback((value: unknown) => {
+    const importedState = appStateRepository.import(value);
+    enablePersistence();
+    hydrateAppState(importedState);
+
+    return {
+      itemCount: importedState.itemCount,
+      usedLegacyFormat: importedState.usedLegacyFormat
+    };
+  }, [appStateRepository, enablePersistence, hydrateAppState]);
+
+  const setCollateralProfile = useCallback((instanceId: string, profile: LegDayCollateralProfile) => {
+    enablePersistence();
+    setCollateralProfiles((current) => ({
+      ...current,
+      [instanceId]: profile
+    }));
+  }, [enablePersistence]);
+
+  const setWorkstreamSchedules = useCallback((schedules: WorkstreamSchedule[]) => {
+    enablePersistence();
+    setWorkstreamSchedulesState(schedules);
+  }, [enablePersistence]);
+
+  const updateItem = useCallback((id: string, updates: Partial<ActionItem>) => {
+    enablePersistence();
+    setItems((current) =>
+      updateActionItemById(current, id, updates, {
+        eventInstances: eventInstancesRef.current,
+        eventPrograms: eventTypesRef.current,
+        eventSubEvents: eventSubEventsRef.current
+      })
+    );
+  }, [enablePersistence]);
+
+  const values = useMemo<AppStateValuesContextValue>(
     () => ({
     items,
-    issues: getGeneratedIssues(issueStatuses),
+    issues,
     collateralItems,
     collateralProfiles,
     activeEventInstanceId,
@@ -458,95 +632,106 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     eventTypes,
     eventInstances,
     eventSubEvents,
-    workstreamSchedules,
+    workstreamSchedules
+    }),
+    [
+      activeEventInstanceId,
+      collateralItems,
+      collateralProfiles,
+      defaultOwnerForNewItems,
+      eventFamilies,
+      eventInstances,
+      eventSubEvents,
+      eventTypes,
+      issues,
+      items,
+      workstreamSchedules
+    ]
+  );
+
+  const actions = useMemo<AppStateActionsContextValue>(
+    () => ({
     addItem,
     addCollateralItem,
     applyDefaultTemplateToInstance,
-    bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => {
-      enablePersistence();
-      setItems((current) =>
-        applyBulkActionItemUpdates(current, ids, updates, {
-          eventInstances,
-          eventPrograms: eventTypes,
-          eventSubEvents
-        })
-      );
-    },
+    bulkUpdateItems,
     createEventInstance,
     deleteItem,
     deleteCollateralItem,
     completeIssue,
-    exportAppStateSnapshot: () =>
-      appStateRepository.export({
-        items,
-        issueStatuses,
-        collateralItems,
-        collateralProfiles,
-        activeEventInstanceId,
-        defaultOwnerForNewItems,
-        eventFamilies,
-        eventTypes,
-        eventInstances,
-        eventSubEvents,
-        workstreamSchedules
-      }),
+    exportAppStateSnapshot,
     generateMissingDeliverablesForIssue,
     generateIssueDeliverables,
-    importAppStateSnapshot: (value: unknown) => {
-      const importedState = appStateRepository.import(value);
-      enablePersistence();
-      hydrateAppState(importedState);
-
-      return {
-        itemCount: importedState.itemCount,
-        usedLegacyFormat: importedState.usedLegacyFormat
-      };
-    },
-      openIssue,
-      ensureEventInstanceUnassignedSubEvent,
-      resetAppState,
+    importAppStateSnapshot,
+    openIssue,
+    ensureEventInstanceUnassignedSubEvent,
+    resetAppState,
     setActiveEventInstanceId,
-    setCollateralProfile: (instanceId: string, profile: LegDayCollateralProfile) => {
-      enablePersistence();
-      setCollateralProfiles((current) => ({
-        ...current,
-        [instanceId]: profile
-      }));
-    },
-    setDefaultOwnerForNewItems: (owner: string) => {
-      setDefaultOwnerForNewItems(owner);
-    },
-    setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => {
-      enablePersistence();
-      setWorkstreamSchedulesState(schedules);
-    },
+    setCollateralProfile,
+    setDefaultOwnerForNewItems,
+    setWorkstreamSchedules,
     setIssueStatus,
     updateCollateralItem,
-    updateItem: (id: string, updates: Partial<ActionItem>) => {
-      enablePersistence();
-      setItems((current) =>
-        updateActionItemById(current, id, updates, {
-          eventInstances,
-          eventPrograms: eventTypes,
-          eventSubEvents
-        })
-      );
-    }
+    updateItem
     }),
-    [activeEventInstanceId, collateralItems, collateralProfiles, defaultOwnerForNewItems, eventFamilies, eventInstances, eventSubEvents, eventTypes, issueStatuses, items, workstreamSchedules]
+    [
+      addCollateralItem,
+      addItem,
+      applyDefaultTemplateToInstance,
+      bulkUpdateItems,
+      completeIssue,
+      createEventInstance,
+      deleteCollateralItem,
+      deleteItem,
+      ensureEventInstanceUnassignedSubEvent,
+      exportAppStateSnapshot,
+      generateIssueDeliverables,
+      generateMissingDeliverablesForIssue,
+      importAppStateSnapshot,
+      openIssue,
+      resetAppState,
+      setActiveEventInstanceId,
+      setCollateralProfile,
+      setDefaultOwnerForNewItems,
+      setIssueStatus,
+      setWorkstreamSchedules,
+      updateCollateralItem,
+      updateItem
+    ]
   );
 
-  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
+  return (
+    <AppStateActionsContext.Provider value={actions}>
+      <AppStateValuesContext.Provider value={values}>{children}</AppStateValuesContext.Provider>
+    </AppStateActionsContext.Provider>
+  );
 }
 
-export function useAppState() {
-  const context = useContext(AppStateContext);
+export function useAppStateValues() {
+  const context = useContext(AppStateValuesContext);
 
   if (!context) {
-    throw new Error("useAppState must be used within AppStateProvider");
+    throw new Error("useAppStateValues must be used within AppStateProvider");
   }
 
   return context;
+}
+
+export function useAppActions() {
+  const context = useContext(AppStateActionsContext);
+
+  if (!context) {
+    throw new Error("useAppActions must be used within AppStateProvider");
+  }
+
+  return context;
+}
+
+export function useAppState() {
+  return {
+    ...useAppStateValues(),
+    ...useAppActions()
+  };
 }
 
 function slugify(value: string) {

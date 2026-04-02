@@ -38,6 +38,11 @@ import {
 import { openNativeDateInputPicker } from "../lib/date-input";
 import { parseImportedAppState } from "../lib/app-transfer";
 import {
+  APP_STATE_BACKUP_STORAGE_KEY,
+  APP_STATE_STORAGE_KEY,
+  savePersistedAppState
+} from "../lib/app-persistence";
+import {
   getActionItemEventGroupLabel,
   getActionItemSubEventLabel
 } from "../lib/events/event-labels";
@@ -153,6 +158,43 @@ function withMockedWindowStorage<T>(callback: () => T) {
 
   try {
     return callback();
+  } finally {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow
+    });
+  }
+}
+
+function withInspectableWindowStorage<T>(callback: (storage: {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
+  removeItem: (key: string) => void;
+  counts: Map<string, number>;
+}) => T) {
+  const originalWindow = globalThis.window;
+  const storage = new Map<string, string>();
+  const counts = new Map<string, number>();
+  const localStorage = {
+    getItem(key: string) {
+      return storage.has(key) ? storage.get(key)! : null;
+    },
+    setItem(key: string, value: string) {
+      storage.set(key, value);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    },
+    removeItem(key: string) {
+      storage.delete(key);
+    }
+  };
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage }
+  });
+
+  try {
+    return callback({ ...localStorage, counts });
   } finally {
     Object.defineProperty(globalThis, "window", {
       configurable: true,
@@ -1510,6 +1552,48 @@ test("normalizeActionItemFields standardizes obvious waiting and blocked reason 
 
   assert.equal(blankReason.waitingOn, "");
   assert.equal(blankReason.blockedBy, undefined);
+});
+
+test("savePersistedAppState skips duplicate writes when snapshot content is unchanged", () => {
+  withInspectableWindowStorage(({ counts }) => {
+    const state = createDefaultAppStateData();
+
+    const firstSave = savePersistedAppState(state);
+    const secondSave = savePersistedAppState(state);
+
+    assert.deepEqual(firstSave, { ok: true, status: "written" });
+    assert.deepEqual(secondSave, { ok: true, status: "unchanged" });
+    assert.equal(counts.get(APP_STATE_STORAGE_KEY), 1);
+    assert.equal(counts.get(APP_STATE_BACKUP_STORAGE_KEY), 1);
+  });
+});
+
+test("savePersistedAppState returns quota-exceeded without throwing", () => {
+  const originalWindow = globalThis.window;
+  const localStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {
+      throw new DOMException("Storage full", "QuotaExceededError");
+    },
+    removeItem() {}
+  };
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage }
+  });
+
+  try {
+    const result = savePersistedAppState(createDefaultAppStateData());
+    assert.deepEqual(result, { ok: false, status: "quota-exceeded" });
+  } finally {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow
+    });
+  }
 });
 
 test("normalizeActionItemFields folds recognized legacy details values into waitingOn and drops ambiguous leftovers", () => {

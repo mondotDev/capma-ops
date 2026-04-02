@@ -12,7 +12,11 @@ import {
   CollateralSummaryStrip,
   type CollateralSummaryFilter
 } from "@/components/collateral-summary-strip";
-import { useAppState, type CreateEventInstanceInput } from "@/components/app-state";
+import {
+  useAppActions,
+  useAppStateValues,
+  type CreateEventInstanceInput
+} from "@/components/app-state";
 import {
   COLLATERAL_STATUS_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
@@ -72,17 +76,17 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
+  const { defaultOwnerForNewItems } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
     createEventInstance,
-    defaultOwnerForNewItems,
     deleteCollateralItem,
     ensureEventInstanceUnassignedSubEvent,
     setActiveEventInstanceId,
     setCollateralProfile,
     updateCollateralItem
-  } = useAppState();
+  } = useAppActions();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreateInstanceOpen, setIsCreateInstanceOpen] = useState(false);

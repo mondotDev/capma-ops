@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAppState } from "@/components/app-state";
+import { useAppStateValues } from "@/components/app-state";
 import type { CollateralProfileDeadlineFilter } from "@/components/collateral-profile-card";
 import type { CollateralSummaryFilter } from "@/components/collateral-summary-strip";
 import type { CollateralItem } from "@/lib/collateral-data";
@@ -55,7 +55,7 @@ function useLocalAppReadSource() {
     issues,
     items,
     workstreamSchedules
-  } = useAppState();
+  } = useAppStateValues();
 
   return useMemo(
     () =>
@@ -159,11 +159,12 @@ export function useActionViewReadModel(input: {
   selectedWorkspace: ActionDetailWorkspaceData;
   summaryCounts: ActionSummaryCounts;
   eventInstances: EventInstance[];
+  eventPrograms: EventProgram[];
   activeEventInstanceId: string;
 } {
   // Keep Action View fully local until there is an explicit read/write coherence policy
   // for mutation-heavy screens. Do not add Firebase list/detail reads here yet.
-  const { activeEventInstanceId } = useAppState();
+  const { activeEventInstanceId } = useAppStateValues();
   const readSource = useLocalAppReadSource();
   const actionListSource = useMemo(
     () => readSource.getActionListSource({ activeEventInstanceId }),
@@ -197,6 +198,7 @@ export function useActionViewReadModel(input: {
     selectedWorkspace,
     summaryCounts: actionListView.summaryCounts,
     eventInstances: actionListSource.eventInstances,
+    eventPrograms: actionListSource.eventPrograms ?? actionListSource.eventTypes ?? [],
     activeEventInstanceId
   };
 }
@@ -215,7 +217,7 @@ export function useCollateralWorkspaceReadModel(input: {
 } {
   // Keep Collateral fully local until Action View-style coherence rules are defined.
   // Collateral is an operational workspace, not a safe remote-read-only surface yet.
-  const { activeEventInstanceId } = useAppState();
+  const { activeEventInstanceId } = useAppStateValues();
   const readSource = useLocalAppReadSource();
   const workspaceSource = useMemo(
     () => readSource.getCollateralWorkspaceSource({ activeEventInstanceId }),

@@ -4,7 +4,12 @@ import { Suspense, startTransition, useEffect, useMemo, useRef, useState } from 
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
+import {
+  type GenerateDeliverablesResult,
+  type NewActionItem,
+  useAppActions,
+  useAppStateValues
+} from "@/components/app-state";
 import { QuickAddModal, type QuickAddFormState } from "@/components/quick-add-modal";
 import {
   getEventProgramForWorkstream,
@@ -30,19 +35,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const {
     defaultOwnerForNewItems,
-    addItem,
     eventInstances,
     eventSubEvents,
     eventTypes,
+    issues,
+    workstreamSchedules
+  } = useAppStateValues();
+  const {
+    addItem,
     exportAppStateSnapshot,
     generateIssueDeliverables,
     importAppStateSnapshot,
-    issues,
     resetAppState,
     setDefaultOwnerForNewItems,
-    setWorkstreamSchedules,
-    workstreamSchedules
-  } = useAppState();
+    setWorkstreamSchedules
+  } = useAppActions();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetPending, setIsResetPending] = useState(false);

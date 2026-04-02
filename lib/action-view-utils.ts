@@ -89,8 +89,11 @@ export function getVisibleActionItems(
   items: ActionItem[],
   filters: ActionViewFilters,
   eventInstances: EventInstance[] = [],
-  eventPrograms: EventProgram[] = []
+  eventPrograms: EventProgram[] = [],
+  options: { includeSearch?: boolean } = {}
 ) {
+  const includeSearch = options.includeSearch ?? true;
+
   return items.filter((item) => {
     if (!filters.showCompleted && isTerminalStatus(item.status)) {
       return false;
@@ -109,7 +112,7 @@ export function getVisibleActionItems(
       matchesActionFocus(item, filters.activeFocus) &&
       matchesActionLens(item, filters.activeLens) &&
       matchesActionScope(item, filters.activeEventGroup, eventPrograms, eventInstances) &&
-      matchesSearchQuery(item, filters.activeQuery)
+      (!includeSearch || matchesSearchQuery(item, filters.activeQuery))
     );
   });
 }
