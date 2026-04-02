@@ -60,6 +60,7 @@ import {
 } from "../lib/firebase-dashboard-source";
 import {
   getActionListViewData,
+  getPublicationIssueWorkspaceSummary,
   getSelectedActionItemWorkspace
 } from "../lib/queries/action/action-view-queries";
 import {
@@ -2141,6 +2142,84 @@ test("publication issue summary query returns progress-ready rows for visible pu
   assert.equal(publicationRows[0]?.canCompleteIssue, false);
 });
 
+test("publication issue workspace summary derives progress and actions for open publication issues", () => {
+  const items = [
+    createItem({
+      id: "deliverable-complete",
+      title: "Draft CEO message",
+      workstream: "Newsbrief",
+      issue: "March 2026 Newsbrief",
+      type: "Deliverable",
+      status: "Complete"
+    }),
+    createItem({
+      id: "deliverable-open",
+      title: "Layout proof",
+      workstream: "Newsbrief",
+      issue: "March 2026 Newsbrief",
+      type: "Deliverable",
+      status: "In Progress"
+    })
+  ];
+  const issues: IssueRecord[] = [
+    { label: "February 2026 Newsbrief", status: "Planned", dueDate: "2026-03-01", workstream: "Newsbrief", year: 2026 },
+    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+    { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
+  ];
+
+  const workspace = getPublicationIssueWorkspaceSummary({
+    activeIssue: "March 2026 Newsbrief",
+    items,
+    issues
+  });
+
+  assert.ok(workspace);
+  assert.equal(workspace?.issue.label, "March 2026 Newsbrief");
+  assert.equal(workspace?.workstream, "Newsbrief");
+  assert.equal(workspace?.completeCount, 1);
+  assert.equal(workspace?.totalCount, 2);
+  assert.equal(workspace?.remainingCount, 1);
+  assert.equal(workspace?.progressCopy, "1 of 2 complete");
+  assert.equal(workspace?.canOpenIssue, false);
+  assert.equal(workspace?.canGenerateMissing, true);
+  assert.equal(workspace?.canCompleteIssue, false);
+  assert.deepEqual(
+    workspace?.visiblePublicationIssues.map((issue) => issue.label),
+    ["March 2026 Newsbrief", "Spring 2026 The Voice"]
+  );
+});
+
+test("publication issue workspace summary flags missing due dates and supports planned issue opening", () => {
+  const workspace = getPublicationIssueWorkspaceSummary({
+    activeIssue: "Spring 2026 The Voice",
+    items: [],
+    issues: [
+      { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+      { label: "Spring 2026 The Voice", status: "Planned", dueDate: "", workstream: "The Voice", year: 2026 }
+    ]
+  });
+
+  assert.ok(workspace);
+  assert.equal(workspace?.isMissingDueDate, true);
+  assert.equal(workspace?.dueDate, "");
+  assert.equal(workspace?.canOpenIssue, true);
+  assert.equal(workspace?.canGenerateMissing, false);
+  assert.equal(workspace?.canCompleteIssue, false);
+  assert.equal(workspace?.progressCopy, "No deliverables yet");
+});
+
+test("publication issue workspace summary ignores unknown issue filters", () => {
+  const workspace = getPublicationIssueWorkspaceSummary({
+    activeIssue: "Sponsor Follow Up",
+    items: [createItem({ issue: "March 2026 Newsbrief" })],
+    issues: [
+      { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 }
+    ]
+  });
+
+  assert.equal(workspace, null);
+});
+
 test("dashboard firebase read slice falls back cleanly when the feature flag is off", async () => {
   let projectionReadAttempted = false;
 
@@ -2422,6 +2501,61 @@ test("action view list query returns grouped mixed rows and event options withou
   });
   assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day 2026"), true);
   assert.equal(listView.eventGroupOptions.some((option) => option.value === "Legislative Day 2026"), true);
+  assert.equal(listView.eventGroupOptions.some((option) => option.value === "Legislative Day"), false);
+});
+
+test("action scope options use execution scope only for event-linked and non-event work", () => {
+  const state = createDefaultAppStateData();
+
+  const listView = getActionListViewData({
+    items: [
+      createItem({
+        id: "event-linked-item",
+        title: "Leg Day action",
+        workstream: "Legislative Day",
+        eventInstanceId: "legislative-day-2026",
+        operationalBucket: undefined
+      }),
+      createItem({
+        id: "bucket-item",
+        title: "Ops action",
+        workstream: "General Operations",
+        operationalBucket: "General Operations"
+      }),
+      createItem({
+        id: "unassigned-item",
+        title: "Loose action",
+        workstream: "",
+        operationalBucket: undefined,
+        eventInstanceId: undefined,
+        eventGroup: ""
+      })
+    ],
+    collateralItems: [],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "",
+      showCompleted: false
+    }
+  });
+
+  assert.deepEqual(
+    listView.eventGroupOptions.map((option) => option.value),
+    ["all", "Unassigned", "General Operations", "Legislative Day 2026"]
+  );
+  assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day"), false);
+  assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day 2026"), true);
+  assert.equal(listView.groupedRows.some((group) => group.label === "General Operations"), true);
+  assert.equal(listView.groupedRows.some((group) => group.label === "Unassigned"), true);
 });
 
 test("action view list summary counts follow the visible mixed operational lane", () => {

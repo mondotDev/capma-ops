@@ -11,9 +11,11 @@ import {
 } from "@/lib/firebase-dashboard-source";
 import {
   getActionListViewData,
+  getPublicationIssueWorkspaceSummary,
   getSelectedActionItemWorkspace,
   type ActionDetailWorkspaceData,
-  type ActionListViewData
+  type ActionListViewData,
+  type PublicationIssueWorkspaceSummary
 } from "@/lib/queries/action/action-view-queries";
 import {
   getCollateralEventInstanceWorkspaceBundle,
@@ -156,6 +158,7 @@ export function useActionViewReadModel(input: {
   selectedId: string | null;
 }): {
   actionListView: ActionListViewData;
+  publicationIssueWorkspace: PublicationIssueWorkspaceSummary | null;
   selectedWorkspace: ActionDetailWorkspaceData;
   summaryCounts: ActionSummaryCounts;
   eventInstances: EventInstance[];
@@ -192,9 +195,19 @@ export function useActionViewReadModel(input: {
       }),
     [actionDetailSource]
   );
+  const publicationIssueWorkspace = useMemo(
+    () =>
+      getPublicationIssueWorkspaceSummary({
+        activeIssue: input.filters.activeIssue,
+        issues: actionDetailSource.issues,
+        items: actionListSource.items
+      }),
+    [actionDetailSource.issues, actionListSource.items, input.filters.activeIssue]
+  );
 
   return {
     actionListView,
+    publicationIssueWorkspace,
     selectedWorkspace,
     summaryCounts: actionListView.summaryCounts,
     eventInstances: actionListSource.eventInstances,

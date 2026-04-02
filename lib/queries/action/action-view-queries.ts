@@ -17,7 +17,11 @@ import {
 import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import {
+  getIssueProgress,
   getIssuesForWorkstream,
+  getVisiblePublicationIssues,
+  isPublicationWorkstream,
+  isTerminalStatus,
   type ActionSummaryCounts,
   type IssueRecord
 } from "@/lib/ops-utils";
@@ -65,6 +69,22 @@ export type ActionDetailWorkspaceData = {
   selectedIssueRecord: IssueRecord | null;
   selectedItemIssueOptions: string[];
   selectedItemSubEvents: EventSubEvent[];
+};
+
+export type PublicationIssueWorkspaceSummary = {
+  issue: IssueRecord;
+  workstream: IssueRecord["workstream"];
+  dueDate: string;
+  isMissingDueDate: boolean;
+  completeCount: number;
+  totalCount: number;
+  remainingCount: number;
+  progressCopy: string;
+  canOpenIssue: boolean;
+  canGenerateMissing: boolean;
+  canCompleteIssue: boolean;
+  visiblePublicationIssues: IssueRecord[];
+  isPublicationIssue: true;
 };
 
 export function getActionCollateralExecutionRows(input: Omit<CollateralExecutionQueryInput, "collateralItems"> & {
@@ -156,6 +176,77 @@ export function getSelectedActionItemWorkspace(input: {
     selectedItemIssueOptions,
     selectedItemSubEvents: input.selectedItemSubEvents
   };
+}
+
+export function getPublicationIssueWorkspaceSummary(input: {
+  activeIssue: string;
+  issues: IssueRecord[];
+  items: ActionItem[];
+}): PublicationIssueWorkspaceSummary | null {
+  const activeIssue = input.activeIssue.trim();
+
+  if (!activeIssue) {
+    return null;
+  }
+
+  const issue = input.issues.find((entry) => entry.label === activeIssue) ?? null;
+
+  if (!issue || !isPublicationWorkstream(issue.workstream)) {
+    return null;
+  }
+
+  const progress = getIssueProgress(input.items, issue.label);
+  const remainingCount = Math.max(progress.total - progress.complete, 0);
+  const progressCopy =
+    progress.total > 0 ? `${progress.complete} of ${progress.total} complete` : "No deliverables yet";
+  const visiblePublicationIssues = getVisiblePublicationIssueOptions(input.issues, issue);
+
+  return {
+    issue,
+    workstream: issue.workstream,
+    dueDate: issue.dueDate ?? "",
+    isMissingDueDate: !issue.dueDate,
+    completeCount: progress.complete,
+    totalCount: progress.total,
+    remainingCount,
+    progressCopy,
+    canOpenIssue: issue.status === "Planned",
+    canGenerateMissing: issue.status === "Open",
+    canCompleteIssue:
+      issue.status === "Open" &&
+      progress.total > 0 &&
+      remainingCount === 0 &&
+      input.items
+        .filter((item) => item.issue === issue.label && item.type === "Deliverable")
+        .every((item) => isTerminalStatus(item.status)),
+    visiblePublicationIssues,
+    isPublicationIssue: true
+  };
+}
+
+function getVisiblePublicationIssueOptions(issues: IssueRecord[], activeIssue: IssueRecord) {
+  const visibleIssues = getVisiblePublicationIssues(issues);
+  const issueByLabel = new Map(visibleIssues.map((issue) => [issue.label, issue]));
+
+  if (!issueByLabel.has(activeIssue.label)) {
+    issueByLabel.set(activeIssue.label, activeIssue);
+  }
+
+  return [...issueByLabel.values()].sort((left, right) => {
+    if (left.label === activeIssue.label) {
+      return -1;
+    }
+
+    if (right.label === activeIssue.label) {
+      return 1;
+    }
+
+    if (left.status !== right.status) {
+      return left.status === "Open" ? -1 : right.status === "Open" ? 1 : left.status.localeCompare(right.status);
+    }
+
+    return left.label.localeCompare(right.label);
+  });
 }
 
 function getVisibleActionSummaryCounts(rows: ActionViewRow[]): ActionSummaryCounts {

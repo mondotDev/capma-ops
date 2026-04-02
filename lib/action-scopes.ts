@@ -7,7 +7,7 @@ import {
   normalizeOperationalBucketValue
 } from "@/lib/ops-utils";
 
-export type ActionScopeType = "system" | "bucket" | "program" | "instance";
+export type ActionScopeType = "system" | "bucket" | "instance";
 
 export type ActionScope = {
   type: ActionScopeType;
@@ -37,11 +37,6 @@ type ActionScopeInput = {
   collateralExecutionInstanceIds?: string[];
 };
 
-type ResolvedActionScope = {
-  primaryScope: ActionScope;
-  programScope: ActionScope | null;
-};
-
 export function buildActionScopes(input: ActionScopeInput): ActionScope[] {
   const scopes = new Map<string, ActionScope>();
 
@@ -49,12 +44,8 @@ export function buildActionScopes(input: ActionScopeInput): ActionScope[] {
   scopes.set(UNASSIGNED_SCOPE.value, UNASSIGNED_SCOPE);
 
   for (const item of input.items) {
-    const resolved = resolveActionItemScopes(item, input.eventPrograms, input.eventInstances);
-    scopes.set(resolved.primaryScope.value, resolved.primaryScope);
-
-    if (resolved.programScope) {
-      scopes.set(resolved.programScope.value, resolved.programScope);
-    }
+    const scope = resolveActionItemScope(item, input.eventPrograms, input.eventInstances);
+    scopes.set(scope.value, scope);
   }
 
   for (const eventInstanceId of input.collateralExecutionInstanceIds ?? []) {
@@ -66,13 +57,6 @@ export function buildActionScopes(input: ActionScopeInput): ActionScope[] {
 
     const instanceScope = createInstanceScope(instance);
     scopes.set(instanceScope.value, instanceScope);
-
-    const program = input.eventPrograms.find((entry) => entry.id === instance.eventTypeId);
-
-    if (program) {
-      const programScope = createProgramScope(program);
-      scopes.set(programScope.value, programScope);
-    }
   }
 
   return [...scopes.values()].sort(compareActionScopes);
@@ -83,7 +67,7 @@ export function getActionItemScopeLabel(
   eventPrograms: EventProgram[] = [],
   eventInstances: EventInstance[] = []
 ) {
-  return resolveActionItemScopes(item, eventPrograms, eventInstances).primaryScope.label;
+  return resolveActionItemScope(item, eventPrograms, eventInstances).label;
 }
 
 export function matchesActionScope(
@@ -96,17 +80,13 @@ export function matchesActionScope(
     return true;
   }
 
-  const resolved = resolveActionItemScopes(item, eventPrograms, eventInstances);
+  const resolved = resolveActionItemScope(item, eventPrograms, eventInstances);
 
   if (activeScopeValue === UNASSIGNED_SCOPE.value) {
-    return resolved.primaryScope.value === UNASSIGNED_SCOPE.value;
+    return resolved.value === UNASSIGNED_SCOPE.value;
   }
 
-  if (resolved.primaryScope.value === activeScopeValue) {
-    return true;
-  }
-
-  return resolved.programScope?.value === activeScopeValue;
+  return resolved.value === activeScopeValue;
 }
 
 export function matchesCollateralExecutionScope(
@@ -137,32 +117,23 @@ export function matchesCollateralExecutionScope(
     return true;
   }
 
-  const program = eventPrograms.find((entry) => entry.id === instance.eventTypeId);
-
-  if (!program) {
-    return false;
-  }
-
-  return createProgramScope(program).value === activeScopeValue;
+  return false;
 }
 
 export function getActionScopeLabelByValue(scopes: ActionScope[], value: string) {
   return scopes.find((scope) => scope.value === value)?.label ?? value;
 }
 
-function resolveActionItemScopes(
+function resolveActionItemScope(
   item: ActionItem,
-  eventPrograms: EventProgram[],
+  _eventPrograms: EventProgram[],
   eventInstances: EventInstance[]
-): ResolvedActionScope {
+): ActionScope {
   if (item.eventInstanceId) {
     const instance = eventInstances.find((entry) => entry.id === item.eventInstanceId);
 
     if (instance) {
-      return {
-        primaryScope: createInstanceScope(instance),
-        programScope: createProgramScopeForInstance(instance, eventPrograms)
-      };
+      return createInstanceScope(instance);
     }
   }
 
@@ -172,10 +143,7 @@ function resolveActionItemScopes(
     getSuggestedOperationalBucketForWorkstream(item.workstream);
 
   if (normalizedOperationalBucket) {
-    return {
-      primaryScope: createBucketScope(normalizedOperationalBucket),
-      programScope: null
-    };
+    return createBucketScope(normalizedOperationalBucket);
   }
 
   const legacyEventGroup = normalizeEventGroupValue(item.eventGroup);
@@ -184,26 +152,11 @@ function resolveActionItemScopes(
     const legacyInstance = eventInstances.find((entry) => entry.name === legacyEventGroup);
 
     if (legacyInstance) {
-      return {
-        primaryScope: createInstanceScope(legacyInstance),
-        programScope: createProgramScopeForInstance(legacyInstance, eventPrograms)
-      };
-    }
-
-    const legacyProgram = eventPrograms.find((entry) => entry.name === legacyEventGroup);
-
-    if (legacyProgram) {
-      return {
-        primaryScope: createProgramScope(legacyProgram),
-        programScope: createProgramScope(legacyProgram)
-      };
+      return createInstanceScope(legacyInstance);
     }
   }
 
-  return {
-    primaryScope: UNASSIGNED_SCOPE,
-    programScope: null
-  };
+  return UNASSIGNED_SCOPE;
 }
 
 function resolveLegacyOperationalBucket(eventGroup?: string) {
@@ -221,20 +174,6 @@ function createBucketScope(bucket: string): ActionScope {
     label: bucket,
     operationalBucket: bucket
   };
-}
-
-function createProgramScope(program: EventProgram): ActionScope {
-  return {
-    type: "program",
-    value: program.name,
-    label: program.name,
-    programId: program.id
-  };
-}
-
-function createProgramScopeForInstance(instance: EventInstance, eventPrograms: EventProgram[]) {
-  const program = eventPrograms.find((entry) => entry.id === instance.eventTypeId);
-  return program ? createProgramScope(program) : null;
 }
 
 function createInstanceScope(instance: EventInstance): ActionScope {
@@ -266,9 +205,5 @@ function getActionScopeTypeOrder(type: ActionScopeType) {
     return 1;
   }
 
-  if (type === "program") {
-    return 2;
-  }
-
-  return 3;
+  return 2;
 }

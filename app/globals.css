@@ -2083,6 +2083,72 @@ tr.blocked-row {
   color: var(--muted);
 }
 
+.publication-workspace {
+  display: grid;
+  gap: 12px;
+}
+
+.publication-workspace__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.publication-workspace__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.publication-workspace__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.publication-workspace__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 14px;
+  align-items: end;
+}
+
+.publication-workspace__switcher {
+  min-width: 220px;
+}
+
+.publication-workspace__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.publication-workspace__complete {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #d9e2ec;
+  border-radius: 12px;
+  background: #fbfdff;
+  color: #5f6f7d;
+}
+
+.publication-workspace__complete--ready {
+  border-color: rgba(0, 59, 109, 0.22);
+  color: var(--accent);
+  background: rgba(0, 59, 109, 0.04);
+}
+
+.publication-workspace__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .filter-bar,
 .summary-row {
   display: flex;
@@ -3310,5 +3376,14 @@ textarea,
   .issue-context {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .publication-workspace__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .publication-workspace__switcher {
+    min-width: 100%;
   }
 }

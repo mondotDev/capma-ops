@@ -99,7 +99,11 @@ export function ActionView({
 }) {
   const {
     bulkUpdateItems,
+    completeIssue,
     deleteItem,
+    generateMissingDeliverablesForIssue,
+    openIssue,
+    setIssueStatus,
     updateItem
   } = useAppActions();
   const router = useRouter();
@@ -113,6 +117,7 @@ export function ActionView({
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkFeedback, setBulkFeedback] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [publicationFeedback, setPublicationFeedback] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
   const [blockedByDraft, setBlockedByDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
@@ -139,6 +144,7 @@ export function ActionView({
   );
   const {
     actionListView,
+    publicationIssueWorkspace,
     selectedWorkspace,
     summaryCounts,
     eventInstances,
@@ -209,6 +215,10 @@ export function ActionView({
     setBlockedByDraft(selectedItem?.blockedBy ?? "");
     setNoteDraft("");
   }, [selectedItem?.blockedBy, selectedItem?.id, selectedItem?.title]);
+
+  useEffect(() => {
+    setPublicationFeedback("");
+  }, [activeIssue]);
 
   function updateQuery(
     nextFilter: ActionFilter,
@@ -320,6 +330,19 @@ export function ActionView({
     router.replace(query ? `/action?${query}` : "/action");
   }
 
+  function handleIssueChange(nextIssue: string) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (!nextIssue) {
+      params.delete("issue");
+    } else {
+      params.set("issue", nextIssue);
+    }
+
+    const query = params.toString();
+    router.replace(query ? `/action?${query}` : "/action");
+  }
+
   function clearDueDateFilter() {
     updateQuery(activeFilter, activeFocus, activeLens, activeEventGroup, "", activeQuery);
   }
@@ -379,7 +402,163 @@ export function ActionView({
   return (
     <section className="action-view">
       <div className="action-controls">
-        {activeIssue ? (
+        {publicationIssueWorkspace ? (
+          <div className="card card--secondary publication-workspace">
+            <div className="publication-workspace__header">
+              <div>
+                <div className="card__title">PUBLICATION ISSUE WORKSPACE</div>
+                <div className="publication-workspace__title">{publicationIssueWorkspace.issue.label}</div>
+                <div className="publication-workspace__meta">
+                  <span>{publicationIssueWorkspace.workstream}</span>
+                  <span>
+                    {publicationIssueWorkspace.isMissingDueDate
+                      ? "Missing due date"
+                      : `Due ${formatShortDate(publicationIssueWorkspace.dueDate)}`}
+                  </span>
+                  <span>{publicationIssueWorkspace.progressCopy}</span>
+                  <span>{publicationIssueWorkspace.remainingCount} open</span>
+                </div>
+              </div>
+              <button className="button-link button-link--inline-secondary" onClick={clearIssueFilter} type="button">
+                Back to all active items
+              </button>
+            </div>
+
+            <div className="publication-workspace__controls">
+              <label className="filter-field publication-workspace__switcher">
+                <span className="filter-field__label">Issue</span>
+                <select
+                  className="cell-select filter-field__select"
+                  onChange={(event) => handleIssueChange(event.target.value)}
+                  value={publicationIssueWorkspace.issue.label}
+                >
+                  {publicationIssueWorkspace.visiblePublicationIssues.map((issue) => (
+                    <option key={issue.label} value={issue.label}>
+                      {issue.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="filter-field publication-workspace__switcher">
+                <span className="filter-field__label">Status</span>
+                <select
+                  className="cell-select filter-field__select"
+                  onChange={(event) => {
+                    const nextStatus = event.target.value as "Planned" | "Open" | "Complete";
+                    const result = setIssueStatus(publicationIssueWorkspace.issue.label, nextStatus);
+
+                    if (nextStatus === "Complete" && !result.completed) {
+                      setPublicationFeedback(
+                        formatCompletionBlockedFeedback(
+                          publicationIssueWorkspace.issue.label,
+                          result.blockedDeliverables
+                        )
+                      );
+                      return;
+                    }
+
+                    setPublicationFeedback(
+                      nextStatus === "Complete"
+                        ? `${publicationIssueWorkspace.issue.label} marked complete.`
+                        : `${publicationIssueWorkspace.issue.label} marked ${nextStatus.toLowerCase()}.`
+                    );
+                  }}
+                  value={publicationIssueWorkspace.issue.status}
+                >
+                  <option value="Planned">Planned</option>
+                  <option value="Open">Open</option>
+                  <option value="Complete">Complete</option>
+                </select>
+              </label>
+
+              <div className="publication-workspace__actions">
+                {publicationIssueWorkspace.canOpenIssue ? (
+                  <button
+                    className="topbar__button"
+                    onClick={() => {
+                      const result = openIssue(publicationIssueWorkspace.issue.label);
+                      setPublicationFeedback(
+                        formatPublicationFeedback(
+                          publicationIssueWorkspace.issue.label,
+                          result.created,
+                          result.skipped
+                        )
+                      );
+                    }}
+                    type="button"
+                  >
+                    Open Issue
+                  </button>
+                ) : null}
+                {publicationIssueWorkspace.canGenerateMissing ? (
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => {
+                      const result = generateMissingDeliverablesForIssue(publicationIssueWorkspace.issue.label);
+                      setPublicationFeedback(
+                        formatGenerateMissingFeedback(
+                          publicationIssueWorkspace.issue.label,
+                          result.created,
+                          result.skipped
+                        )
+                      );
+                    }}
+                    type="button"
+                  >
+                    Generate Missing
+                  </button>
+                ) : null}
+                {publicationIssueWorkspace.issue.status === "Open" ? (
+                  <button
+                    className={
+                      publicationIssueWorkspace.canCompleteIssue
+                        ? "button-link button-link--inline-secondary publication-workspace__complete publication-workspace__complete--ready"
+                        : "button-link button-link--inline-secondary publication-workspace__complete"
+                    }
+                    onClick={() => {
+                      const result = completeIssue(publicationIssueWorkspace.issue.label);
+
+                      if (!result.completed) {
+                        setPublicationFeedback(
+                          formatCompletionBlockedFeedback(
+                            publicationIssueWorkspace.issue.label,
+                            result.blockedDeliverables
+                          )
+                        );
+                        return;
+                      }
+
+                      setPublicationFeedback(`${publicationIssueWorkspace.issue.label} marked complete.`);
+                    }}
+                    type="button"
+                  >
+                    Complete Issue
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="publication-workspace__signals">
+              <span className="summary-chip">
+                <span className="summary-chip__label">Progress</span>
+                <strong className="summary-chip__value">{publicationIssueWorkspace.progressCopy}</strong>
+              </span>
+              <span className="summary-chip">
+                <span className="summary-chip__label">Remaining</span>
+                <strong className="summary-chip__value">{publicationIssueWorkspace.remainingCount}</strong>
+              </span>
+              {publicationIssueWorkspace.isMissingDueDate ? (
+                <span className="summary-chip summary-chip--overdue">
+                  <span className="summary-chip__label">Due Date</span>
+                  <strong className="summary-chip__value">Missing</strong>
+                </span>
+              ) : null}
+            </div>
+
+            {publicationFeedback ? <div className="card__subhead">{publicationFeedback}</div> : null}
+          </div>
+        ) : activeIssue ? (
           <div className="issue-context">
             <div>
               <div className="issue-context__title">{activeIssue}</div>
@@ -1258,6 +1437,53 @@ function getUrgencyBadgeClassName(item: ActionItem) {
   }
 
   return "urgency-badge urgency-badge--due-soon";
+}
+
+function formatPublicationFeedback(issue: string, created: number, skipped: number) {
+  if (created === 0 && skipped === 0) {
+    return `${issue} opened.`;
+  }
+
+  if (skipped === 0) {
+    return `${issue} opened - ${created} deliverables created.`;
+  }
+
+  if (created === 0) {
+    return `${issue} opened - all deliverables already existed.`;
+  }
+
+  return `${issue} opened - ${created} created, ${skipped} skipped.`;
+}
+
+function formatGenerateMissingFeedback(issue: string, created: number, skipped: number) {
+  if (created === 0 && skipped === 0) {
+    return `${issue}: nothing to generate.`;
+  }
+
+  if (created === 0) {
+    return `${issue}: all template deliverables already exist.`;
+  }
+
+  if (skipped === 0) {
+    return `${issue}: ${created} missing deliverables created.`;
+  }
+
+  return `${issue}: ${created} created, ${skipped} already existed.`;
+}
+
+function formatCompletionBlockedFeedback(issue: string, blockedDeliverables: string[]) {
+  if (blockedDeliverables.length === 0) {
+    return `${issue} cannot be completed yet.`;
+  }
+
+  const preview = blockedDeliverables.slice(0, 2).join(", ");
+  const remainder = blockedDeliverables.length - 2;
+
+  if (remainder > 0) {
+    return `${issue} cannot be completed. Open deliverables remain: ${preview}, plus ${remainder} more.`;
+  }
+
+  return `${issue} cannot be completed. Open deliverables remain: ${preview}.`;
 }
 
 
