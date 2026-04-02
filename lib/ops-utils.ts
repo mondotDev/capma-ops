@@ -244,6 +244,15 @@ export function getCurrentDate() {
   return currentDate;
 }
 
+export function getCurrentDateKey() {
+  const currentDate = getCurrentDate();
+  const year = currentDate.getFullYear();
+  const month = `${currentDate.getMonth() + 1}`.padStart(2, "0");
+  const day = `${currentDate.getDate()}`.padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 export function parseDate(dateValue: string) {
   if (!dateValue) {
     return null;

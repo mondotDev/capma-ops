@@ -2704,6 +2704,56 @@ test("action view collision review summarizes overloaded dates and groups rows b
   });
 });
 
+test("action view list query reports visible execution counts against the broader lane", () => {
+  const state = createDefaultAppStateData();
+
+  const listView = withMockedToday("2026-03-30T12:00:00", () =>
+    getActionListViewData({
+      items: [
+        createItem({
+          id: "visible-overdue",
+          title: "Visible overdue item",
+          dueDate: "2026-03-28"
+        }),
+        createItem({
+          id: "hidden-future",
+          title: "Future item",
+          dueDate: "2026-04-10"
+        })
+      ],
+      collateralItems: [
+        createCollateralItem({
+          id: "visible-collateral",
+          status: "Blocked",
+          dueDate: "2026-03-31"
+        }),
+        createCollateralItem({
+          id: "hidden-collateral",
+          status: "Ready for Print",
+          dueDate: "2026-04-12"
+        })
+      ],
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventTypes: state.eventTypes,
+      activeEventInstanceId: "legislative-day-2026",
+      filters: {
+        activeDueDate: "",
+        activeEventGroup: "all",
+        activeFilter: "overdue",
+        activeFocus: "all",
+        activeLens: "all",
+        activeIssue: "",
+        activeQuery: "",
+        showCompleted: false
+      }
+    })
+  );
+
+  assert.equal(listView.visibleExecutionCount, 1);
+  assert.equal(listView.totalExecutionCount, 4);
+});
+
 test("action item workspace query returns selected item detail and scoped edit options", () => {
   const items = [
     createItem({

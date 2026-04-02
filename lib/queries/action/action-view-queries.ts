@@ -62,6 +62,7 @@ export type ActionListViewData = {
   summaryCounts: ActionSummaryCounts;
   visibleActionItemCount: number;
   visibleExecutionCount: number;
+  totalExecutionCount: number;
   visibleRows: ActionViewRow[];
   visibleSelectableRows: NativeActionViewRow[];
   collisionReview: CollisionReviewSummary | null;
@@ -157,6 +158,39 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     activeQuery: input.filters.activeQuery
   });
   const visibleSelectableRows = visibleRows.filter(isSelectableActionViewRow);
+  const totalVisibleItems = getVisibleActionItems(
+    input.items,
+    {
+      ...input.filters,
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeIssue: "",
+      activeLens: "all",
+      activeQuery: ""
+    },
+    input.eventInstances,
+    eventPrograms,
+    {
+      includeSearch: false
+    }
+  );
+  const totalCollateralRows = getActionCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: input.activeEventInstanceId,
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    applySearch: false,
+    collateralItems: input.collateralItems,
+    eventInstances: input.eventInstances,
+    eventSubEvents: input.eventSubEvents,
+    eventPrograms
+  });
   const actionScopes = buildActionScopes({
     items: input.items,
     eventPrograms,
@@ -177,6 +211,7 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     summaryCounts: getVisibleActionSummaryCounts(visibleRows),
     visibleActionItemCount: visibleItems.length,
     visibleExecutionCount: visibleItems.length + collateralRows.length,
+    totalExecutionCount: totalVisibleItems.length + totalCollateralRows.length,
     visibleRows,
     visibleSelectableRows,
     collisionReview: input.filters.activeLens === "reviewCollisions" ? collisionReview : null

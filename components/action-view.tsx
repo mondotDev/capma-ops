@@ -161,6 +161,7 @@ export function ActionView({
     [activeEventGroup, eventGroupOptions]
   );
   const visibleExecutionCount = actionListView.visibleExecutionCount;
+  const totalExecutionCount = actionListView.totalExecutionCount;
   const visibleRows = actionListView.visibleRows;
   const groupedRows = actionListView.groupedRows;
   const visibleSelectableRows = actionListView.visibleSelectableRows;
@@ -177,6 +178,40 @@ export function ActionView({
   );
   const allVisibleSelected =
     visibleSelectableRows.length > 0 && selectedVisibleIds.length === visibleSelectableRows.length;
+  const hasActiveExecutionContext = Boolean(
+    activeFilter !== "all" ||
+      activeFocus !== "all" ||
+      activeLens !== "all" ||
+      activeEventGroup !== "all" ||
+      activeDueDate ||
+      activeIssue ||
+      activeQuery
+  );
+  const contextChips = useMemo(
+    () =>
+      buildActionContextChips({
+        activeDueDate,
+        activeFilter,
+        activeFocus,
+        activeIssue,
+        activeLens,
+        activeQuery,
+        activeScopeLabel,
+        hasPublicationIssueWorkspace: Boolean(publicationIssueWorkspace),
+        hasScopedEventGroup: activeEventGroup !== "all"
+      }),
+    [
+      activeDueDate,
+      activeEventGroup,
+      activeFilter,
+      activeFocus,
+      activeIssue,
+      activeLens,
+      activeQuery,
+      activeScopeLabel,
+      publicationIssueWorkspace
+    ]
+  );
 
   useEffect(() => {
     if (!selectedId) {
@@ -360,6 +395,13 @@ export function ActionView({
 
   function clearSearchQuery() {
     updateQuery(activeFilter, activeFocus, activeLens, activeEventGroup, activeDueDate, "");
+  }
+
+  function clearAllContext() {
+    const params = new URLSearchParams(searchParams.toString());
+    ["filter", "focus", "lens", "eventGroup", "dueDate", "issue", "q"].forEach((key) => params.delete(key));
+    const query = params.toString();
+    router.replace(query ? `/action?${query}` : "/action");
   }
 
   function toggleGroup(groupLabel: string) {
@@ -678,6 +720,62 @@ export function ActionView({
             <span className="summary-chip__label">Total Active</span>
             <strong className="summary-chip__value">{summaryCounts.totalActive}</strong>
           </span>
+        </div>
+
+        <div className="card card--secondary action-context-strip" aria-label="Current action view context">
+          <div className="action-context-strip__header">
+            <div>
+              <div className="card__title">CURRENT VIEW</div>
+              <div className="action-context-strip__count">
+                Showing {visibleExecutionCount} {visibleExecutionCount === 1 ? "item" : "items"}
+                {totalExecutionCount !== visibleExecutionCount ? ` of ${totalExecutionCount}` : ""}
+              </div>
+              <div className="action-context-strip__meta">
+                {hasActiveExecutionContext
+                  ? "Rows are narrowed by the active execution context below."
+                  : "No extra constraints are hiding rows right now."}
+              </div>
+            </div>
+            {hasActiveExecutionContext ? (
+              <button className="button-link button-link--inline-secondary" onClick={clearAllContext} type="button">
+                Clear all constraints
+              </button>
+            ) : null}
+          </div>
+
+          {contextChips.length > 0 ? (
+            <div className="action-context-strip__chips">
+              {contextChips.map((chip) => {
+                const clearHandler = getContextChipClearHandler(chip.kind, {
+                  clearDueDateFilter,
+                  clearFocus,
+                  clearIssueFilter,
+                  clearSearchQuery,
+                  handleEventGroupChange,
+                  handleFilterChange,
+                  handleLensChange
+                });
+
+                return (
+                  <span className="action-context-chip" key={`${chip.kind}-${chip.label}`}>
+                    <span className="action-context-chip__label">{chip.label}</span>
+                    {clearHandler ? (
+                      <button
+                        aria-label={`Clear ${chip.label}`}
+                        className="action-context-chip__clear"
+                        onClick={clearHandler}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="muted">All active execution work is visible.</div>
+          )}
         </div>
 
         {collisionReview ? (
@@ -1093,7 +1191,19 @@ export function ActionView({
                 })}
               </table>
 
-              {visibleRows.length === 0 ? <div className="empty-state">No items match this view.</div> : null}
+              {visibleRows.length === 0 ? (
+                <div className="empty-state empty-state--actionable">
+                  <div className="empty-state__title">No items match this view.</div>
+                  <div className="empty-state__copy">{getActionEmptyStateCopy(contextChips)}</div>
+                  {hasActiveExecutionContext ? (
+                    <div className="empty-state__actions">
+                      <button className="topbar__button" onClick={clearAllContext} type="button">
+                        Clear all constraints
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1430,6 +1540,114 @@ export function ActionView({
 
 function getFilterLabel(filter: ActionFilter) {
   return FILTER_OPTIONS.find((option) => option.value === filter)?.label ?? "All";
+}
+
+type ActionContextChip = {
+  kind: "filter" | "focus" | "lens" | "scope" | "dueDate" | "issue" | "search" | "workspace";
+  label: string;
+};
+
+function buildActionContextChips(input: {
+  activeDueDate: string;
+  activeFilter: ActionFilter;
+  activeFocus: ActionFocus;
+  activeIssue: string;
+  activeLens: ActionLens;
+  activeQuery: string;
+  activeScopeLabel: string;
+  hasPublicationIssueWorkspace: boolean;
+  hasScopedEventGroup: boolean;
+}): ActionContextChip[] {
+  const chips: ActionContextChip[] = [];
+
+  if (input.hasPublicationIssueWorkspace) {
+    chips.push({ kind: "workspace", label: "Publication workspace" });
+  }
+
+  if (input.activeIssue) {
+    chips.push({ kind: "issue", label: `Issue: ${input.activeIssue}` });
+  }
+
+  if (input.activeLens !== "all") {
+    chips.push({ kind: "lens", label: `Lens: ${getLensLabel(input.activeLens)}` });
+  }
+
+  if (input.activeFilter !== "all") {
+    chips.push({ kind: "filter", label: `Filter: ${getFilterLabel(input.activeFilter)}` });
+  }
+
+  if (input.activeFocus !== "all") {
+    chips.push({ kind: "focus", label: `Focus: ${FOCUS_LABELS[input.activeFocus]}` });
+  }
+
+  if (input.hasScopedEventGroup) {
+    chips.push({ kind: "scope", label: `Scope: ${input.activeScopeLabel}` });
+  }
+
+  if (input.activeDueDate) {
+    chips.push({ kind: "dueDate", label: `Due: ${formatShortDate(input.activeDueDate)}` });
+  }
+
+  if (input.activeQuery) {
+    chips.push({ kind: "search", label: `Search: ${input.activeQuery}` });
+  }
+
+  return chips;
+}
+
+function getContextChipClearHandler(
+  kind: ActionContextChip["kind"],
+  handlers: {
+    clearDueDateFilter: () => void;
+    clearFocus: () => void;
+    clearIssueFilter: () => void;
+    clearSearchQuery: () => void;
+    handleEventGroupChange: (nextEventGroup: string) => void;
+    handleFilterChange: (nextFilter: ActionFilter) => void;
+    handleLensChange: (nextLens: ActionLens) => void;
+  }
+) {
+  if (kind === "filter") {
+    return () => handlers.handleFilterChange("all");
+  }
+
+  if (kind === "focus") {
+    return handlers.clearFocus;
+  }
+
+  if (kind === "lens") {
+    return () => handlers.handleLensChange("all");
+  }
+
+  if (kind === "scope") {
+    return () => handlers.handleEventGroupChange("all");
+  }
+
+  if (kind === "dueDate") {
+    return handlers.clearDueDateFilter;
+  }
+
+  if (kind === "issue") {
+    return handlers.clearIssueFilter;
+  }
+
+  if (kind === "search") {
+    return handlers.clearSearchQuery;
+  }
+
+  return null;
+}
+
+function getActionEmptyStateCopy(chips: ActionContextChip[]) {
+  if (chips.length === 0) {
+    return "There are no visible execution items yet. Add work or broaden the current review window.";
+  }
+
+  const contextPreview = chips
+    .map((chip) => chip.label)
+    .join(" • ");
+
+  return `No execution items match the current view: ${contextPreview}. Clear one or more constraints to broaden the lane.`;
 }
 
 function getLensLabel(lens: ActionLens) {

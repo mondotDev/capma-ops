@@ -1,5 +1,5 @@
 import type { EventInstance, EventProgram } from "@/lib/event-instances";
-import { normalizeIdentifierValue, normalizeWorkstreamValue } from "@/lib/ops-utils";
+import { getCurrentDateKey, normalizeIdentifierValue, normalizeWorkstreamValue } from "@/lib/ops-utils";
 
 export const ACTION_ITEM_MEANING_HINT =
   "Event Instance = event-linked work. Operational Bucket = non-event work. Only one applies at a time.";
@@ -114,7 +114,7 @@ export function getSoonestUpcomingEventInstanceIdForWorkstream(input: {
     return "";
   }
 
-  const todayDateKey = input.today ?? getLocalDateKey(new Date());
+  const todayDateKey = input.today ?? getCurrentDateKey();
   const upcomingInstances = input.eventInstances
     .filter((instance) => instance.eventTypeId === eventProgram.id && instance.startDate >= todayDateKey)
     .sort((left, right) => {
@@ -176,12 +176,4 @@ export function reconcileQuickAddEventSelectionOnWorkstreamChange(input: {
     subEventId: "",
     manualSelection: { eventProgramId: null, eventInstanceId: "" } satisfies QuickAddManualEventSelection
   };
-}
-
-function getLocalDateKey(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
 }
