@@ -100,11 +100,12 @@ export function ActionView({
   initialQuery?: string;
 }) {
   const {
+    archiveItem,
     bulkUpdateItems,
     completeIssue,
-    deleteItem,
     generateMissingDeliverablesForIssue,
     openIssue,
+    restoreItem,
     setIssueStatus,
     updateItem
   } = useAppActions();
@@ -112,8 +113,9 @@ export function ActionView({
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkOwner, setBulkOwner] = useState("");
@@ -140,9 +142,20 @@ export function ActionView({
       activeLens,
       activeIssue,
       activeQuery,
+      showArchived,
       showCompleted
     }),
-    [activeDueDate, activeEventGroup, activeFilter, activeFocus, activeIssue, activeLens, activeQuery, showCompleted]
+    [
+      activeDueDate,
+      activeEventGroup,
+      activeFilter,
+      activeFocus,
+      activeIssue,
+      activeLens,
+      activeQuery,
+      showArchived,
+      showCompleted
+    ]
   );
   const {
     actionListView,
@@ -185,7 +198,16 @@ export function ActionView({
       activeEventGroup !== "all" ||
       activeDueDate ||
       activeIssue ||
-      activeQuery
+      activeQuery ||
+      !showCompleted ||
+      !showArchived
+  );
+  const closedVisibilitySummary = useMemo(
+    () => ({
+      hidesArchived: !showArchived,
+      hidesCompleted: !showCompleted
+    }),
+    [showArchived, showCompleted]
   );
   const contextChips = useMemo(
     () =>
@@ -197,6 +219,8 @@ export function ActionView({
         activeLens,
         activeQuery,
         activeScopeLabel,
+        hidesArchived: closedVisibilitySummary.hidesArchived,
+        hidesCompleted: closedVisibilitySummary.hidesCompleted,
         hasPublicationIssueWorkspace: Boolean(publicationIssueWorkspace),
         hasScopedEventGroup: activeEventGroup !== "all"
       }),
@@ -209,6 +233,8 @@ export function ActionView({
       activeLens,
       activeQuery,
       activeScopeLabel,
+      closedVisibilitySummary.hidesArchived,
+      closedVisibilitySummary.hidesCompleted,
       publicationIssueWorkspace
     ]
   );
@@ -224,7 +250,7 @@ export function ActionView({
   }, [selectedId, visibleSelectableRows]);
 
   useEffect(() => {
-    setIsDeleteConfirmOpen(false);
+    setIsArchiveConfirmOpen(false);
     setIsActionsMenuOpen(false);
   }, [selectedId]);
 
@@ -400,6 +426,8 @@ export function ActionView({
   function clearAllContext() {
     const params = new URLSearchParams(searchParams.toString());
     ["filter", "focus", "lens", "eventGroup", "dueDate", "issue", "q"].forEach((key) => params.delete(key));
+    setShowArchived(false);
+    setShowCompleted(false);
     const query = params.toString();
     router.replace(query ? `/action?${query}` : "/action");
   }
@@ -917,6 +945,14 @@ export function ActionView({
           <div className="action-toolbar__controls">
             <label className="toggle">
               <input
+                checked={showArchived}
+                onChange={(event) => setShowArchived(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Show Archived</span>
+            </label>
+            <label className="toggle">
+              <input
                 checked={showCompleted}
                 onChange={(event) => setShowCompleted(event.target.checked)}
                 type="checkbox"
@@ -1217,12 +1253,12 @@ export function ActionView({
               isActionsMenuOpen={isActionsMenuOpen}
               isEditingTitle={isEditingTitle}
               item={selectedItem}
-              onCancelTitleEdit={() => cancelTitleEdit(selectedItem)}
-              onClose={() => setSelectedId(null)}
-              onDeleteRequest={() => {
-                setIsDeleteConfirmOpen(true);
+              onArchiveRequest={() => {
+                setIsArchiveConfirmOpen(true);
                 setIsActionsMenuOpen(false);
               }}
+              onCancelTitleEdit={() => cancelTitleEdit(selectedItem)}
+              onClose={() => setSelectedId(null)}
               onFinishTitleEdit={() => finishTitleEdit(selectedItem)}
               onStartTitleEdit={() => setIsEditingTitle(true)}
               onTitleDraftChange={setTitleDraft}
@@ -1501,31 +1537,39 @@ export function ActionView({
                 onNoteDraftChange={setNoteDraft}
               />
             </div>
-            {isDeleteConfirmOpen ? (
+            {isArchiveConfirmOpen ? (
               <div className="drawer__confirm-bar">
                 <div className="confirm-delete">
-                  <div className="confirm-delete__title">Delete this item?</div>
+                  <div className="confirm-delete__title">
+                    {selectedItem.archivedAt ? "Restore this item to the active lane?" : "Archive this item?"}
+                  </div>
                   <div className="confirm-delete__copy">
-                    This will remove it from the current app state.
+                    {selectedItem.archivedAt
+                      ? "This will make the item visible in active execution views again."
+                      : "This keeps the item recoverable but removes it from active execution views by default."}
                   </div>
                   <div className="confirm-delete__actions">
                     <button
                       className="button-link button-link--inline-secondary"
-                      onClick={() => setIsDeleteConfirmOpen(false)}
+                      onClick={() => setIsArchiveConfirmOpen(false)}
                       type="button"
                     >
                       Cancel
                     </button>
                     <button
-                      className="button-danger"
+                      className={selectedItem.archivedAt ? "topbar__button" : "button-danger"}
                       onClick={() => {
-                        deleteItem(selectedItem.id);
+                        if (selectedItem.archivedAt) {
+                          restoreItem(selectedItem.id);
+                        } else {
+                          archiveItem(selectedItem.id);
+                        }
                         setSelectedId(null);
-                        setIsDeleteConfirmOpen(false);
+                        setIsArchiveConfirmOpen(false);
                       }}
                       type="button"
                     >
-                      Delete
+                      {selectedItem.archivedAt ? "Restore" : "Archive"}
                     </button>
                   </div>
                 </div>
@@ -1543,7 +1587,17 @@ function getFilterLabel(filter: ActionFilter) {
 }
 
 type ActionContextChip = {
-  kind: "filter" | "focus" | "lens" | "scope" | "dueDate" | "issue" | "search" | "workspace";
+  kind:
+    | "filter"
+    | "focus"
+    | "lens"
+    | "scope"
+    | "dueDate"
+    | "issue"
+    | "search"
+    | "workspace"
+    | "completed"
+    | "archived";
   label: string;
 };
 
@@ -1555,10 +1609,20 @@ function buildActionContextChips(input: {
   activeLens: ActionLens;
   activeQuery: string;
   activeScopeLabel: string;
+  hidesArchived: boolean;
+  hidesCompleted: boolean;
   hasPublicationIssueWorkspace: boolean;
   hasScopedEventGroup: boolean;
 }): ActionContextChip[] {
   const chips: ActionContextChip[] = [];
+
+  if (input.hidesCompleted) {
+    chips.push({ kind: "completed", label: "Completed hidden" });
+  }
+
+  if (input.hidesArchived) {
+    chips.push({ kind: "archived", label: "Archived hidden" });
+  }
 
   if (input.hasPublicationIssueWorkspace) {
     chips.push({ kind: "workspace", label: "Publication workspace" });
@@ -1633,6 +1697,10 @@ function getContextChipClearHandler(
 
   if (kind === "search") {
     return handlers.clearSearchQuery;
+  }
+
+  if (kind === "completed" || kind === "archived" || kind === "workspace") {
+    return null;
   }
 
   return null;

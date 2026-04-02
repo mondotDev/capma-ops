@@ -75,6 +75,7 @@ type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
     Pick<
       ActionItem,
       | "eventGroup"
+      | "archivedAt"
       | "operationalBucket"
       | "legacyEventGroupMigrated"
       | "eventInstanceId"
@@ -99,6 +100,7 @@ type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
     Pick<
       ActionItem,
       | "eventGroup"
+      | "archivedAt"
       | "operationalBucket"
       | "legacyEventGroupMigrated"
       | "eventInstanceId"
@@ -265,6 +267,10 @@ export function isComplete(item: ActionItem) {
   return isTerminalStatus(item.status);
 }
 
+export function isArchivedItem(item: Pick<ActionItem, "archivedAt">) {
+  return Boolean(item.archivedAt?.trim());
+}
+
 export function isTerminalStatus(status: string) {
   return status === "Complete" || status === "Cut" || status === "Canceled";
 }
@@ -274,7 +280,7 @@ export function isDueSoonExcludedStatus(status: string) {
 }
 
 export function getActiveItems(items: ActionItem[]) {
-  return items.filter((item) => !isTerminalStatus(item.status));
+  return items.filter((item) => !isArchivedItem(item) && !isTerminalStatus(item.status));
 }
 
 export function hasDueDate(item: Pick<ActionItem, "dueDate"> | string) {
@@ -452,6 +458,7 @@ export function getOwnerOptions(owner?: string) {
 
 export function normalizeActionItemFields<T extends NormalizeActionItemInput>(item: T): NormalizeActionItemResult<T> {
   const {
+    archivedAt,
     blocked,
     blockedBy,
     eventInstanceId,
@@ -485,9 +492,11 @@ export function normalizeActionItemFields<T extends NormalizeActionItemInput>(it
   const normalizedWaitingOn =
     normalizeOperationalReason(item.waitingOn) ??
     getWaitingOnFromLegacyDetails(item.details);
+  const normalizedArchivedAt = normalizeIdentifierValue(archivedAt);
 
   return {
     ...rest,
+    archivedAt: normalizedArchivedAt,
     owner: normalizeOwnerValue(item.owner),
     workstream: normalizeWorkstreamValue(item.workstream),
     operationalBucket: normalizedOperationalBucket,
@@ -1386,7 +1395,7 @@ export function getDailyLoad(items: ActionItem[], days = 14): DailyLoadEntry[] {
   }
 
   for (const item of items) {
-    if (isDueSoonExcludedStatus(item.status) || !hasDueDate(item.dueDate)) {
+    if (isArchivedItem(item) || isDueSoonExcludedStatus(item.status) || !hasDueDate(item.dueDate)) {
       continue;
     }
 
@@ -1407,7 +1416,7 @@ export function getWorkstreamSummary(items: ActionItem[]): WorkstreamSummaryEntr
   const summaryByWorkstream = new Map<string, WorkstreamSummaryEntry>();
 
   for (const item of items) {
-    if (isTerminalStatus(item.status)) {
+    if (isArchivedItem(item) || isTerminalStatus(item.status)) {
       continue;
     }
 

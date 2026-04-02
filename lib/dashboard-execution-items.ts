@@ -7,6 +7,7 @@ import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-ins
 import {
   daysUntil,
   formatShortDate,
+  isArchivedItem,
   isBlockedItem,
   isItemDueSoon,
   isItemMissingDueDate,
@@ -62,7 +63,9 @@ export function buildDashboardExecutionItems(input: {
   });
 
   return [
-    ...input.items.map((item) => ({
+    ...input.items
+      .filter((item) => !isArchivedItem(item))
+      .map((item) => ({
       id: item.id,
       kind: "action" as const,
       title: item.title,

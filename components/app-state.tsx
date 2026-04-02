@@ -94,6 +94,7 @@ type AppStateContextValue = {
   addItem: (item: NewActionItem) => void;
   addCollateralItem: (item: Omit<CollateralItem, "id" | "lastUpdated">) => string;
   applyDefaultTemplateToInstance: (instanceId: string) => boolean;
+  archiveItem: (id: string) => void;
   bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => void;
   createEventInstance: (input: CreateEventInstanceInput) => string;
   deleteItem: (id: string) => void;
@@ -106,6 +107,7 @@ type AppStateContextValue = {
   openIssue: (issue: string) => GenerateDeliverablesResult;
   ensureEventInstanceUnassignedSubEvent: (instanceId: string) => string;
   resetAppState: () => void;
+  restoreItem: (id: string) => void;
   setActiveEventInstanceId: (instanceId: string) => void;
   setCollateralProfile: (instanceId: string, profile: LegDayCollateralProfile) => void;
   setDefaultOwnerForNewItems: (owner: string) => void;
@@ -312,6 +314,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     enablePersistence();
     setItems((current) =>
       prependActionItem(current, item, {
+        eventInstances: eventInstancesRef.current,
+        eventPrograms: eventTypesRef.current,
+        eventSubEvents: eventSubEventsRef.current
+      })
+    );
+  }, [enablePersistence]);
+
+  const archiveItem = useCallback((id: string) => {
+    enablePersistence();
+    setItems((current) =>
+      updateActionItemById(current, id, { archivedAt: new Date().toISOString().slice(0, 10) }, {
         eventInstances: eventInstancesRef.current,
         eventPrograms: eventTypesRef.current,
         eventSubEvents: eventSubEventsRef.current
@@ -556,6 +569,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     hydrateAppState(createDefaultAppStateData());
   }, [appStateRepository, enablePersistence, hydrateAppState]);
 
+  const restoreItem = useCallback((id: string) => {
+    enablePersistence();
+    setItems((current) =>
+      updateActionItemById(current, id, { archivedAt: undefined }, {
+        eventInstances: eventInstancesRef.current,
+        eventPrograms: eventTypesRef.current,
+        eventSubEvents: eventSubEventsRef.current
+      })
+    );
+  }, [enablePersistence]);
+
   const bulkUpdateItems = useCallback((ids: string[], updates: Partial<ActionItem>) => {
     enablePersistence();
     setItems((current) =>
@@ -651,6 +675,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const actions = useMemo<AppStateActionsContextValue>(
     () => ({
+    archiveItem,
     addItem,
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -666,6 +691,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     openIssue,
     ensureEventInstanceUnassignedSubEvent,
     resetAppState,
+    restoreItem,
     setActiveEventInstanceId,
     setCollateralProfile,
     setDefaultOwnerForNewItems,
@@ -678,6 +704,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addCollateralItem,
       addItem,
       applyDefaultTemplateToInstance,
+      archiveItem,
       bulkUpdateItems,
       completeIssue,
       createEventInstance,
@@ -690,6 +717,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       importAppStateSnapshot,
       openIssue,
       resetAppState,
+      restoreItem,
       setActiveEventInstanceId,
       setCollateralProfile,
       setDefaultOwnerForNewItems,

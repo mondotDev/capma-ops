@@ -6,7 +6,7 @@ import {
   getActionDrawerPrimaryBadgeLabel,
   getActionDrawerSecondaryMeta
 } from "@/lib/action/action-drawer-presentation";
-import { isItemMissingDueDate } from "@/lib/ops-utils";
+import { formatShortDate, isItemMissingDueDate } from "@/lib/ops-utils";
 
 type ActionItemDrawerHeaderProps = {
   item: ActionItem;
@@ -18,7 +18,7 @@ type ActionItemDrawerHeaderProps = {
   onFinishTitleEdit: () => void;
   onCancelTitleEdit: () => void;
   onToggleActionsMenu: () => void;
-  onDeleteRequest: () => void;
+  onArchiveRequest: () => void;
   onClose: () => void;
 };
 
@@ -32,7 +32,7 @@ export function ActionItemDrawerHeader({
   onFinishTitleEdit,
   onCancelTitleEdit,
   onToggleActionsMenu,
-  onDeleteRequest,
+  onArchiveRequest,
   onClose
 }: ActionItemDrawerHeaderProps) {
   return (
@@ -99,11 +99,11 @@ export function ActionItemDrawerHeader({
               <div className="drawer__actions-popover" role="menu">
                 <button
                   className="drawer__actions-item drawer__actions-item--danger"
-                  onClick={onDeleteRequest}
+                  onClick={onArchiveRequest}
                   role="menuitem"
                   type="button"
                 >
-                  Delete
+                  {item.archivedAt ? "Restore to active lane" : "Archive"}
                 </button>
               </div>
             ) : null}
@@ -115,6 +115,11 @@ export function ActionItemDrawerHeader({
       </div>
       {item.blockedBy?.trim() ? (
         <div className="drawer__warning drawer__warning--blocked">Blocked by {item.blockedBy.trim()}</div>
+      ) : null}
+      {item.archivedAt ? (
+        <div className="drawer__warning drawer__warning--archived">
+          Archived from active views on {formatShortDate(item.archivedAt)}.
+        </div>
       ) : null}
       {isItemMissingDueDate(item) ? (
         <div className="drawer__warning">Due date not configured for this issue</div>

@@ -10,6 +10,7 @@ import {
   type ActionFocus,
   type ActionLens,
   formatDueLabel,
+  isArchivedItem,
   isBlockedItem,
   isItemMissingDueDate,
   isTerminalStatus,
@@ -28,6 +29,7 @@ export type ActionViewFilters = {
   activeLens: ActionLens;
   activeIssue: string;
   activeQuery: string;
+  showArchived?: boolean;
   showCompleted: boolean;
 };
 
@@ -107,6 +109,10 @@ export function getVisibleActionItems(
   const includeSearch = options.includeSearch ?? true;
 
   return items.filter((item) => {
+    if (!(filters.showArchived ?? false) && isArchivedItem(item)) {
+      return false;
+    }
+
     if (!filters.showCompleted && isTerminalStatus(item.status)) {
       return false;
     }
@@ -155,6 +161,10 @@ export function groupItemsByEventGroup(
 }
 
 export function getActionRowClassName(item: ActionItem) {
+  if (isArchivedItem(item)) {
+    return "archived-row";
+  }
+
   if (isTerminalStatus(item.status)) {
     return "cut-row";
   }

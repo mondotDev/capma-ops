@@ -1923,6 +1923,11 @@ tr.waiting-row {
   background: #fffdfa;
 }
 
+tr.archived-row {
+  background: #f7f8fa;
+  color: #6b7280;
+}
+
 tr.blocked-row {
   background: #fff8f1;
   box-shadow: inset 4px 0 0 #9a5b24;
@@ -2686,6 +2691,10 @@ tr.blocked-row {
 
 .drawer__warning--blocked {
   color: #8a4b12;
+}
+
+.drawer__warning--archived {
+  color: #4b5563;
 }
 
 .urgency-badge {

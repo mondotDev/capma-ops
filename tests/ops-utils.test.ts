@@ -2754,6 +2754,116 @@ test("action view list query reports visible execution counts against the broade
   assert.equal(listView.totalExecutionCount, 4);
 });
 
+test("action view hides archived items by default and can reveal them explicitly", () => {
+  const state = createDefaultAppStateData();
+
+  const hiddenByDefault = getActionListViewData({
+    items: [
+      createItem({ id: "active-item", title: "Active item" }),
+      createItem({
+        id: "archived-item",
+        title: "Archived item",
+        archivedAt: "2026-04-01"
+      })
+    ],
+    collateralItems: [],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "",
+      showCompleted: false,
+      showArchived: false
+    }
+  });
+
+  const shownWhenRequested = getActionListViewData({
+    items: [
+      createItem({ id: "active-item", title: "Active item" }),
+      createItem({
+        id: "archived-item",
+        title: "Archived item",
+        archivedAt: "2026-04-01"
+      })
+    ],
+    collateralItems: [],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "",
+      showCompleted: false,
+      showArchived: true
+    }
+  });
+
+  assert.deepEqual(hiddenByDefault.visibleRows.map((row) => row.id), ["active-item"]);
+  assert.equal(hiddenByDefault.visibleExecutionCount, 1);
+  assert.equal(hiddenByDefault.totalExecutionCount, 1);
+  assert.deepEqual(shownWhenRequested.visibleRows.map((row) => row.id), ["active-item", "archived-item"]);
+  assert.equal(shownWhenRequested.visibleExecutionCount, 2);
+  assert.equal(shownWhenRequested.totalExecutionCount, 2);
+});
+
+test("action visibility helper keeps completed and archived work out of active lanes by default", () => {
+  const state = createDefaultAppStateData();
+  const visibleItems = getVisibleActionItems(
+    [
+      createItem({ id: "active-item", title: "Active item" }),
+      createItem({ id: "complete-item", title: "Complete item", status: "Complete" }),
+      createItem({ id: "archived-item", title: "Archived item", archivedAt: "2026-04-01" })
+    ],
+    {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "",
+      showCompleted: false,
+      showArchived: false
+    },
+    state.eventInstances,
+    state.eventTypes
+  );
+
+  assert.deepEqual(visibleItems.map((item) => item.id), ["active-item"]);
+});
+
+test("dashboard execution items exclude archived action items from active summaries", () => {
+  const state = createDefaultAppStateData();
+
+  const executionItems = buildDashboardExecutionItems({
+    items: [
+      createItem({ id: "active-item", title: "Active item" }),
+      createItem({ id: "complete-item", title: "Complete item", status: "Complete" }),
+      createItem({ id: "archived-item", title: "Archived item", archivedAt: "2026-04-01" })
+    ],
+    collateralItems: [],
+    activeEventInstanceId: state.activeEventInstanceId,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+
+  assert.deepEqual(executionItems.map((item) => item.id), ["active-item", "complete-item"]);
+});
+
 test("action item workspace query returns selected item detail and scoped edit options", () => {
   const items = [
     createItem({

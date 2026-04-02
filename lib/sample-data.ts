@@ -18,6 +18,7 @@ export type ActionItem = {
   title: string;
   type: string;
   workstream: string;
+  archivedAt?: string;
   operationalBucket?: string;
   /**
    * Legacy Action View grouping field kept only for transitional compatibility.
