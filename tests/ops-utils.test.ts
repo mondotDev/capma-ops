@@ -22,6 +22,10 @@ import {
   getVisibleActionViewRows,
   isSelectableActionViewRow
 } from "../lib/action-view-rows";
+import {
+  getActionMeaningUiState,
+  shouldClearEventLinkOnWorkstreamChange
+} from "../lib/action/action-item-ux";
 import { getVisibleCollateralExecutionRows } from "../lib/collateral-execution-view";
 import {
   completePublicationIssue,
@@ -903,6 +907,104 @@ test("mixed action view search matches derived event instance and sub-event labe
   });
 
   assert.deepEqual(subEventRows.map((row) => row.id), ["native-leg-day"]);
+});
+
+test("workstream conflict helper flags event-linked items that move away from the event program", () => {
+  const state = createDefaultAppStateData();
+
+  assert.equal(
+    shouldClearEventLinkOnWorkstreamChange({
+      eventInstanceId: "legislative-day-2026",
+      nextWorkstream: "First Friday",
+      eventInstances: state.eventInstances,
+      eventPrograms: state.eventTypes
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldClearEventLinkOnWorkstreamChange({
+      eventInstanceId: "legislative-day-2026",
+      nextWorkstream: "Legislative Day",
+      eventInstances: state.eventInstances,
+      eventPrograms: state.eventTypes
+    }),
+    false
+  );
+});
+
+test("drawer-style workstream updates clear event linkage immediately in UI state", () => {
+  const state = createDefaultAppStateData();
+  const currentItem = createItem({
+    id: "action-ux-1",
+    title: "Event-linked item",
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026",
+    subEventId: "leg-day-legislative-visits"
+  });
+  const nextWorkstream = "First Friday";
+  const syncedItem = syncActionItemWorkstream(currentItem, nextWorkstream);
+  const shouldClearEventLink = shouldClearEventLinkOnWorkstreamChange({
+    eventInstanceId: currentItem.eventInstanceId,
+    nextWorkstream,
+    eventInstances: state.eventInstances,
+    eventPrograms: state.eventTypes
+  });
+
+  const nextUiState = {
+    ...syncedItem,
+    eventInstanceId: shouldClearEventLink ? undefined : currentItem.eventInstanceId,
+    subEventId: shouldClearEventLink ? undefined : currentItem.subEventId
+  };
+
+  assert.equal(nextUiState.workstream, "First Friday");
+  assert.equal(nextUiState.eventInstanceId, undefined);
+  assert.equal(nextUiState.subEventId, undefined);
+});
+
+test("quick add workstream updates clear event linkage immediately and keep disable rules aligned", () => {
+  const state = createDefaultAppStateData();
+  const currentFormState = {
+    type: "Task",
+    title: "Quick add event-linked item",
+    workstream: "Legislative Day",
+    operationalBucket: "",
+    eventInstanceId: "legislative-day-2026",
+    subEventId: "leg-day-legislative-visits",
+    issue: "",
+    dueDate: "2026-04-10",
+    owner: "Melissa",
+    status: "Not Started",
+    waitingOn: "",
+    isBlocked: false,
+    blockedBy: "",
+    notes: ""
+  };
+  const nextWorkstream = "General Ops";
+  const syncedState = syncActionItemWorkstream(currentFormState, nextWorkstream);
+  const shouldClearEventLink = shouldClearEventLinkOnWorkstreamChange({
+    eventInstanceId: currentFormState.eventInstanceId,
+    nextWorkstream,
+    eventInstances: state.eventInstances,
+    eventPrograms: state.eventTypes
+  });
+
+  const nextUiState = {
+    ...syncedState,
+    eventInstanceId: shouldClearEventLink ? "" : currentFormState.eventInstanceId,
+    subEventId: shouldClearEventLink ? "" : currentFormState.subEventId
+  };
+
+  assert.equal(nextUiState.eventInstanceId, "");
+  assert.equal(nextUiState.subEventId, "");
+
+  const eventLinkedUi = getActionMeaningUiState("legislative-day-2026");
+  const nonEventUi = getActionMeaningUiState("");
+
+  assert.equal(eventLinkedUi.subEventDisabled, false);
+  assert.equal(eventLinkedUi.operationalBucketDisabled, true);
+  assert.equal(nonEventUi.subEventDisabled, true);
+  assert.equal(nonEventUi.operationalBucketDisabled, false);
 });
 
 test("normalizeCollateralItem preserves template origin metadata", () => {

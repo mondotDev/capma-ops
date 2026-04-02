@@ -6,6 +6,11 @@ import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { useActionViewReadModel } from "@/components/app-read-models";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useAppState } from "@/components/app-state";
+import {
+  ACTION_ITEM_MEANING_HINT,
+  getActionMeaningUiState,
+  shouldClearEventLinkOnWorkstreamChange
+} from "@/lib/action/action-item-ux";
 import { getActionScopeLabelByValue } from "@/lib/action-scopes";
 import type { ActionItem } from "@/lib/sample-data";
 import {
@@ -95,6 +100,7 @@ export function ActionView({
   const {
     bulkUpdateItems,
     deleteItem,
+    eventTypes,
     updateItem
   } = useAppState();
   const router = useRouter();
@@ -154,6 +160,7 @@ export function ActionView({
   const selectedIssueRecord = selectedWorkspace.selectedIssueRecord;
   const selectedItemIssueOptions = selectedWorkspace.selectedItemIssueOptions;
   const selectedItemSubEvents = selectedWorkspace.selectedItemSubEvents;
+  const selectedItemMeaningUi = selectedItem ? getActionMeaningUiState(selectedItem.eventInstanceId) : null;
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
     () => selectedItemIds.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)),
@@ -971,11 +978,19 @@ export function ActionView({
                         onChange={(event) => {
                           const nextWorkstream = event.target.value;
                           const nextItem = syncActionItemWorkstream(selectedItem, nextWorkstream);
+                          const shouldClearEventLink = shouldClearEventLinkOnWorkstreamChange({
+                            eventInstanceId: selectedItem.eventInstanceId,
+                            nextWorkstream,
+                            eventInstances,
+                            eventPrograms: eventTypes
+                          });
 
                           updateItem(selectedItem.id, {
                             workstream: nextItem.workstream,
                             operationalBucket: nextItem.operationalBucket || undefined,
-                            issue: nextItem.issue
+                            issue: nextItem.issue,
+                            eventInstanceId: shouldClearEventLink ? undefined : selectedItem.eventInstanceId,
+                            subEventId: shouldClearEventLink ? undefined : selectedItem.subEventId
                           });
                         }}
                         value={selectedItem.workstream}
@@ -1012,7 +1027,7 @@ export function ActionView({
                     <div className="field field--secondary">
                     <label htmlFor="drawer-sub-event">Sub-Event</label>
                     <select
-                      disabled={!selectedItem.eventInstanceId}
+                      disabled={selectedItemMeaningUi?.subEventDisabled}
                       id="drawer-sub-event"
                       onChange={(event) =>
                         updateItem(selectedItem.id, {
@@ -1032,7 +1047,7 @@ export function ActionView({
                     <div className="field field--secondary">
                     <label htmlFor="drawer-operational-bucket">Operational Bucket</label>
                     <select
-                      disabled={Boolean(selectedItem.eventInstanceId)}
+                      disabled={selectedItemMeaningUi?.operationalBucketDisabled}
                       id="drawer-operational-bucket"
                       onChange={(event) =>
                         updateItem(selectedItem.id, {
@@ -1049,10 +1064,11 @@ export function ActionView({
                       ))}
                     </select>
                     <div className="field-hint">
-                      {selectedItem.eventInstanceId
-                        ? "Operational buckets are disabled while this item is linked to an event instance."
-                        : "Use this only for non-event action items such as general operations or membership work."}
+                      {selectedItemMeaningUi?.operationalBucketHint}
                     </div>
+                  </div>
+                  <div className="field field--wide">
+                    <div className="field-hint">{ACTION_ITEM_MEANING_HINT}</div>
                   </div>
                   {selectedItemIssueOptions.length > 0 || selectedItem.issue ? (
                     <div className="field field--wide action-drawer__issue-field">

@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import type { EventInstance, EventSubEvent } from "@/lib/event-instances";
+import { ACTION_ITEM_MEANING_HINT, getActionMeaningUiState } from "@/lib/action/action-item-ux";
 import type { ActionItemValidation, IssueRecord } from "@/lib/ops-utils";
 import {
   getContextualDueDateLabel,
@@ -66,6 +67,8 @@ export function QuickAddModal({
   if (!isOpen) {
     return null;
   }
+
+  const meaningUi = getActionMeaningUiState(formState.eventInstanceId);
 
   return (
     <div className="modal-layer" role="presentation">
@@ -164,8 +167,8 @@ export function QuickAddModal({
             <div className="field">
               <label htmlFor="quick-add-sub-event">Sub-Event</label>
               <select
-                className={!formState.eventInstanceId ? "field-control field-control--muted" : "field-control"}
-                disabled={!formState.eventInstanceId}
+                className={meaningUi.subEventDisabled ? "field-control field-control--muted" : "field-control"}
+                disabled={meaningUi.subEventDisabled}
                 id="quick-add-sub-event"
                 onChange={(event) => onFieldChange("subEventId", event.target.value)}
                 value={formState.subEventId}
@@ -182,8 +185,8 @@ export function QuickAddModal({
             <div className="field">
               <label htmlFor="quick-add-operational-bucket">Operational Bucket</label>
               <select
-                className={!formState.eventInstanceId ? "field-control" : "field-control field-control--muted"}
-                disabled={Boolean(formState.eventInstanceId)}
+                className={!meaningUi.operationalBucketDisabled ? "field-control" : "field-control field-control--muted"}
+                disabled={meaningUi.operationalBucketDisabled}
                 id="quick-add-operational-bucket"
                 onChange={(event) => onFieldChange("operationalBucket", event.target.value)}
                 value={formState.operationalBucket}
@@ -195,6 +198,11 @@ export function QuickAddModal({
                   </option>
                 ))}
               </select>
+              <div className="field-hint">{meaningUi.operationalBucketHint}</div>
+            </div>
+
+            <div className="field field--wide">
+              <div className="field-hint">{ACTION_ITEM_MEANING_HINT}</div>
             </div>
 
             {availableIssues.length > 0 ? (

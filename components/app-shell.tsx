@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type GenerateDeliverablesResult, type NewActionItem, useAppState } from "@/components/app-state";
 import { QuickAddModal, type QuickAddFormState } from "@/components/quick-add-modal";
+import { shouldClearEventLinkOnWorkstreamChange } from "@/lib/action/action-item-ux";
 import {
   SCHEDULED_WORKSTREAM_OPTIONS,
   type WorkstreamSchedule,
@@ -28,6 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     addItem,
     eventInstances,
     eventSubEvents,
+    eventTypes,
     exportAppStateSnapshot,
     generateIssueDeliverables,
     importAppStateSnapshot,
@@ -250,7 +252,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
 
       if (field === "workstream") {
-        return syncActionItemWorkstream(current, value as string);
+        const nextWorkstream = value as string;
+        const nextState = syncActionItemWorkstream(current, nextWorkstream);
+        const shouldClearEventLink = shouldClearEventLinkOnWorkstreamChange({
+          eventInstanceId: current.eventInstanceId || undefined,
+          nextWorkstream,
+          eventInstances,
+          eventPrograms: eventTypes
+        });
+
+        return {
+          ...nextState,
+          eventInstanceId: shouldClearEventLink ? "" : current.eventInstanceId,
+          subEventId: shouldClearEventLink ? "" : current.subEventId
+        };
       }
 
       if (field === "issue") {
