@@ -614,7 +614,7 @@ export function ActionView({
         <div className={selectedItem ? "table-panel table-panel--drawer-open" : "table-panel"}>
           {selectedItem ? (
             <button
-              aria-label="Close details drawer"
+              aria-label="Close action drawer"
               className="drawer-backdrop"
               onClick={() => setSelectedId(null)}
               type="button"
@@ -646,7 +646,7 @@ export function ActionView({
                       <span className="table-head__label">Status</span>
                     </th>
                     <th className="table-head__cell table-head__cell--waiting">
-                      <span className="table-head__label">Details</span>
+                      <span className="table-head__label">Waiting On</span>
                     </th>
                     <th className="table-head__cell table-head__cell--owner">
                       <span className="table-head__label">Owner</span>
@@ -835,7 +835,7 @@ export function ActionView({
         {selectedItem ? (
           <aside
             className={isBlockedItem(selectedItem) ? "drawer drawer--action drawer--blocked" : "drawer drawer--action"}
-            aria-label="Item details"
+            aria-label="Action item workspace"
           >
             <ActionItemDrawerHeader
               isActionsMenuOpen={isActionsMenuOpen}
@@ -1108,18 +1108,14 @@ export function ActionView({
                   </div>
                 </div>
 
-                <div className="action-drawer__group">
-                  <div className="drawer__panel-title">Details</div>
-                  <div className="drawer__grid action-drawer__group-grid action-drawer__group-grid--details">
-                  <div className="field field--secondary">
+                  <div className="field field--secondary action-drawer__type-field">
                     <label htmlFor="drawer-type">Type</label>
                     <input
                       id="drawer-type"
                       onChange={(event) => updateItem(selectedItem.id, { type: event.target.value })}
                       value={selectedItem.type}
                     />
-                  </div>                  </div>
-                </div>
+                  </div>
               </section>
 
               <ActionItemNotesPanel

@@ -66,6 +66,9 @@ type LegacyBlockedFields = {
 type LegacyNotesField = {
   notes?: string;
 };
+type LegacyDetailsField = {
+  details?: string;
+};
 type ActionItemBlockedState = Pick<ActionItem, "isBlocked" | "blockedBy" | "status"> & LegacyBlockedFields;
 type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
   Partial<
@@ -84,6 +87,7 @@ type NormalizeActionItemInput = Pick<ActionItem, "owner" | "workstream"> &
     >
   > &
   LegacyBlockedFields &
+  LegacyDetailsField &
   LegacyNotesField;
 type NormalizeActionItemResult<T extends NormalizeActionItemInput> = Omit<
   T,
@@ -459,6 +463,9 @@ export function normalizeActionItemFields<T extends NormalizeActionItemInput>(it
       : normalizeOperationalBucketValue(item.operationalBucket) ??
         getOperationalBucketFromLegacyEventGroup(normalizedEventGroup) ??
         getSuggestedOperationalBucketForWorkstream(item.workstream);
+  const normalizedWaitingOn =
+    normalizeOperationalReason(item.waitingOn) ??
+    getWaitingOnFromLegacyDetails(item.details);
 
   return {
     ...rest,
@@ -469,12 +476,22 @@ export function normalizeActionItemFields<T extends NormalizeActionItemInput>(it
     legacyEventGroupMigrated: normalizedLegacyEventGroupMigrated,
     eventInstanceId: normalizedEventInstanceId,
     subEventId: normalizedSubEventId,
-    waitingOn: normalizeOperationalReason(item.waitingOn) ?? "",
+    waitingOn: normalizedWaitingOn ?? "",
     isBlocked: isBlocked ?? blocked ?? undefined,
     blockedBy: normalizedBlockedBy ? normalizedBlockedBy : undefined,
     noteEntries: normalizedNoteEntries,
     notes: undefined
   } as NormalizeActionItemResult<T>;
+}
+
+function getWaitingOnFromLegacyDetails(details: string | undefined) {
+  const normalizedDetails = normalizeOperationalReason(details);
+
+  if (!normalizedDetails) {
+    return undefined;
+  }
+
+  return WAITING_ON_SUGGESTIONS.find((option) => option === normalizedDetails);
 }
 
 export function createActionNoteEntry(

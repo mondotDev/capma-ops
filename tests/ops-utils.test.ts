@@ -1512,6 +1512,48 @@ test("normalizeActionItemFields standardizes obvious waiting and blocked reason 
   assert.equal(blankReason.blockedBy, undefined);
 });
 
+test("normalizeActionItemFields folds recognized legacy details values into waitingOn and drops ambiguous leftovers", () => {
+  const migratedDetails = normalizeActionItemFields(
+    createItem({
+      status: "Waiting",
+      waitingOn: "",
+      blockedBy: ""
+    }) as ActionItem & { details: string }
+  );
+
+  const migratedFromLegacyDetails = normalizeActionItemFields({
+    ...createItem({
+      status: "Waiting",
+      waitingOn: "",
+      blockedBy: ""
+    }),
+    details: " vendor "
+  });
+
+  const preservedWaitingOn = normalizeActionItemFields({
+    ...createItem({
+      status: "Waiting",
+      waitingOn: "Internal",
+      blockedBy: ""
+    }),
+    details: "Vendor"
+  });
+
+  const droppedAmbiguousDetails = normalizeActionItemFields({
+    ...createItem({
+      status: "Waiting",
+      waitingOn: "",
+      blockedBy: ""
+    }),
+    details: "Follow up soon"
+  });
+
+  assert.equal(migratedDetails.waitingOn, "");
+  assert.equal(migratedFromLegacyDetails.waitingOn, "Vendor");
+  assert.equal(preservedWaitingOn.waitingOn, "Internal");
+  assert.equal(droppedAmbiguousDetails.waitingOn, "");
+});
+
 test("matchesEventGroup and matchesSearchQuery support grouped filtered views", () => {
   const item = createItem({
     eventGroup: "Monday Mingle",

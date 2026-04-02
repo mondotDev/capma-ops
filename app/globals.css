@@ -2748,14 +2748,14 @@ tr.blocked-row {
 }
 
 .action-drawer__group-grid--execution,
-.action-drawer__group-grid--context,
-.action-drawer__group-grid--details {
+.action-drawer__group-grid--context {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .action-drawer__issue-field,
 .action-drawer__issue-status,
-.action-drawer__blocked-field {
+.action-drawer__blocked-field,
+.action-drawer__type-field {
   grid-column: 1 / -1;
 }
 
