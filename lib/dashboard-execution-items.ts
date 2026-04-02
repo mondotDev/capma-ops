@@ -5,6 +5,8 @@ import {
 } from "@/lib/collateral-execution-view";
 import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
 import {
+  daysUntil,
+  formatShortDate,
   isBlockedItem,
   isItemDueSoon,
   isItemMissingDueDate,
@@ -160,27 +162,6 @@ function formatDashboardExecutionDueLabel(item: DashboardExecutionItem) {
   return "Overdue";
 }
 
-function formatShortDate(dateValue: string) {
-  const parsedDate = new Date(`${dateValue}T00:00:00`);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return dateValue;
-  }
-
-  return parsedDate.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function daysFromToday(dateValue: string) {
-  const parsedDate = new Date(`${dateValue}T00:00:00`);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
-  return Math.ceil((parsedDate.getTime() - currentDate.getTime()) / (24 * 60 * 60 * 1000));
+  return daysUntil(dateValue);
 }

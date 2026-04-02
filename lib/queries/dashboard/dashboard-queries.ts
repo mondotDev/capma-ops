@@ -1,18 +1,14 @@
 import {
-  formatDashboardExecutionItem,
   getDashboardExecutionImmediateRiskPreview,
   type DashboardExecutionItem
 } from "@/lib/dashboard-execution-items";
 import type { ActionItem } from "@/lib/sample-data";
 import type { IssueRecord, WorkstreamSchedule } from "@/lib/ops-utils";
 import {
-  formatDashboardItem,
+  getCurrentDate,
   getDashboardMetrics,
   getVisiblePublicationIssues,
   getWorkstreamDateContext,
-  isItemDueSoon,
-  isOverdue,
-  isWaitingIssue
 } from "@/lib/ops-utils";
 
 export type DashboardQueryInput = {
@@ -42,15 +38,6 @@ export type DashboardLoadEntry = {
   count: number;
 };
 
-export type DashboardRiskSummary = {
-  total: number;
-  overdue: number;
-  dueSoon: number;
-  waiting: number;
-  blocked?: number;
-  example: string | null;
-};
-
 export type PublicationIssueSummaryRow = {
   label: string;
   status: IssueRecord["status"];
@@ -76,8 +63,6 @@ export type DashboardLiveSummary = {
   highestLoadCount: number;
   overviewLoadRows: DashboardLoadEntry[][];
   workstreamSummaryRows: DashboardWorkstreamSummaryRow[];
-  sponsorRisk: DashboardRiskSummary;
-  productionRisk: DashboardRiskSummary;
 };
 
 function getDashboardMetricsSource(items: ActionItem[]) {
@@ -86,7 +71,6 @@ function getDashboardMetricsSource(items: ActionItem[]) {
 
 export function getDashboardLiveSummary(input: DashboardQueryInput): DashboardLiveSummary {
   const executionMetrics = getDashboardExecutionMetrics(input.executionItems);
-  const dashboardMetrics = getDashboardMetricsSource(input.items);
   const extendedDailyLoad = getExecutionDailyLoad(input.executionItems, 14);
   const highestLoadCount = Math.max(...extendedDailyLoad.map((entry) => entry.count), 0);
   const overviewLoadRows = [extendedDailyLoad.slice(0, 7), extendedDailyLoad.slice(7, 14)];
@@ -107,26 +91,7 @@ export function getDashboardLiveSummary(input: DashboardQueryInput): DashboardLi
     extendedDailyLoad,
     highestLoadCount,
     overviewLoadRows,
-    workstreamSummaryRows,
-    // Sponsor and publication summaries remain native-action based for now.
-    // Immediate workload and production risk align to the shared execution lane.
-    sponsorRisk: {
-      total: dashboardMetrics.sponsorRiskItems.length,
-      overdue: dashboardMetrics.sponsorRiskItems.filter((item) => isOverdue(item.dueDate)).length,
-      dueSoon: dashboardMetrics.sponsorRiskItems.filter((item) => isItemDueSoon(item)).length,
-      waiting: dashboardMetrics.sponsorRiskItems.filter((item) => isWaitingIssue(item)).length,
-      example: dashboardMetrics.sponsorRiskItems[0] ? formatDashboardItem(dashboardMetrics.sponsorRiskItems[0]) : null
-    },
-    productionRisk: {
-      total: executionMetrics.productionRiskItems.length,
-      blocked: executionMetrics.productionRiskItems.filter((item) => item.isBlocked).length,
-      dueSoon: executionMetrics.productionRiskItems.filter((item) => item.isDueSoon).length,
-      waiting: executionMetrics.productionRiskItems.filter((item) => item.isWaiting && !item.isBlocked).length,
-      overdue: 0,
-      example: executionMetrics.productionRiskItems[0]
-        ? formatDashboardExecutionItem(executionMetrics.productionRiskItems[0])
-        : null
-    }
+    workstreamSummaryRows
   };
 }
 
@@ -158,11 +123,6 @@ function getDashboardExecutionMetrics(items: DashboardExecutionItem[]) {
     .filter((item) => item.isMissingDueDate || item.isOverdue || item.isDueSoon)
     .sort(sortDashboardExecutionItemsByPriority)
     .slice(0, 3);
-  const productionRiskItems = activeItems
-    .filter((item) => item.isProductionRisk)
-    .sort(sortDashboardExecutionItemsByPriority)
-    .slice(0, 3);
-
   return {
     overdue,
     dueSoon,
@@ -172,14 +132,12 @@ function getDashboardExecutionMetrics(items: DashboardExecutionItem[]) {
     stuckReasonCounts,
     peakUpcomingLoadCount,
     peakUpcomingLoadDate,
-    urgentItems,
-    productionRiskItems
+    urgentItems
   };
 }
 
 function getExecutionDailyLoad(items: DashboardExecutionItem[], days: number): DashboardLoadEntry[] {
-  const startDate = new Date();
-  startDate.setHours(0, 0, 0, 0);
+  const startDate = getCurrentDate();
   const loadByDate = new Map<string, number>();
 
   for (let offset = 0; offset < days; offset += 1) {

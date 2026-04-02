@@ -2045,8 +2045,8 @@ test("dashboard read-side summary returns live counts and preview-ready aggregat
   assert.equal(summary.blockedCount, 1);
   assert.equal(summary.overviewLoadRows.length, 2);
   assert.equal(summary.workstreamSummaryRows.length > 0, true);
-  assert.equal(summary.sponsorRisk.total, 1);
-  assert.equal(summary.productionRisk.total, 2);
+  assert.deepEqual(Object.keys(summary).includes("sponsorRisk"), false);
+  assert.deepEqual(Object.keys(summary).includes("productionRisk"), false);
 });
 
 test("dashboard urgent preview query returns preview-ready urgent rows", () => {
