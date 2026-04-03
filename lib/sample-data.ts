@@ -18,7 +18,13 @@ export type ActionItem = {
   title: string;
   type: string;
   workstream: string;
+  /**
+   * Lifecycle flag for hiding an item from active execution views without deleting it.
+   */
   archivedAt?: string;
+  /**
+   * Canonical non-event scope when the item is operational rather than event-linked.
+   */
   operationalBucket?: string;
   /**
    * Legacy Action View grouping field kept only for transitional compatibility.
@@ -35,8 +41,14 @@ export type ActionItem = {
   status: string;
   owner: string;
   waitingOn: string;
+  /**
+   * Date of the last meaningful in-app mutation to this action item.
+   */
   lastUpdated: string;
   noteEntries: ActionNoteEntry[];
+  /**
+   * Legacy import-only note text. Active app code should use noteEntries instead.
+   */
   notes?: string;
 };
 

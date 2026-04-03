@@ -1,4 +1,4 @@
-import type { ActionItem } from "@/lib/sample-data";
+import type { ActionItem, ActionNoteEntry } from "@/lib/sample-data";
 import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-instances";
 import {
   getSuggestedEventGroupForWorkstream,
@@ -10,7 +10,7 @@ import {
   resolveInitialOwner
 } from "@/lib/ops-utils";
 
-export type NewActionItemInput = Omit<ActionItem, "id" | "lastUpdated">;
+export type NewActionItemInput = Omit<ActionItem, "archivedAt" | "id" | "lastUpdated" | "notes">;
 export type ActionItemMutationContext = {
   eventInstances?: EventInstance[];
   eventPrograms?: EventProgram[];
@@ -48,14 +48,23 @@ export function applyActionItemUpdates(
   updates: Partial<ActionItem>,
   context?: ActionItemMutationContext
 ): ActionItem {
-  return {
+  const reconciled = {
     ...item,
     ...reconcileActionItemFields(
       normalizeActionItemFields({ ...item, ...updates }),
       updates,
       context,
       item
-    ),
+    )
+  };
+  const hasExplicitTimestamp = Object.prototype.hasOwnProperty.call(updates, "lastUpdated");
+
+  if (!hasExplicitTimestamp && !hasMaterialActionItemChanges(item, reconciled)) {
+    return item;
+  }
+
+  return {
+    ...reconciled,
     lastUpdated: updates.lastUpdated ?? getCurrentDateKey()
   };
 }
@@ -67,8 +76,22 @@ export function applyBulkActionItemUpdates(
   context?: ActionItemMutationContext
 ): ActionItem[] {
   const idSet = new Set(ids);
+  let hasChanges = false;
+  const nextItems = items.map((item) => {
+    if (!idSet.has(item.id)) {
+      return item;
+    }
 
-  return items.map((item) => (idSet.has(item.id) ? applyActionItemUpdates(item, updates, context) : item));
+    const nextItem = applyActionItemUpdates(item, updates, context);
+
+    if (nextItem !== item) {
+      hasChanges = true;
+    }
+
+    return nextItem;
+  });
+
+  return hasChanges ? nextItems : items;
 }
 
 export function updateActionItemById(
@@ -77,7 +100,22 @@ export function updateActionItemById(
   updates: Partial<ActionItem>,
   context?: ActionItemMutationContext
 ): ActionItem[] {
-  return items.map((item) => (item.id === id ? applyActionItemUpdates(item, updates, context) : item));
+  let hasChanges = false;
+  const nextItems = items.map((item) => {
+    if (item.id !== id) {
+      return item;
+    }
+
+    const nextItem = applyActionItemUpdates(item, updates, context);
+
+    if (nextItem !== item) {
+      hasChanges = true;
+    }
+
+    return nextItem;
+  });
+
+  return hasChanges ? nextItems : items;
 }
 
 export function deleteActionItemById(items: ActionItem[], id: string): ActionItem[] {
@@ -271,6 +309,46 @@ function normalizeSubEventId(
 
 function hasOwnField<T extends object>(value: T, key: keyof ActionItem) {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function hasMaterialActionItemChanges(current: ActionItem, next: ActionItem) {
+  return serializeComparableActionItem(current) !== serializeComparableActionItem(next);
+}
+
+function serializeComparableActionItem(item: ActionItem) {
+  return JSON.stringify({
+    archivedAt: item.archivedAt ?? "",
+    blockedBy: item.blockedBy ?? "",
+    dueDate: item.dueDate,
+    eventGroup: item.eventGroup ?? "",
+    eventInstanceId: item.eventInstanceId ?? "",
+    id: item.id,
+    isBlocked: item.isBlocked ?? false,
+    issue: item.issue ?? "",
+    legacyEventGroupMigrated: item.legacyEventGroupMigrated ?? false,
+    noteEntries: item.noteEntries.map(serializeComparableNoteEntry),
+    operationalBucket: item.operationalBucket ?? "",
+    owner: item.owner,
+    status: item.status,
+    subEventId: item.subEventId ?? "",
+    title: item.title,
+    type: item.type,
+    waitingOn: item.waitingOn,
+    workstream: item.workstream
+  });
+}
+
+function serializeComparableNoteEntry(entry: ActionNoteEntry) {
+  return {
+    author: {
+      displayName: entry.author.displayName ?? "",
+      initials: entry.author.initials,
+      userId: entry.author.userId ?? ""
+    },
+    createdAt: entry.createdAt,
+    id: entry.id,
+    text: entry.text
+  };
 }
 
 function getCurrentDateKey() {

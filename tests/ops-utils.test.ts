@@ -5,7 +5,8 @@ import {
   applyBulkActionItemUpdates,
   createActionItem,
   normalizeActionEventLinks,
-  normalizeActionItems
+  normalizeActionItems,
+  updateActionItemById
 } from "../lib/action-item-mutations";
 import {
   ACTION_VIEW_COLLATERAL_STATUS_OPTIONS,
@@ -1842,6 +1843,48 @@ test("shared mutation helpers keep add update bulk and import shaping aligned", 
   assert.equal(normalized[1].noteEntries.length, 1);
   assert.equal(normalized[1].noteEntries[0].author.initials, "LEG");
   assert.equal(normalized[1].noteEntries[0].text, "Sponsor art is waiting on approval");
+});
+
+test("native action item updates do not change lastUpdated when the record shape is unchanged", () => {
+  const [current] = normalizeActionItems([
+    createItem({
+      title: "Keep same title",
+      lastUpdated: "2026-03-28",
+      noteEntries: []
+    })
+  ]);
+
+  const unchanged = applyActionItemUpdates(current, { title: "Keep same title" });
+
+  assert.equal(unchanged, current);
+  assert.equal(unchanged.lastUpdated, "2026-03-28");
+});
+
+test("native action item updates keep array identity when an id update is a no-op", () => {
+  const items = normalizeActionItems([
+    createItem({ id: "item-1", title: "Keep same title", lastUpdated: "2026-03-28" }),
+    createItem({ id: "item-2", title: "Second item", lastUpdated: "2026-03-28" })
+  ]);
+
+  const unchanged = updateActionItemById(items, "item-1", { title: "Keep same title" });
+
+  assert.equal(unchanged, items);
+});
+
+test("archive and restore remain meaningful native action item mutations", () => {
+  const current = createItem({
+    archivedAt: undefined,
+    lastUpdated: "2026-03-20"
+  });
+
+  const archived = applyActionItemUpdates(current, { archivedAt: "2026-04-02" });
+  assert.equal(archived.archivedAt, "2026-04-02");
+  assert.match(archived.lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
+  assert.notEqual(archived.lastUpdated, current.lastUpdated);
+
+  const restored = applyActionItemUpdates(archived, { archivedAt: undefined });
+  assert.equal(restored.archivedAt, undefined);
+  assert.match(restored.lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test("opening a publication issue keeps only one open issue per publication workstream", () => {
