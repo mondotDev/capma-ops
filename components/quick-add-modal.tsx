@@ -15,7 +15,7 @@ import {
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
 
-const ITEM_TYPE_OPTIONS = ["Task", "Deliverable", "Collateral"] as const;
+export const QUICK_ADD_ITEM_TYPE_OPTIONS = ["Task", "Deliverable"] as const;
 
 export type QuickAddFormState = {
   type: string;
@@ -98,7 +98,7 @@ export function QuickAddModal({
             <h2 className="quick-add-modal__title" id="quick-add-title">
               Quick Add
             </h2>
-            <p className="quick-add-modal__subtitle">Create a new task, deliverable, or collateral item.</p>
+            <p className="quick-add-modal__subtitle">Create a new task or deliverable.</p>
           </div>
           <button className="button-link" onClick={onClose} type="button">
             Close
@@ -123,7 +123,7 @@ export function QuickAddModal({
                 value={formState.type}
               >
                 <option value="">Select type</option>
-                {ITEM_TYPE_OPTIONS.map((option) => (
+                {QUICK_ADD_ITEM_TYPE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>

@@ -79,6 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
   const canGenerateDeliverables =
     formState.issue.length > 0 && (formState.workstream === "Newsbrief" || formState.workstream === "The Voice");
+  const showGlobalAddItem = pathname !== "/collateral";
 
   useEffect(() => {
     if (!isQuickAddOpen && !isSettingsOpen) {
@@ -374,9 +375,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="content">
         <header className="topbar">
-          <button className="topbar__button" onClick={openQuickAdd} type="button">
-            + Add Item
-          </button>
+          {showGlobalAddItem ? (
+            <button className="topbar__button" onClick={openQuickAdd} type="button">
+              + Add Item
+            </button>
+          ) : null}
           <Suspense fallback={<TopbarSearchFallback pathname={pathname} />}>
             <TopbarSearch pathname={pathname} />
           </Suspense>
