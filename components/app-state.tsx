@@ -25,6 +25,11 @@ import {
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
 import { traceCollateralCreate } from "@/lib/collateral-create-trace";
+import type { PersistedCollateralState } from "@/lib/collateral-persisted-state";
+import {
+  getCollateralPersistenceStoreMode,
+  getSelectedCollateralPersistenceStore
+} from "@/lib/collateral-persistence-store";
 import { localCollateralStore } from "@/lib/collateral-store";
 import {
   getDefaultTemplatePackForEventType,
@@ -164,6 +169,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [eventSubEvents, setEventSubEvents] = useState<EventSubEvent[]>(createDefaultEventSubEvents);
   const [workstreamSchedules, setWorkstreamSchedulesState] = useState<WorkstreamSchedule[]>(getDefaultWorkstreamSchedules);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [collateralPersistenceStoreBootError, setCollateralPersistenceStoreBootError] = useState<string | null>(null);
   const [nativeActionItemStoreBootError, setNativeActionItemStoreBootError] = useState<string | null>(null);
   const [nativeActionItemRecovery, setNativeActionItemRecovery] = useState<AppStateContextValue["nativeActionItemRecovery"]>({
     firestoreEmpty: false,
@@ -174,10 +180,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   });
   const [shouldPersist, setShouldPersist] = useState(true);
   const appStateRepository = useMemo(() => getAppStateRepository(), []);
+  const collateralPersistenceStore = useMemo(() => getSelectedCollateralPersistenceStore(), []);
+  const collateralPersistenceStoreMode = useMemo(() => getCollateralPersistenceStoreMode(), []);
   const nativeActionItemStore = useMemo(() => getSelectedNativeActionItemStore(), []);
   const nativeActionItemStoreMode = useMemo(() => getNativeActionItemStoreMode(), []);
   const pendingPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPersistStateRef = useRef<AppStateData | null>(null);
+  const collateralPersistenceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const nativeActionItemWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const nativeActionItemRecoveryItemsRef = useRef<ActionItem[]>([]);
   const itemsRef = useRef(items);
@@ -222,6 +231,26 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }),
     []
   );
+  const getCollateralPersistenceContext = useCallback(
+    (
+      overrides?: Partial<Pick<AppStateData, "defaultOwnerForNewItems" | "eventTypes">>
+    ) => ({
+      defaultOwner: overrides?.defaultOwnerForNewItems ?? defaultOwnerForNewItemsRef.current,
+      eventTypes: overrides?.eventTypes ?? eventTypesRef.current
+    }),
+    []
+  );
+  const getPersistedCollateralState = useCallback(
+    (
+      overrides?: Partial<Pick<AppStateData, "collateralItems" | "collateralProfiles" | "eventInstances" | "eventSubEvents">>
+    ): PersistedCollateralState => ({
+      collateralItems: overrides?.collateralItems ?? collateralItemsRef.current,
+      collateralProfiles: overrides?.collateralProfiles ?? collateralProfilesRef.current,
+      eventInstances: overrides?.eventInstances ?? eventInstancesRef.current,
+      eventSubEvents: overrides?.eventSubEvents ?? eventSubEventsRef.current
+    }),
+    []
+  );
 
   const enqueueNativeActionItemStoreWrite = useCallback((task: () => Promise<void>) => {
     nativeActionItemWriteQueueRef.current = nativeActionItemWriteQueueRef.current
@@ -230,6 +259,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       .catch((error) => {
         if (typeof console !== "undefined") {
           console.error("CAPMA Ops Hub could not persist native action items.", error);
+        }
+      });
+  }, []);
+  const enqueueCollateralPersistenceWrite = useCallback((task: () => Promise<void>) => {
+    collateralPersistenceWriteQueueRef.current = collateralPersistenceWriteQueueRef.current
+      .catch(() => undefined)
+      .then(task)
+      .catch((error) => {
+        if (typeof console !== "undefined") {
+          console.error("CAPMA Ops Hub could not persist collateral state.", error);
         }
       });
   }, []);
@@ -278,9 +317,21 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setShouldPersist(loadResult.shouldPersist);
 
       try {
+        const loadedCollateralState = await collateralPersistenceStore.load(
+          getPersistedCollateralState({
+            collateralItems: baseState.collateralItems,
+            collateralProfiles: baseState.collateralProfiles,
+            eventInstances: baseState.eventInstances,
+            eventSubEvents: baseState.eventSubEvents
+          }),
+          getCollateralPersistenceContext({
+            defaultOwnerForNewItems: baseState.defaultOwnerForNewItems,
+            eventTypes: baseState.eventTypes
+          })
+        );
         const context = getNativeActionItemContext({
-          eventInstances: baseState.eventInstances,
-          eventSubEvents: baseState.eventSubEvents,
+          eventInstances: loadedCollateralState.eventInstances,
+          eventSubEvents: loadedCollateralState.eventSubEvents,
           eventTypes: baseState.eventTypes
         });
         const localRecoveryItems = nativeActionItemMutator.normalizeLoaded(baseState.items, context);
@@ -295,8 +346,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
         hydrateAppState({
           ...baseState,
+          ...loadedCollateralState,
           items: loadedItems
         });
+        setCollateralPersistenceStoreBootError(null);
         setNativeActionItemStoreBootError(null);
         nativeActionItemRecoveryItemsRef.current = localRecoveryItems;
         setNativeActionItemRecovery({
@@ -313,13 +366,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const defaultMessage =
-          nativeActionItemStoreMode === "firebase"
-            ? "Action-item persistence mode is set to Firestore, but Firestore is not configured or unavailable."
-            : "Action-item persistence could not be initialized.";
-
+        const message = error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : collateralPersistenceStoreMode === "firebase"
+            ? "Collateral persistence mode is set to Firestore, but Firestore is not configured or unavailable."
+            : nativeActionItemStoreMode === "firebase"
+              ? "Action-item persistence mode is set to Firestore, but Firestore is not configured or unavailable."
+              : "CAPMA Ops persistence could not be initialized.";
+        setCollateralPersistenceStoreBootError(
+          collateralPersistenceStoreMode === "firebase" ? message : null
+        );
         setNativeActionItemStoreBootError(
-          error instanceof Error && error.message.trim().length > 0 ? error.message : defaultMessage
+          collateralPersistenceStoreMode === "firebase" ? null : message
         );
       } finally {
         if (!cancelled) {
@@ -333,7 +391,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [appStateRepository, getNativeActionItemContext, hydrateAppState, nativeActionItemStore, nativeActionItemStoreMode]);
+  }, [
+    appStateRepository,
+    collateralPersistenceStore,
+    collateralPersistenceStoreMode,
+    getCollateralPersistenceContext,
+    getNativeActionItemContext,
+    getPersistedCollateralState,
+    hydrateAppState,
+    nativeActionItemStore,
+    nativeActionItemStoreMode
+  ]);
 
   const persistableState = useMemo<AppStateData>(
     () => ({
@@ -518,12 +586,24 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             (entry) => entry.id === createdItem.id && entry.eventInstanceId === activeEventInstanceIdRef.current
           )
       });
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(getPersistedCollateralState({ collateralItems: nextItems }), getCollateralPersistenceContext())
+          .then(() => undefined)
+      );
 
       return nextItems;
     });
 
     return nextItemId;
-  }, [enablePersistence, getCollateralContext]);
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralContext,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const ensureEventInstanceUnassignedSubEvent = useCallback((instanceId: string) => {
     enablePersistence();
@@ -533,55 +613,117 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         return current;
       }
 
-      return [...current, createUnassignedSubEvent(instanceId)];
+      const nextSubEvents = [...current, createUnassignedSubEvent(instanceId)];
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(getPersistedCollateralState({ eventSubEvents: nextSubEvents }), getCollateralPersistenceContext())
+          .then(() => undefined)
+      );
+      return nextSubEvents;
     });
 
     return nextId;
-  }, [enablePersistence]);
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const updateCollateralItem = useCallback((id: string, updates: Partial<CollateralItem>) => {
     enablePersistence();
-    setCollateralItems((current) => localCollateralStore.update(current, id, updates, getCollateralContext()));
-  }, [enablePersistence, getCollateralContext]);
+    setCollateralItems((current) => {
+      const nextItems = localCollateralStore.update(current, id, updates, getCollateralContext());
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(getPersistedCollateralState({ collateralItems: nextItems }), getCollateralPersistenceContext())
+          .then(() => undefined)
+      );
+      return nextItems;
+    });
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralContext,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const deleteCollateralItem = useCallback((id: string) => {
     enablePersistence();
-    setCollateralItems((current) => localCollateralStore.delete(current, id));
-  }, [enablePersistence]);
+    setCollateralItems((current) => {
+      const nextItems = localCollateralStore.delete(current, id);
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(getPersistedCollateralState({ collateralItems: nextItems }), getCollateralPersistenceContext())
+          .then(() => undefined)
+      );
+      return nextItems;
+    });
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const createEventInstance = useCallback((input: CreateEventInstanceInput) => {
     enablePersistence();
     const { dates, startDate, endDate } = deriveEventDateRange(input.dateMode, input.dates);
     const nextId = `${slugify(input.instanceName)}-${crypto.randomUUID().slice(0, 8)}`;
+    const nextEventInstances = [...eventInstancesRef.current, {
+      id: nextId,
+      eventTypeId: input.eventTypeId,
+      name: input.instanceName,
+      dateMode: input.dateMode,
+      dates,
+      startDate,
+      endDate,
+      location: input.location?.trim() ? input.location.trim() : undefined,
+      notes: input.notes?.trim() ? input.notes.trim() : undefined
+    }].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const nextCollateralProfiles =
+      input.eventTypeId === "legislative-day"
+        ? {
+            ...collateralProfilesRef.current,
+            [nextId]: {
+              ...initialLegDayCollateralProfile,
+              eventStartDate: startDate,
+              eventEndDate: endDate
+            }
+          }
+        : collateralProfilesRef.current;
 
-    setEventInstances((current) =>
-      [...current, {
-        id: nextId,
-        eventTypeId: input.eventTypeId,
-        name: input.instanceName,
-        dateMode: input.dateMode,
-        dates,
-        startDate,
-        endDate,
-        location: input.location?.trim() ? input.location.trim() : undefined,
-        notes: input.notes?.trim() ? input.notes.trim() : undefined
-      }].sort((a, b) => a.startDate.localeCompare(b.startDate))
-    );
+    setEventInstances(nextEventInstances);
 
     if (input.eventTypeId === "legislative-day") {
-      setCollateralProfiles((current) => ({
-        ...current,
-        [nextId]: {
-          ...initialLegDayCollateralProfile,
-          eventStartDate: startDate,
-          eventEndDate: endDate
-        }
-      }));
+      setCollateralProfiles(nextCollateralProfiles);
     }
+
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            collateralProfiles: nextCollateralProfiles,
+            eventInstances: nextEventInstances
+          }),
+          getCollateralPersistenceContext()
+        )
+        .then(() => undefined)
+    );
 
     setActiveEventInstanceIdState(nextId);
     return nextId;
-  }, [enablePersistence]);
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const applyDefaultTemplateToInstance = useCallback((instanceId: string) => {
     enablePersistence();
@@ -613,9 +755,29 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
 
     setCollateralItems(templateResult.items);
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            collateralItems: templateResult.items,
+            eventSubEvents:
+              templateResult.subEventAdditions.length > 0
+                ? [...eventSubEventsRef.current, ...templateResult.subEventAdditions]
+                : eventSubEventsRef.current
+          }),
+          getCollateralPersistenceContext()
+        )
+        .then(() => undefined)
+    );
 
     return true;
-  }, [enablePersistence]);
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const generateIssueDeliverables = useCallback((issue: string): GenerateDeliverablesResult => {
     enablePersistence();
@@ -717,6 +879,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     clearNativeActionItemRecovery();
     const nextState = createDefaultAppStateData();
     hydrateAppState(nextState);
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(getPersistedCollateralState({
+          collateralItems: nextState.collateralItems,
+          collateralProfiles: nextState.collateralProfiles,
+          eventInstances: nextState.eventInstances,
+          eventSubEvents: nextState.eventSubEvents
+        }), getCollateralPersistenceContext({
+          defaultOwnerForNewItems: nextState.defaultOwnerForNewItems,
+          eventTypes: nextState.eventTypes
+        }))
+        .then(() => undefined)
+    );
     enqueueNativeActionItemStoreWrite(() =>
       nativeActionItemStore
         .replaceAll(
@@ -732,9 +907,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, [
     appStateRepository,
     clearNativeActionItemRecovery,
+    collateralPersistenceStore,
     enablePersistence,
+    enqueueCollateralPersistenceWrite,
     enqueueNativeActionItemStoreWrite,
+    getCollateralPersistenceContext,
     getNativeActionItemContext,
+    getPersistedCollateralState,
     hydrateAppState,
     nativeActionItemStore
   ]);
@@ -784,6 +963,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     enablePersistence();
     clearNativeActionItemRecovery();
     hydrateAppState(importedState);
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            collateralItems: importedState.collateralItems,
+            collateralProfiles: importedState.collateralProfiles,
+            eventInstances: importedState.eventInstances,
+            eventSubEvents: importedState.eventSubEvents
+          }),
+          getCollateralPersistenceContext({
+            defaultOwnerForNewItems: importedState.defaultOwnerForNewItems,
+            eventTypes: importedState.eventTypes
+          })
+        )
+        .then(() => undefined)
+    );
     enqueueNativeActionItemStoreWrite(() =>
       nativeActionItemStore
         .replaceAll(
@@ -804,9 +999,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, [
     appStateRepository,
     clearNativeActionItemRecovery,
+    collateralPersistenceStore,
     enablePersistence,
+    enqueueCollateralPersistenceWrite,
     enqueueNativeActionItemStoreWrite,
+    getCollateralPersistenceContext,
     getNativeActionItemContext,
+    getPersistedCollateralState,
     hydrateAppState,
     nativeActionItemStore
   ]);
@@ -849,11 +1048,28 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const setCollateralProfile = useCallback((instanceId: string, profile: LegDayCollateralProfile) => {
     enablePersistence();
-    setCollateralProfiles((current) => ({
-      ...current,
-      [instanceId]: profile
-    }));
-  }, [enablePersistence]);
+    setCollateralProfiles((current) => {
+      const nextProfiles = {
+        ...current,
+        [instanceId]: profile
+      };
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(
+            getPersistedCollateralState({ collateralProfiles: nextProfiles }),
+            getCollateralPersistenceContext()
+          )
+          .then(() => undefined)
+      );
+      return nextProfiles;
+    });
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
 
   const setWorkstreamSchedules = useCallback((schedules: WorkstreamSchedule[]) => {
     enablePersistence();
@@ -964,6 +1180,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   if (!hasHydrated) {
     return <div className="app-loading-state">Loading CAPMA Ops...</div>;
+  }
+
+  if (collateralPersistenceStoreBootError) {
+    return (
+      <div className="app-loading-state">
+        <div className="app-loading-title">Collateral Store Unavailable</div>
+        <p>{collateralPersistenceStoreBootError}</p>
+      </div>
+    );
   }
 
   if (nativeActionItemStoreBootError) {

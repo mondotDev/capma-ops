@@ -30,6 +30,12 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
+import { getCollateralPersistenceStoreMode } from "../lib/collateral-persistence-store";
+import {
+  createFirestoreCollateralPersistenceStore,
+  mapPersistedCollateralStateToFirestoreDocument,
+  parseFirestoreCollateralStateDocument
+} from "../lib/firestore-collateral-persistence-store";
 import { localCollateralStore } from "../lib/collateral-store";
 import { buildDashboardExecutionItems } from "../lib/dashboard-execution-items";
 import {
@@ -2160,6 +2166,13 @@ test("native action item store mode defaults to firebase and supports explicit l
   assert.equal(getNativeActionItemStoreMode(" LOCAL "), "local");
 });
 
+test("collateral persistence store mode defaults to local and supports explicit firebase override", () => {
+  assert.equal(getCollateralPersistenceStoreMode(undefined), "local");
+  assert.equal(getCollateralPersistenceStoreMode("local"), "local");
+  assert.equal(getCollateralPersistenceStoreMode("firebase"), "firebase");
+  assert.equal(getCollateralPersistenceStoreMode(" FIREBASE "), "firebase");
+});
+
 test("native action item recovery info only offers explicit import when firestore is empty and local items exist", () => {
   assert.deepEqual(
     getNativeActionItemRecoveryInfo({
@@ -2283,6 +2296,78 @@ test("firestore native action item store fails clearly when firebase mode is sel
     () => store.load([]),
     /Native action-item store mode is set to firebase, but Firebase is not configured\./
   );
+});
+
+test("firestore collateral persistence store fails clearly when firebase mode is selected but unavailable", async () => {
+  const store = createFirestoreCollateralPersistenceStore({
+    getDb: () => null,
+    isConfigured: () => false
+  });
+
+  const defaultState = createDefaultAppStateData();
+
+  await assert.rejects(
+    () =>
+      store.load(
+        {
+          collateralItems: defaultState.collateralItems,
+          collateralProfiles: defaultState.collateralProfiles,
+          eventInstances: defaultState.eventInstances,
+          eventSubEvents: defaultState.eventSubEvents
+        },
+        {
+          defaultOwner: defaultState.defaultOwnerForNewItems,
+          eventTypes: defaultState.eventTypes
+        }
+      ),
+    /Collateral persistence mode is set to Firestore, but Firebase is not configured\./
+  );
+});
+
+test("firestore collateral persistence document parser accepts the minimal valid payload", () => {
+  const defaultState = createDefaultAppStateData();
+  const persistedState = {
+    collateralItems: defaultState.collateralItems.slice(0, 1),
+    collateralProfiles: defaultState.collateralProfiles,
+    eventInstances: defaultState.eventInstances,
+    eventSubEvents: defaultState.eventSubEvents
+  };
+  const document = mapPersistedCollateralStateToFirestoreDocument(persistedState);
+  const parsedDocument = parseFirestoreCollateralStateDocument(document);
+
+  assert.ok(parsedDocument);
+  assert.equal(parsedDocument?.collateralItems.length, 1);
+  assert.equal(parsedDocument?.eventInstances[0]?.id, defaultState.eventInstances[0]?.id);
+  assert.equal(
+    parsedDocument?.collateralProfiles[defaultState.eventInstances[0].id]?.eventStartDate,
+    defaultState.collateralProfiles[defaultState.eventInstances[0].id]?.eventStartDate
+  );
+});
+
+test("firestore collateral persistence store maps a valid remote payload into normalized collateral state", async () => {
+  const defaultState = createDefaultAppStateData();
+  const persistedState = {
+    collateralItems: defaultState.collateralItems.slice(0, 1),
+    collateralProfiles: defaultState.collateralProfiles,
+    eventInstances: defaultState.eventInstances,
+    eventSubEvents: defaultState.eventSubEvents
+  };
+  const document = mapPersistedCollateralStateToFirestoreDocument(persistedState);
+  const store = createFirestoreCollateralPersistenceStore({
+    getDb: () => ({}) as never,
+    getDocument: async () => document,
+    isConfigured: () => true
+  });
+
+  const loadedState = await store.load(persistedState, {
+    defaultOwner: defaultState.defaultOwnerForNewItems,
+    eventTypes: defaultState.eventTypes
+  });
+
+  assert.equal(loadedState.collateralItems.length, 1);
+  assert.equal(loadedState.collateralItems[0]?.id, persistedState.collateralItems[0]?.id);
+  assert.equal(loadedState.eventInstances[0]?.id, defaultState.eventInstances[0]?.id);
+  assert.ok(loadedState.eventSubEvents.some((subEvent) => subEvent.id.endsWith("-unassigned")));
 });
 
 test("opening a publication issue keeps only one open issue per publication workstream", () => {
