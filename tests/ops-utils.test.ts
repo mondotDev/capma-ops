@@ -3424,8 +3424,9 @@ test("bootstrap import infers waitingOn only from explicit waiting notes", () =>
   assert.equal(inferBootstrapWaitingOn("Waiting", "waiting for sponsor"), "Sponsor");
   assert.equal(inferBootstrapWaitingOn("Waiting", "Waiting on Vince Scoville | Flyer + Raffle link"), "Vince Scoville");
   assert.equal(inferBootstrapWaitingOn("Waiting", "Need rooms"), "rooms");
-  assert.equal(inferBootstrapWaitingOn("Waiting", "emailed 4/1"), "");
-  assert.equal(inferBootstrapWaitingOn("In Progress", "waiting for sponsor"), "");
+  assert.equal(inferBootstrapWaitingOn("Waiting", "", "CEU Schedule half page. R, W+B - Need rooms"), "rooms");
+  assert.equal(inferBootstrapWaitingOn("Waiting", "emailed 4/1", "Reach out to sponsor"), "");
+  assert.equal(inferBootstrapWaitingOn("In Progress", "waiting for sponsor", "Need sponsor"), "");
 });
 
 test("bootstrap import keeps linked event mapping narrow and explicit", () => {

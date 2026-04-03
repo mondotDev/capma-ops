@@ -232,7 +232,7 @@ function mapCsvRowToImportableActionItem(
   const dueDate = normalizeCsvDate(row["Due Date"]?.trim() ?? "");
   const vendorDeadline = normalizeCsvDate(row["Vendor Deadline"]?.trim() ?? "");
   const printDeadline = normalizeCsvDate(row.Print_Deadline?.trim() ?? "");
-  const waitingOn = inferBootstrapWaitingOn(status, row.Notes?.trim() ?? "");
+  const waitingOn = inferBootstrapWaitingOn(status, row.Notes?.trim() ?? "", title);
   const issue = inferBootstrapIssue(linkedEventMapping.workstream, dueDate, title);
   const noteEntries = buildImportedNoteEntries({
     notes: row.Notes?.trim() ?? "",

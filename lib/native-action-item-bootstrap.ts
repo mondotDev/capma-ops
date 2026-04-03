@@ -128,24 +128,35 @@ export function inferBootstrapIssue(workstream: string, dueDate: string, title =
   return ISSUE_DEFINITIONS.find((issue) => issue.workstream === workstream && issue.dueDate === dueDate)?.label ?? "";
 }
 
-export function inferBootstrapWaitingOn(status: ActionItem["status"], notes: string) {
+export function inferBootstrapWaitingOn(status: ActionItem["status"], notes: string, title = "") {
   if (status !== "Waiting") {
     return "";
   }
 
   const trimmedNotes = notes.trim();
+  const trimmedTitle = title.trim();
 
-  if (!trimmedNotes) {
+  const inferredFromText = inferExplicitWaitingReason(trimmedNotes) || inferExplicitWaitingReason(trimmedTitle);
+
+  if (inferredFromText) {
+    return inferredFromText;
+  }
+
+  return "";
+}
+
+function inferExplicitWaitingReason(text: string) {
+  if (!text) {
     return "";
   }
 
-  const waitingMatch = trimmedNotes.match(/\bwaiting\s+(?:for|on)\s+(.+)/i);
+  const waitingMatch = text.match(/\bwaiting\s+(?:for|on)\s+(.+)/i);
 
   if (waitingMatch?.[1]) {
     return normalizeOperationalReason(waitingMatch[1].split(/[|.;]/, 1)[0]?.trim()) ?? "";
   }
 
-  const needMatch = trimmedNotes.match(/^need\s+(.+)/i);
+  const needMatch = text.match(/\bneed\s+(.+)/i);
 
   if (needMatch?.[1]) {
     return normalizeOperationalReason(needMatch[1].split(/[|.;]/, 1)[0]?.trim()) ?? "";
