@@ -27,8 +27,10 @@ import {
 import { traceCollateralCreate } from "@/lib/collateral-create-trace";
 import type { PersistedCollateralState } from "@/lib/collateral-persisted-state";
 import {
+  getCollateralPersistenceBootErrorMessage,
   getCollateralPersistenceStoreMode,
-  getSelectedCollateralPersistenceStore
+  getSelectedCollateralPersistenceStore,
+  selectPersistableCollateralState
 } from "@/lib/collateral-persistence-store";
 import { localCollateralStore } from "@/lib/collateral-store";
 import {
@@ -187,6 +189,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const pendingPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPersistStateRef = useRef<AppStateData | null>(null);
   const collateralPersistenceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const collateralBootstrapSourceRef = useRef<PersistedCollateralState | null>(null);
   const nativeActionItemWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const nativeActionItemRecoveryItemsRef = useRef<ActionItem[]>([]);
   const itemsRef = useRef(items);
@@ -314,6 +317,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     async function hydrateFromSelectedNativeActionItemStore() {
       const loadResult = appStateRepository.load();
       const baseState = loadResult.state ?? createDefaultAppStateData();
+      collateralBootstrapSourceRef.current = {
+        collateralItems: baseState.collateralItems,
+        collateralProfiles: baseState.collateralProfiles,
+        eventInstances: baseState.eventInstances,
+        eventSubEvents: baseState.eventSubEvents
+      };
       setShouldPersist(loadResult.shouldPersist);
 
       try {
@@ -374,9 +383,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
               ? "Action-item persistence mode is set to Firestore, but Firestore is not configured or unavailable."
               : "CAPMA Ops persistence could not be initialized.";
         setCollateralPersistenceStoreBootError(
-          collateralPersistenceStoreMode === "firebase"
-            ? `${message} Run the collateral bootstrap path before using Firestore-backed collateral mode.`
-            : null
+          getCollateralPersistenceBootErrorMessage({
+            mode: collateralPersistenceStoreMode,
+            message
+          })
         );
         setNativeActionItemStoreBootError(
           collateralPersistenceStoreMode === "firebase" ? null : message
@@ -406,7 +416,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   const persistableState = useMemo<AppStateData>(
-    () => ({
+    () => {
+      const persistableCollateralState = selectPersistableCollateralState({
+        mode: collateralPersistenceStoreMode,
+        currentState: {
+          collateralItems,
+          collateralProfiles,
+          eventInstances,
+          eventSubEvents
+        },
+        bootstrapSourceState: collateralBootstrapSourceRef.current
+      });
+
+      return {
       items:
         nativeActionItemStoreMode === "local"
           ? items
@@ -414,20 +436,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             ? nativeActionItemRecoveryItemsRef.current
             : [],
       issueStatuses,
-      collateralItems,
-      collateralProfiles,
+      collateralItems: persistableCollateralState.collateralItems,
+      collateralProfiles: persistableCollateralState.collateralProfiles,
       activeEventInstanceId,
       defaultOwnerForNewItems,
       eventFamilies,
       eventTypes,
-      eventInstances,
-      eventSubEvents,
+      eventInstances: persistableCollateralState.eventInstances,
+      eventSubEvents: persistableCollateralState.eventSubEvents,
       workstreamSchedules
-    }),
+    };
+    },
     [
       activeEventInstanceId,
       collateralItems,
       collateralProfiles,
+      collateralPersistenceStoreMode,
       defaultOwnerForNewItems,
       eventFamilies,
       eventInstances,
@@ -880,6 +904,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     enablePersistence();
     clearNativeActionItemRecovery();
     const nextState = createDefaultAppStateData();
+    collateralBootstrapSourceRef.current = {
+      collateralItems: nextState.collateralItems,
+      collateralProfiles: nextState.collateralProfiles,
+      eventInstances: nextState.eventInstances,
+      eventSubEvents: nextState.eventSubEvents
+    };
     hydrateAppState(nextState);
     enqueueCollateralPersistenceWrite(() =>
       collateralPersistenceStore
@@ -964,6 +994,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const importedState = appStateRepository.import(value);
     enablePersistence();
     clearNativeActionItemRecovery();
+    collateralBootstrapSourceRef.current = {
+      collateralItems: importedState.collateralItems,
+      collateralProfiles: importedState.collateralProfiles,
+      eventInstances: importedState.eventInstances,
+      eventSubEvents: importedState.eventSubEvents
+    };
     hydrateAppState(importedState);
     enqueueCollateralPersistenceWrite(() =>
       collateralPersistenceStore

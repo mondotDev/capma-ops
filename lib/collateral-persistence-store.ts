@@ -41,3 +41,30 @@ export function getSelectedCollateralPersistenceStore(
 ): CollateralPersistenceStore {
   return mode === "firebase" ? firestoreCollateralPersistenceStore : localCollateralPersistenceStore;
 }
+
+export function selectPersistableCollateralState(input: {
+  mode: CollateralPersistenceStoreMode;
+  currentState: PersistedCollateralState;
+  bootstrapSourceState: PersistedCollateralState | null;
+}): PersistedCollateralState {
+  if (input.mode === "local") {
+    return input.currentState;
+  }
+
+  return input.bootstrapSourceState ?? input.currentState;
+}
+
+export function getCollateralPersistenceBootErrorMessage(input: {
+  mode: CollateralPersistenceStoreMode;
+  message: string;
+}) {
+  if (input.mode !== "firebase") {
+    return null;
+  }
+
+  if (input.message.includes("has not been bootstrapped")) {
+    return `${input.message} Run the collateral bootstrap path before using Firestore-backed collateral mode.`;
+  }
+
+  return input.message;
+}

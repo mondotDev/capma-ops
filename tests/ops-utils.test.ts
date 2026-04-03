@@ -30,7 +30,11 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
-import { getCollateralPersistenceStoreMode } from "../lib/collateral-persistence-store";
+import {
+  getCollateralPersistenceBootErrorMessage,
+  getCollateralPersistenceStoreMode,
+  selectPersistableCollateralState
+} from "../lib/collateral-persistence-store";
 import {
   createFirestoreCollateralPersistenceStore,
   mapPersistedCollateralStateToFirestoreDocument,
@@ -2171,6 +2175,65 @@ test("collateral persistence store mode defaults to local and supports explicit 
   assert.equal(getCollateralPersistenceStoreMode("local"), "local");
   assert.equal(getCollateralPersistenceStoreMode("firebase"), "firebase");
   assert.equal(getCollateralPersistenceStoreMode(" FIREBASE "), "firebase");
+});
+
+test("collateral persistence boot messaging only adds bootstrap guidance when the remote bundle is missing", () => {
+  assert.equal(
+    getCollateralPersistenceBootErrorMessage({
+      mode: "firebase",
+      message: "Collateral persistence mode is set to Firestore, but persisted collateral state has not been bootstrapped."
+    }),
+    "Collateral persistence mode is set to Firestore, but persisted collateral state has not been bootstrapped. Run the collateral bootstrap path before using Firestore-backed collateral mode."
+  );
+
+  assert.equal(
+    getCollateralPersistenceBootErrorMessage({
+      mode: "firebase",
+      message: "Firestore collateral state is not a valid CAPMA Ops collateral persistence document."
+    }),
+    "Firestore collateral state is not a valid CAPMA Ops collateral persistence document."
+  );
+
+  assert.equal(
+    getCollateralPersistenceBootErrorMessage({
+      mode: "local",
+      message: "ignored"
+    }),
+    null
+  );
+});
+
+test("persistable collateral snapshot stays frozen to the explicit bootstrap source in firebase mode", () => {
+  const bootstrapState = {
+    collateralItems: [{ id: "bootstrap-item" } as CollateralItem],
+    collateralProfiles: { "instance-a": createDefaultAppStateData().collateralProfiles[createDefaultAppStateData().eventInstances[0].id] },
+    eventInstances: createDefaultAppStateData().eventInstances,
+    eventSubEvents: createDefaultAppStateData().eventSubEvents
+  };
+  const currentState = {
+    collateralItems: [{ id: "remote-item" } as CollateralItem],
+    collateralProfiles: {},
+    eventInstances: [],
+    eventSubEvents: []
+  };
+
+  assert.deepEqual(
+    selectPersistableCollateralState({
+      mode: "firebase",
+      currentState,
+      bootstrapSourceState: bootstrapState
+    }),
+    bootstrapState
+  );
+
+  assert.deepEqual(
+    selectPersistableCollateralState({
+      mode: "local",
+      currentState,
+      bootstrapSourceState: bootstrapState
+    }),
+    currentState
+  );
 });
 
 test("native action item recovery info only offers explicit import when firestore is empty and local items exist", () => {
