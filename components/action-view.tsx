@@ -11,7 +11,9 @@ import {
   getActionMeaningUiState,
   shouldClearEventLinkOnWorkstreamChange
 } from "@/lib/action/action-item-ux";
+import { matchesActionScope } from "@/lib/action-scopes";
 import { getActionScopeLabelByValue } from "@/lib/action-scopes";
+import type { EventInstance, EventProgram } from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getCollisionReviewHref,
@@ -33,6 +35,7 @@ import {
   formatShortDate,
   getContextualDueDateLabel,
   getOwnerOptions,
+  isArchivedItem,
   LOCAL_FALLBACK_NOTE_AUTHOR,
   OPERATIONAL_BUCKET_OPTIONS,
   isBlockedItem,
@@ -40,6 +43,10 @@ import {
   isTerminalStatus,
   isWaitingIssue,
   isWaitingMissingReason,
+  matchesActionFilter,
+  matchesActionFocus,
+  matchesActionLens,
+  matchesSearchQuery,
   OWNER_OPTIONS,
   STATUS_OPTIONS,
   syncActionItemIssue,
@@ -128,6 +135,7 @@ export function ActionView({
   const [nativeItemRecoveryFeedback, setNativeItemRecoveryFeedback] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [publicationFeedback, setPublicationFeedback] = useState("");
+  const [itemExitNotice, setItemExitNotice] = useState<ActionExitNotice | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [blockedByDraft, setBlockedByDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
@@ -263,14 +271,52 @@ export function ActionView({
   );
 
   useEffect(() => {
+    if (selectedId) {
+      setItemExitNotice(null);
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
     if (!selectedId) {
       return;
     }
 
     if (!visibleSelectableRows.some((row) => row.actionItemId === selectedId)) {
+      if (selectedItem) {
+        setItemExitNotice(
+          getActionItemExitNotice(selectedItem, {
+            activeDueDate,
+            activeEventGroup,
+            activeFilter,
+            activeFocus,
+            activeIssue,
+            activeLens,
+            activeQuery,
+            eventInstances,
+            eventPrograms,
+            showArchived,
+            showCompleted
+          })
+        );
+      }
       setSelectedId(null);
     }
-  }, [selectedId, visibleSelectableRows]);
+  }, [
+    activeDueDate,
+    activeEventGroup,
+    activeFilter,
+    activeFocus,
+    activeIssue,
+    activeLens,
+    activeQuery,
+    eventInstances,
+    eventPrograms,
+    selectedId,
+    selectedItem,
+    showArchived,
+    showCompleted,
+    visibleSelectableRows
+  ]);
 
   useEffect(() => {
     setIsArchiveConfirmOpen(false);
@@ -896,6 +942,50 @@ export function ActionView({
             <div className="muted">All active execution work is visible.</div>
           )}
         </div>
+
+        {itemExitNotice ? (
+          <div
+            aria-live="polite"
+            className="card card--secondary action-exit-notice"
+          >
+            <div className="action-exit-notice__body">
+              <div className="action-exit-notice__title">{itemExitNotice.title}</div>
+              <div className="action-exit-notice__copy">{itemExitNotice.copy}</div>
+            </div>
+            <div className="action-exit-notice__actions">
+              {itemExitNotice.action && itemExitNotice.actionLabel ? (
+                <button
+                  className="button-link button-link--inline-secondary"
+                  onClick={() => {
+                    runActionExitNoticeAction(itemExitNotice.action!, {
+                      clearAllContext,
+                      clearDueDateFilter,
+                      clearFocus,
+                      clearIssueFilter,
+                      clearSearchQuery,
+                      handleEventGroupChange,
+                      handleFilterChange,
+                      handleLensChange,
+                      setShowArchived,
+                      setShowCompleted
+                    });
+                    setItemExitNotice(null);
+                  }}
+                  type="button"
+                >
+                  {itemExitNotice.actionLabel}
+                </button>
+              ) : null}
+              <button
+                className="button-link button-link--inline"
+                onClick={() => setItemExitNotice(null)}
+                type="button"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {collisionReview ? (
           <div className="card card--secondary collision-review">
@@ -1750,6 +1840,21 @@ export function ActionView({
                         if (selectedItem.archivedAt) {
                           restoreItem(selectedItem.id);
                         } else {
+                          if (!showArchived) {
+                            setItemExitNotice(getActionItemExitNotice(selectedItem, {
+                              activeDueDate,
+                              activeEventGroup,
+                              activeFilter,
+                              activeFocus,
+                              activeIssue,
+                              activeLens,
+                              activeQuery,
+                              eventInstances,
+                              eventPrograms,
+                              showArchived,
+                              showCompleted
+                            }));
+                          }
                           archiveItem(selectedItem.id);
                         }
                         setSelectedId(null);
@@ -1818,6 +1923,25 @@ type ActionContextChip = {
     | "completed"
     | "archived";
   label: string;
+};
+
+type ActionExitNoticeAction =
+  | "showArchived"
+  | "showCompleted"
+  | "clearIssue"
+  | "clearDueDate"
+  | "clearScope"
+  | "clearFilter"
+  | "clearLens"
+  | "clearFocus"
+  | "clearSearch"
+  | "clearAll";
+
+type ActionExitNotice = {
+  title: string;
+  copy: string;
+  action?: ActionExitNoticeAction;
+  actionLabel?: string;
 };
 
 function buildActionContextChips(input: {
@@ -1963,6 +2087,179 @@ function getActionEmptyStateCopy(
   }
 
   return `No execution items match the current view: ${contextPreview}. Clear one or more constraints to broaden the lane.`;
+}
+
+function getActionItemExitNotice(
+  item: ActionItem,
+  input: {
+    activeDueDate: string;
+    activeEventGroup: string;
+    activeFilter: ActionFilter;
+    activeFocus: ActionFocus;
+    activeIssue: string;
+    activeLens: ActionLens;
+    activeQuery: string;
+    eventInstances: EventInstance[];
+    eventPrograms: EventProgram[];
+    showArchived: boolean;
+    showCompleted: boolean;
+  }
+): ActionExitNotice {
+  const itemLabel = `"${item.title}"`;
+
+  if (!input.showArchived && isArchivedItem(item)) {
+    return {
+      title: `${itemLabel} left the current lane`,
+      copy: "It was archived, and archived items are hidden from active execution views by default.",
+      action: "showArchived",
+      actionLabel: "Show archived"
+    };
+  }
+
+  if (!input.showCompleted && isTerminalStatus(item.status)) {
+    return {
+      title: `${itemLabel} left the current lane`,
+      copy: `It is now marked ${item.status.toLowerCase()}, and closed work is hidden from active execution views by default.`,
+      action: "showCompleted",
+      actionLabel: "Show completed"
+    };
+  }
+
+  if (input.activeIssue && item.issue !== input.activeIssue) {
+    return {
+      title: `${itemLabel} no longer matches this issue workspace`,
+      copy: `This workspace only shows rows linked to ${input.activeIssue}.`,
+      action: "clearIssue",
+      actionLabel: "Clear issue filter"
+    };
+  }
+
+  if (input.activeDueDate && item.dueDate !== input.activeDueDate) {
+    return {
+      title: `${itemLabel} no longer matches this due-date view`,
+      copy: `The current lane is narrowed to rows due on ${formatShortDate(input.activeDueDate)}.`,
+      action: "clearDueDate",
+      actionLabel: "Clear due date"
+    };
+  }
+
+  if (
+    input.activeEventGroup !== "all" &&
+    !matchesActionScope(item, input.activeEventGroup, input.eventPrograms, input.eventInstances)
+  ) {
+    return {
+      title: `${itemLabel} moved out of the current scope`,
+      copy: "The item no longer matches the current execution scope.",
+      action: "clearScope",
+      actionLabel: "Clear scope"
+    };
+  }
+
+  if (input.activeFilter !== "all" && !matchesActionFilter(item, input.activeFilter)) {
+    return {
+      title: `${itemLabel} no longer matches ${getFilterLabel(input.activeFilter).toLowerCase()}`,
+      copy: "The current status filter is hiding it from this lane.",
+      action: "clearFilter",
+      actionLabel: "Clear filter"
+    };
+  }
+
+  if (input.activeFocus !== "all" && !matchesActionFocus(item, input.activeFocus)) {
+    return {
+      title: `${itemLabel} moved out of the current focus`,
+      copy: `This lane is focused on ${FOCUS_LABELS[input.activeFocus].toLowerCase()}.`,
+      action: "clearFocus",
+      actionLabel: "Clear focus"
+    };
+  }
+
+  if (input.activeLens !== "all" && !matchesActionLens(item, input.activeLens)) {
+    return {
+      title: `${itemLabel} no longer matches ${getLensLabel(input.activeLens)}`,
+      copy: "The current review lens is now filtering it out of the visible lane.",
+      action: "clearLens",
+      actionLabel: "Return to all work"
+    };
+  }
+
+  if (input.activeQuery && !matchesSearchQuery(item, input.activeQuery)) {
+    return {
+      title: `${itemLabel} no longer matches the current search`,
+      copy: `The lane is still narrowed by “${input.activeQuery}”.`,
+      action: "clearSearch",
+      actionLabel: "Clear search"
+    };
+  }
+
+  return {
+    title: `${itemLabel} left the current lane`,
+    copy: "One or more current constraints are hiding it from this view.",
+    action: "clearAll",
+    actionLabel: "Return to all work"
+  };
+}
+
+function runActionExitNoticeAction(
+  action: ActionExitNoticeAction,
+  handlers: {
+    clearAllContext: () => void;
+    clearDueDateFilter: () => void;
+    clearFocus: () => void;
+    clearIssueFilter: () => void;
+    clearSearchQuery: () => void;
+    handleEventGroupChange: (nextEventGroup: string) => void;
+    handleFilterChange: (nextFilter: ActionFilter) => void;
+    handleLensChange: (nextLens: ActionLens) => void;
+    setShowArchived: (value: boolean) => void;
+    setShowCompleted: (value: boolean) => void;
+  }
+) {
+  if (action === "showArchived") {
+    handlers.setShowArchived(true);
+    return;
+  }
+
+  if (action === "showCompleted") {
+    handlers.setShowCompleted(true);
+    return;
+  }
+
+  if (action === "clearIssue") {
+    handlers.clearIssueFilter();
+    return;
+  }
+
+  if (action === "clearDueDate") {
+    handlers.clearDueDateFilter();
+    return;
+  }
+
+  if (action === "clearScope") {
+    handlers.handleEventGroupChange("all");
+    return;
+  }
+
+  if (action === "clearFilter") {
+    handlers.handleFilterChange("all");
+    return;
+  }
+
+  if (action === "clearLens") {
+    handlers.handleLensChange("all");
+    return;
+  }
+
+  if (action === "clearFocus") {
+    handlers.clearFocus();
+    return;
+  }
+
+  if (action === "clearSearch") {
+    handlers.clearSearchQuery();
+    return;
+  }
+
+  handlers.clearAllContext();
 }
 
 function getLensLabel(lens: ActionLens) {

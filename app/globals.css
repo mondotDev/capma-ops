@@ -2419,6 +2419,40 @@ tr.blocked-row {
   gap: 8px;
 }
 
+.action-exit-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  border-color: rgba(0, 59, 109, 0.14);
+  background: #f8fbff;
+}
+
+.action-exit-notice__body {
+  display: grid;
+  gap: 4px;
+}
+
+.action-exit-notice__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #243240;
+}
+
+.action-exit-notice__copy {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #5f6f7d;
+}
+
+.action-exit-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .action-context-chip {
   display: inline-flex;
   align-items: center;
