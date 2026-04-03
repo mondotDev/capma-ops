@@ -35,6 +35,7 @@ import {
   getCollateralPersistenceStoreMode,
   selectPersistableCollateralState
 } from "../lib/collateral-persistence-store";
+import { normalizePersistedCollateralState } from "../lib/collateral-persisted-state";
 import {
   createFirestoreCollateralPersistenceStore,
   mapPersistedCollateralStateToFirestoreDocument,
@@ -82,8 +83,10 @@ import {
   getActionItemSubEventLabel
 } from "../lib/events/event-labels";
 import {
+  getInitialLegDaySubEventIdByName,
   initialEventInstances,
-  initialEventSubEvents
+  initialEventSubEvents,
+  normalizeEventSubEvents
 } from "../lib/event-instances";
 import {
   getDashboardLiveSummary,
@@ -560,6 +563,65 @@ test("collateral store normalizes invalid sub-events and gives template-applied 
     templateResult.items[0]?.id,
     "collateral-legislative-day-2026-golf-reception-thank-you-sign"
   );
+});
+
+test("known sub-event aliases resolve to one canonical legislative day reception sub-event", () => {
+  assert.equal(getInitialLegDaySubEventIdByName("Wednesday Reception"), "leg-day-wednesday-reception");
+  assert.equal(getInitialLegDaySubEventIdByName("Wed Night Reception"), "leg-day-wednesday-reception");
+
+  const normalized = normalizeEventSubEvents([
+    { id: "leg-day-wednesday-reception", eventInstanceId: "legislative-day-2026", name: "Wednesday Reception", sortOrder: 120 },
+    { id: "leg-day-wed-night-reception", eventInstanceId: "legislative-day-2026", name: "Wed Night Reception", sortOrder: 130 }
+  ]);
+
+  assert.equal(normalized.subEvents.length, 1);
+  assert.equal(normalized.subEvents[0]?.id, "leg-day-wednesday-reception");
+  assert.equal(normalized.subEvents[0]?.name, "Wednesday Reception");
+  assert.equal(
+    normalized.canonicalIdByOriginalId.get("leg-day-wed-night-reception"),
+    "leg-day-wednesday-reception"
+  );
+});
+
+test("persisted collateral state remaps known sub-event aliases onto the canonical sub-event id", () => {
+  const defaultState = createDefaultAppStateData();
+  const normalized = normalizePersistedCollateralState(
+    {
+      collateralItems: [
+        createCollateralItem({
+          id: "raffle-sign",
+          eventInstanceId: "legislative-day-2026",
+          subEventId: "leg-day-wed-night-reception",
+          itemName: "Raffle sign",
+          status: "Backlog",
+          owner: "Melissa",
+          blockedBy: "",
+          dueDate: "",
+          printer: "",
+          quantity: "",
+          updateType: "",
+          noteEntries: [],
+          lastUpdated: "2026-03-28"
+        })
+      ],
+      collateralProfiles: defaultState.collateralProfiles,
+      eventInstances: defaultState.eventInstances,
+      eventSubEvents: [
+        { id: "leg-day-wednesday-reception", eventInstanceId: "legislative-day-2026", name: "Wednesday Reception", sortOrder: 120 },
+        { id: "leg-day-wed-night-reception", eventInstanceId: "legislative-day-2026", name: "Wed Night Reception", sortOrder: 130 }
+      ]
+    },
+    {
+      defaultOwner: defaultState.defaultOwnerForNewItems,
+      eventTypes: defaultState.eventTypes
+    }
+  );
+
+  assert.equal(
+    normalized.eventSubEvents.some((subEvent) => subEvent.id === "leg-day-wednesday-reception"),
+    true
+  );
+  assert.equal(normalized.collateralItems[0]?.subEventId, "leg-day-wednesday-reception");
 });
 
 test("action view collateral status contract stays explicit and narrow", () => {

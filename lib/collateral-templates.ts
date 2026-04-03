@@ -1,3 +1,5 @@
+import { normalizeSubEventName } from "@/lib/event-instances";
+
 export type CollateralTemplatePack = {
   id: string;
   name: string;
@@ -46,7 +48,6 @@ export const initialCollateralTemplateSubEvents: CollateralTemplateSubEvent[] = 
   createLegDayTemplateSubEvent("wednesday-ceus", "Wednesday CEUs", 100),
   createLegDayTemplateSubEvent("wednesday-committees", "Wednesday Committees", 110),
   createLegDayTemplateSubEvent("wednesday-reception", "Wednesday Reception", 120),
-  createLegDayTemplateSubEvent("wed-night-reception", "Wed Night Reception", 130),
   createLegDayTemplateSubEvent("wednesday-registration", "Wednesday Registration", 140)
 ];
 
@@ -112,7 +113,7 @@ function createLegDayTemplateSubEvent(idSuffix: string, name: string, sortOrder:
   return {
     id: `legislative-day-core-${idSuffix}`,
     packId: "legislative-day-core",
-    name,
+    name: normalizeSubEventName(name),
     sortOrder
   };
 }
@@ -132,7 +133,9 @@ function createLegDayTemplateItem(
     packId: "legislative-day-core",
     name,
     templateSubEventId:
-      initialCollateralTemplateSubEvents.find((subEvent) => subEvent.name === subEventName)?.id ??
+      initialCollateralTemplateSubEvents.find(
+        (subEvent) => normalizeSubEventName(subEvent.name) === normalizeSubEventName(subEventName)
+      )?.id ??
       "legislative-day-core-multi-event",
     defaultStatus,
     defaultPrinter,

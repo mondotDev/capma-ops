@@ -32,6 +32,16 @@ export type EventSubEvent = {
   sortOrder: number;
 };
 
+type NormalizedEventSubEventsResult = {
+  canonicalIdByOriginalId: Map<string, string>;
+  subEvents: EventSubEvent[];
+};
+
+const KNOWN_SUB_EVENT_NAME_ALIASES: Record<string, string> = {
+  "wed night reception": "Wednesday Reception",
+  "wednesday night reception": "Wednesday Reception"
+};
+
 export const LEGISLATIVE_DAY_2026_INSTANCE_ID = "legislative-day-2026";
 
 export const initialEventFamilies: EventFamily[] = [
@@ -111,7 +121,7 @@ export const initialEventInstances: EventInstance[] = [
   }
 ];
 
-export const initialEventSubEvents: EventSubEvent[] = [
+const rawInitialEventSubEvents: EventSubEvent[] = [
   { id: "leg-day-golf-reception", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Golf Reception", sortOrder: 10 },
   { id: "leg-day-golf-registration", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Golf Registration", sortOrder: 20 },
   { id: "leg-day-golf-tournament", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Golf Tournament", sortOrder: 30 },
@@ -128,8 +138,11 @@ export const initialEventSubEvents: EventSubEvent[] = [
   { id: "leg-day-wednesday-registration", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Wednesday Registration", sortOrder: 140 }
 ];
 
+export const initialEventSubEvents: EventSubEvent[] = normalizeEventSubEvents(rawInitialEventSubEvents).subEvents;
+
 export function getInitialLegDaySubEventIdByName(name: string) {
-  return initialEventSubEvents.find((subEvent) => subEvent.name === name)?.id ?? null;
+  const normalizedName = normalizeSubEventName(name);
+  return initialEventSubEvents.find((subEvent) => normalizeSubEventName(subEvent.name) === normalizedName)?.id ?? null;
 }
 
 export function getUnassignedSubEventId(eventInstanceId: string) {
@@ -223,6 +236,70 @@ export function createSuggestedEventInstanceName(
   }
 
   return `${eventTypeName} ${yearLabel}`;
+}
+
+export function normalizeSubEventName(name: string) {
+  const trimmed = name.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const canonicalAlias =
+    KNOWN_SUB_EVENT_NAME_ALIASES[trimmed.toLowerCase()] ??
+    KNOWN_SUB_EVENT_NAME_ALIASES[trimmed.replace(/\s+/g, " ").toLowerCase()];
+
+  return canonicalAlias ?? trimmed;
+}
+
+export function normalizeEventSubEvents(subEvents: EventSubEvent[]): NormalizedEventSubEventsResult {
+  const canonicalIdByOriginalId = new Map<string, string>();
+  const grouped = new Map<string, EventSubEvent[]>();
+
+  for (const subEvent of subEvents) {
+    const normalizedName = normalizeSubEventName(subEvent.name);
+    const groupKey = `${subEvent.eventInstanceId}::${normalizedName}`;
+
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, []);
+    }
+
+    grouped.get(groupKey)!.push({
+      ...subEvent,
+      name: normalizedName
+    });
+  }
+
+  const normalizedSubEvents = Array.from(grouped.values())
+    .map((group) => {
+      const canonicalName = group[0]?.name ?? "";
+      const canonicalRecord =
+        group
+          .filter((subEvent) => subEvent.name === canonicalName)
+          .sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))[0] ??
+        group.sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id))[0];
+
+      const canonicalId = canonicalRecord.id;
+
+      for (const subEvent of group) {
+        canonicalIdByOriginalId.set(subEvent.id, canonicalId);
+      }
+
+      return {
+        ...canonicalRecord,
+        name: canonicalName
+      };
+    })
+    .sort((left, right) =>
+      left.eventInstanceId === right.eventInstanceId
+        ? left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)
+        : left.eventInstanceId.localeCompare(right.eventInstanceId)
+    );
+
+  return {
+    canonicalIdByOriginalId,
+    subEvents: normalizedSubEvents
+  };
 }
 
 export function resolveActiveEventInstanceId(

@@ -8,6 +8,7 @@ import {
 import { localCollateralStore } from "@/lib/collateral-store";
 import {
   createUnassignedSubEvent,
+  normalizeEventSubEvents,
   resolveActiveEventInstanceId,
   normalizeEventInstance,
   initialEventFamilies,
@@ -199,7 +200,10 @@ function normalizeEventScopedState(input: {
   const validEventTypeIds = new Set(input.eventTypes.map((eventType) => eventType.id));
   const normalizedEventInstances = input.eventInstances.filter((instance) => validEventTypeIds.has(instance.eventTypeId));
   const validEventInstanceIds = new Set(normalizedEventInstances.map((instance) => instance.id));
-  const normalizedEventSubEvents = input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId));
+  const normalizedSubEventState = normalizeEventSubEvents(
+    input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId))
+  );
+  const normalizedEventSubEvents = normalizedSubEventState.subEvents;
   const unassignedSubEventIds = new Set(input.collateralItems.map((item) => item.subEventId).filter((subEventId) => subEventId.endsWith("-unassigned")));
   const ensuredUnassignedSubEvents = normalizedEventInstances
     .filter((instance) => unassignedSubEventIds.has(createUnassignedSubEvent(instance.id).id))
@@ -208,13 +212,18 @@ function normalizeEventScopedState(input: {
   const eventSubEvents = [...normalizedEventSubEvents, ...ensuredUnassignedSubEvents];
   const subEventById = new Map(eventSubEvents.map((subEvent) => [subEvent.id, subEvent]));
   const collateralItems = input.collateralItems.filter((item) => {
+    const normalizedSubEventId = normalizedSubEventState.canonicalIdByOriginalId.get(item.subEventId) ?? item.subEventId;
+
     if (!validEventInstanceIds.has(item.eventInstanceId)) {
       return false;
     }
 
-    const subEvent = subEventById.get(item.subEventId);
+    const subEvent = subEventById.get(normalizedSubEventId);
     return Boolean(subEvent && subEvent.eventInstanceId === item.eventInstanceId);
-  });
+  }).map((item) => ({
+    ...item,
+    subEventId: normalizedSubEventState.canonicalIdByOriginalId.get(item.subEventId) ?? item.subEventId
+  }));
   const collateralProfiles = Object.fromEntries(
     Object.entries(input.collateralProfiles).filter(([instanceId]) => validEventInstanceIds.has(instanceId))
   );
