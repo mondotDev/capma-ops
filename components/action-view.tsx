@@ -131,6 +131,7 @@ export function ActionView({
   const [blockedByDraft, setBlockedByDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
   const blockedByInputRef = useRef<HTMLInputElement | null>(null);
+  const deleteConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeFilter = getActionFilterValue(initialFilter);
   const activeFocus = getActionFocusValue(initialFocus);
   const activeLens = getActionLensValue(initialLens);
@@ -275,6 +276,13 @@ export function ActionView({
     setIsDeleteConfirmOpen(false);
     setIsActionsMenuOpen(false);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!isDeleteConfirmOpen) {
+      return;
+    }
+    deleteConfirmButtonRef.current?.focus();
+  }, [isDeleteConfirmOpen, selectedItem?.id]);
 
   useEffect(() => {
     setSelectedItemIds((current) => current.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)));
@@ -1745,6 +1753,7 @@ export function ActionView({
                     </button>
                     <button
                       className="button-danger"
+                      ref={deleteConfirmButtonRef}
                       onClick={() => {
                         deleteItem(selectedItem.id);
                         setSelectedId(null);
