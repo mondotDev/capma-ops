@@ -374,7 +374,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
               ? "Action-item persistence mode is set to Firestore, but Firestore is not configured or unavailable."
               : "CAPMA Ops persistence could not be initialized.";
         setCollateralPersistenceStoreBootError(
-          collateralPersistenceStoreMode === "firebase" ? message : null
+          collateralPersistenceStoreMode === "firebase"
+            ? `${message} Run the collateral bootstrap path before using Firestore-backed collateral mode.`
+            : null
         );
         setNativeActionItemStoreBootError(
           collateralPersistenceStoreMode === "firebase" ? null : message

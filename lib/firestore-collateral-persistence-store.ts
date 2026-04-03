@@ -13,8 +13,8 @@ import {
 } from "@/lib/collateral-persisted-state";
 import type { ActionNoteEntry } from "@/lib/sample-data";
 
-const COLLATERAL_STATE_COLLECTION = "appStateSlices";
-const COLLATERAL_STATE_DOCUMENT = "collateralState";
+export const COLLATERAL_STATE_COLLECTION = "appStateSlices";
+export const COLLATERAL_STATE_DOCUMENT = "collateralState";
 
 type FirestoreActionNoteEntryDocument = {
   id: string;
@@ -125,6 +125,21 @@ export function createFirestoreCollateralPersistenceStore(input?: {
       return normalizedState;
     }
   };
+}
+
+export async function loadExistingFirestoreCollateralStateDocument(input?: {
+  collectionName?: string;
+  documentName?: string;
+  getDb?: () => Firestore | null;
+  isConfigured?: () => boolean;
+}) {
+  const collectionName = input?.collectionName ?? COLLATERAL_STATE_COLLECTION;
+  const documentName = input?.documentName ?? COLLATERAL_STATE_DOCUMENT;
+  const getDb = input?.getDb ?? getFirestoreDb;
+  const isConfigured = input?.isConfigured ?? isFirebaseConfigured;
+  const firestore = getConfiguredDb(getDb, isConfigured);
+  const snapshot = await getDoc(doc(firestore, collectionName, documentName));
+  return snapshot.exists() ? snapshot.data() : null;
 }
 
 export function mapPersistedCollateralStateToFirestoreDocument(

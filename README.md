@@ -28,9 +28,21 @@ There is no silent fallback. If Firestore mode is selected and Firebase is unava
 Other app data remains local-first for now:
 
 - publication issue statuses
-- collateral state
-- event state
+- `activeEventInstanceId`
 - workstream schedules
+
+Collateral now has its own explicit persistence mode for the narrow persisted bundle:
+
+- `NEXT_PUBLIC_COLLATERAL_STORE_MODE=firebase`
+  Firestore is the source of truth for:
+  - `collateralItems`
+  - `eventInstances`
+  - `eventSubEvents`
+  - `collateralProfiles`
+- `NEXT_PUBLIC_COLLATERAL_STORE_MODE=local`
+  The persisted collateral bundle stays on the local path.
+
+There is no silent fallback. If Firestore collateral mode is selected and the remote collateral bundle is missing, the app fails clearly and requires explicit bootstrap.
 
 ## Local app state and backup format
 
@@ -63,6 +75,7 @@ Required Firebase config:
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_NATIVE_ACTION_ITEM_STORE_MODE`
+- `NEXT_PUBLIC_COLLATERAL_STORE_MODE`
 
 Optional dashboard flag:
 
@@ -83,12 +96,42 @@ Use the admin script when you need to seed or rerun native action-item imports i
 
 The script is idempotent by `Row_Link`-derived document id and updates only changed Firestore documents.
 
+## Collateral Firestore bootstrap
+
+Use the admin bootstrap path when you need to initialize the Firestore-backed collateral bundle from the current local app snapshot:
+
+- dry run:
+  `npm run bootstrap:collateral-state -- --dry-run`
+- write:
+  `npm run bootstrap:collateral-state -- --write`
+
+This path writes only:
+
+- `collateralItems`
+- `eventInstances`
+- `eventSubEvents`
+- `collateralProfiles`
+
+It does not write:
+
+- `activeEventInstanceId`
+- Action View collateral execution rows
+- dashboard/read-model summaries
+- publication issue state
+- schedules/templates/reference config
+
+Bootstrap is initialize-only:
+
+- if the remote collateral bundle already exists, the script fails instead of overwriting it
+- if Firestore collateral mode is selected and the bundle is missing, run this bootstrap first
+
 ## Commands
 
 - `npm run dev`
 - `npm run build`
 - `npm run test`
 - `npm run import:native-action-items -- --file "<path-to-csv>" --dry-run`
+- `npm run bootstrap:collateral-state -- --dry-run`
 
 ## Architecture guardrails
 
