@@ -42,6 +42,7 @@ import {
   createUnassignedSubEvent,
   deriveEventDateRange,
   getUnassignedSubEventId,
+  normalizeEventSubEvents,
   resolveActiveEventInstanceId,
   type EventFamily,
   type EventInstance,
@@ -281,13 +282,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const hydrateAppState = useCallback((state: AppStateData) => {
+    const normalizedEventSubEvents = normalizeEventSubEvents(state.eventSubEvents).subEvents;
+
     setItems(state.items);
     setIssueStatuses(state.issueStatuses);
     setCollateralItems(
       localCollateralStore.normalizeLoaded(state.collateralItems, {
         defaultOwner: state.defaultOwnerForNewItems,
         eventInstances: state.eventInstances,
-        eventSubEvents: state.eventSubEvents
+        eventSubEvents: normalizedEventSubEvents
       })
     );
     setCollateralProfiles(state.collateralProfiles);
@@ -296,7 +299,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setEventFamilies(state.eventFamilies);
     setEventTypes(state.eventTypes);
     setEventInstances(state.eventInstances);
-    setEventSubEvents(state.eventSubEvents);
+    setEventSubEvents(normalizedEventSubEvents);
     setWorkstreamSchedulesState(state.workstreamSchedules);
   }, []);
 
@@ -639,7 +642,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         return current;
       }
 
-      const nextSubEvents = [...current, createUnassignedSubEvent(instanceId)];
+      const nextSubEvents = normalizeEventSubEvents([...current, createUnassignedSubEvent(instanceId)]).subEvents;
       enqueueCollateralPersistenceWrite(() =>
         collateralPersistenceStore
           .replaceAll(getPersistedCollateralState({ eventSubEvents: nextSubEvents }), getCollateralPersistenceContext())
@@ -777,7 +780,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (templateResult.subEventAdditions.length > 0) {
-      setEventSubEvents((current) => [...current, ...templateResult.subEventAdditions]);
+      setEventSubEvents((current) => normalizeEventSubEvents([...current, ...templateResult.subEventAdditions]).subEvents);
     }
 
     setCollateralItems(templateResult.items);
@@ -788,7 +791,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             collateralItems: templateResult.items,
             eventSubEvents:
               templateResult.subEventAdditions.length > 0
-                ? [...eventSubEventsRef.current, ...templateResult.subEventAdditions]
+                ? normalizeEventSubEvents([...eventSubEventsRef.current, ...templateResult.subEventAdditions]).subEvents
                 : eventSubEventsRef.current
           }),
           getCollateralPersistenceContext()

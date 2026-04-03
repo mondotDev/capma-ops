@@ -568,6 +568,18 @@ test("collateral store normalizes invalid sub-events and gives template-applied 
 test("known sub-event aliases resolve to one canonical legislative day reception sub-event", () => {
   assert.equal(getInitialLegDaySubEventIdByName("Wednesday Reception"), "leg-day-wednesday-reception");
   assert.equal(getInitialLegDaySubEventIdByName("Wed Night Reception"), "leg-day-wednesday-reception");
+  assert.equal(
+    initialEventSubEvents.filter((subEvent) => subEvent.name === "Wednesday Reception").length,
+    1
+  );
+  assert.equal(
+    initialEventSubEvents.some((subEvent) => subEvent.name === "Wed Night Reception"),
+    false
+  );
+
+  const templateSubEvents = getTemplateSubEventsForPack("legislative-day-core");
+  assert.equal(templateSubEvents.filter((subEvent) => subEvent.name === "Wednesday Reception").length, 1);
+  assert.equal(templateSubEvents.some((subEvent) => subEvent.name === "Wed Night Reception"), false);
 
   const normalized = normalizeEventSubEvents([
     { id: "leg-day-wednesday-reception", eventInstanceId: "legislative-day-2026", name: "Wednesday Reception", sortOrder: 120 },
