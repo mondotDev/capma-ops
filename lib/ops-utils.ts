@@ -1,4 +1,4 @@
-﻿import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
+import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
 
 import { LEGISLATIVE_DAY_2026_INSTANCE_ID } from "@/lib/event-instances";
 export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Canceled", "Complete"] as const;
@@ -12,7 +12,7 @@ export const WORKSTREAM_OPTIONS = [
   "Hands-On Workshops",
   "Development Summit",
   "Monday Mingle",
-  "Newsbrief",
+  "News Brief",
   "The Voice",
   "Membership Campaigns",
   "General Operations"
@@ -154,7 +154,7 @@ export type ActionLens =
 export type IssueStatus = "Planned" | "Open" | "Complete";
 export type IssueDefinition = {
   label: string;
-  workstream: "Newsbrief" | "The Voice";
+  workstream: "News Brief" | "The Voice";
   year: number;
   dueDate?: string;
 };
@@ -206,7 +206,7 @@ export type ActionItemValidation = {
   isValid: boolean;
 };
 
-const NEWSBRIEF_ISSUES = buildNewsbriefIssues([2026, 2027]);
+const NEWSBRIEF_ISSUES = buildNewsBriefIssues([2026, 2027]);
 const VOICE_ISSUES = buildVoiceIssues();
 export const ISSUE_DEFINITIONS = [...NEWSBRIEF_ISSUES, ...VOICE_ISSUES];
 export const ISSUE_OPTIONS = ISSUE_DEFINITIONS.map((issue) => issue.label);
@@ -384,7 +384,7 @@ export function isBlockedItem(item: ActionItemBlockedState) {
 }
 
 export function isPublicationWorkstream(workstream: string) {
-  return workstream === "Newsbrief" || workstream === "The Voice";
+  return workstream === "News Brief" || workstream === "The Voice";
 }
 
 export function isOwnerOption(value: string): value is OwnerOption {
@@ -912,7 +912,7 @@ export function getNextPlannedIssueForWorkstream(
 }
 
 export function getVisiblePublicationIssues(issues: IssueRecord[], currentDate = getCurrentDate()) {
-  const workstreams: IssueRecord["workstream"][] = ["Newsbrief", "The Voice"];
+  const workstreams: IssueRecord["workstream"][] = ["News Brief", "The Voice"];
   const visibleIssues: IssueRecord[] = [];
 
   for (const workstream of workstreams) {
@@ -1012,7 +1012,7 @@ export function getWorkstreamDateContext(
   issues: IssueRecord[],
   currentDate = getCurrentDate()
 ): WorkstreamDateContext | null {
-  if (workstream === "Newsbrief" || workstream === "The Voice") {
+  if (workstream === "News Brief" || workstream === "The Voice") {
     const openIssue = getOpenIssuesForWorkstream(issues, workstream)[0];
     const nextIssue = openIssue ?? getNextPlannedIssueForWorkstream(issues, workstream, currentDate);
 
@@ -1584,13 +1584,13 @@ function normalizeOperationalReason(reason?: string) {
 
 export { normalizeOperationalReason };
 
-function buildNewsbriefIssues(years: number[]) {
+function buildNewsBriefIssues(years: number[]) {
   return years.flatMap((year) =>
     NEWSBRIEF_MONTHS.map((month, monthIndex) => ({
-      label: `${month} ${year} Newsbrief`,
-      workstream: "Newsbrief" as const,
+      label: `${month} ${year} News Brief`,
+      workstream: "News Brief" as const,
       year,
-      dueDate: getNewsbriefDueDate(year, monthIndex)
+      dueDate: getNewsBriefDueDate(year, monthIndex)
     }))
   );
 }
@@ -1606,7 +1606,7 @@ function buildVoiceIssues() {
   );
 }
 
-function getNewsbriefDueDate(year: number, monthIndex: number) {
+function getNewsBriefDueDate(year: number, monthIndex: number) {
   const candidate = new Date(Date.UTC(year, monthIndex, 20));
   const day = candidate.getUTCDay();
 

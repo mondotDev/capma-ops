@@ -262,7 +262,7 @@ function isIssueRecord(value: unknown): value is IssueRecord {
 
   return (
     typeof issue.label === "string" &&
-    (issue.workstream === "Newsbrief" || issue.workstream === "The Voice") &&
+    (issue.workstream === "News Brief" || issue.workstream === "The Voice") &&
     typeof issue.year === "number" &&
     (issue.dueDate === undefined || typeof issue.dueDate === "string") &&
     (issue.status === "Planned" || issue.status === "Open" || issue.status === "Complete")

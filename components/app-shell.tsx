@@ -78,7 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [eventSubEvents, formState.eventInstanceId]
   );
   const canGenerateDeliverables =
-    formState.issue.length > 0 && (formState.workstream === "Newsbrief" || formState.workstream === "The Voice");
+    formState.issue.length > 0 && (formState.workstream === "News Brief" || formState.workstream === "The Voice");
   const showGlobalAddItem = pathname !== "/collateral";
 
   useEffect(() => {
@@ -369,7 +369,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="sidebar__footer">
           <button aria-label="Open settings" className="sidebar__settings" onClick={openSettings} type="button">
-            <span aria-hidden="true">⚙</span>
+            <span aria-hidden="true">Ã¢Å¡â„¢</span>
           </button>
         </div>
       </aside>

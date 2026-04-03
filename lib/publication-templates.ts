@@ -6,7 +6,7 @@ export type PublicationTemplateDefinition = {
 };
 
 export const PUBLICATION_TEMPLATES = {
-  Newsbrief: [
+  "News Brief": [
     { title: "New Members", defaultOwner: "Melissa" },
     { title: "Monthly CEO Briefing", defaultOwner: "Crystelle" },
     { title: "Upcoming Events", defaultOwner: "Melissa" },
@@ -43,7 +43,7 @@ export const PUBLICATION_TEMPLATES = {
 export type PublicationTemplateWorkstream = keyof typeof PUBLICATION_TEMPLATES;
 
 export function getPublicationTemplates(workstream: string) {
-  if (workstream === "Newsbrief" || workstream === "The Voice") {
+  if (workstream === "News Brief" || workstream === "The Voice") {
     return [...PUBLICATION_TEMPLATES[workstream]];
   }
 

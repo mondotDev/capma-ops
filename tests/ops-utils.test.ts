@@ -1690,7 +1690,7 @@ test("getWorkstreamDateContext uses schedules for event workstreams and issues f
       countdownText: "34 days out"
     });
 
-    assert.deepEqual(getWorkstreamDateContext("Newsbrief", schedules, issues), {
+    assert.deepEqual(getWorkstreamDateContext("News Brief", schedules, issues), {
       dateText: "Apr 20",
       countdownText: "23 days out"
     });
@@ -2102,16 +2102,16 @@ test("shared item shaping and validation helpers align create and edit flows", (
       issue: "",
       dueDate: "2026-03-30"
     },
-    "March 2026 Newsbrief"
+    "March 2026 News Brief"
   );
-  assert.equal(syncedIssue.workstream, "Newsbrief");
+  assert.equal(syncedIssue.workstream, "News Brief");
   assert.equal(syncedIssue.eventGroup, "");
   assert.equal(syncedIssue.dueDate, "2026-03-20");
 
   const validation = validateActionItemInput({
     type: "Deliverable",
     title: "Monthly CEO Briefing",
-    workstream: "Newsbrief",
+    workstream: "News Brief",
     issue: "",
     dueDate: "",
     owner: "Melissa",
@@ -2510,16 +2510,16 @@ test("firestore collateral persistence store maps a valid remote payload into no
 test("opening a publication issue keeps only one open issue per publication workstream", () => {
   const nextStatuses = setPublicationIssueStatus(
     {
-      "February 2026 Newsbrief": "Open",
-      "March 2026 Newsbrief": "Planned",
+      "February 2026 News Brief": "Open",
+      "March 2026 News Brief": "Planned",
       "Spring 2026 The Voice": "Open"
     },
-    "March 2026 Newsbrief",
+    "March 2026 News Brief",
     "Open"
   );
 
-  assert.equal(nextStatuses["February 2026 Newsbrief"], "Planned");
-  assert.equal(nextStatuses["March 2026 Newsbrief"], "Open");
+  assert.equal(nextStatuses["February 2026 News Brief"], "Planned");
+  assert.equal(nextStatuses["March 2026 News Brief"], "Open");
   assert.equal(nextStatuses["Spring 2026 The Voice"], "Open");
 });
 
@@ -2528,35 +2528,35 @@ test("completing a publication issue is blocked while active deliverables remain
     [
       createItem({
         id: "deliverable-1",
-        issue: "March 2026 Newsbrief",
-        workstream: "Newsbrief",
+        issue: "March 2026 News Brief",
+        workstream: "News Brief",
         type: "Deliverable",
         status: "In Progress",
         title: "Draft CEO message"
       }),
       createItem({
         id: "deliverable-2",
-        issue: "March 2026 Newsbrief",
-        workstream: "Newsbrief",
+        issue: "March 2026 News Brief",
+        workstream: "News Brief",
         type: "Deliverable",
         status: "Cut",
         title: "Optional sidebar"
       })
     ],
-    { "March 2026 Newsbrief": "Open" },
-    "March 2026 Newsbrief"
+    { "March 2026 News Brief": "Open" },
+    "March 2026 News Brief"
   );
 
   assert.equal(result.completed, false);
   assert.deepEqual(result.blockedDeliverables, ["Draft CEO message"]);
-  assert.equal(result.issueStatuses["March 2026 Newsbrief"], "Open");
+  assert.equal(result.issueStatuses["March 2026 News Brief"], "Open");
 });
 
 test("opening a publication issue still generates missing deliverables", () => {
-  const result = openPublicationIssue([], { "February 2026 Newsbrief": "Open" }, "March 2026 Newsbrief");
+  const result = openPublicationIssue([], { "February 2026 News Brief": "Open" }, "March 2026 News Brief");
 
-  assert.equal(result.issueStatuses["February 2026 Newsbrief"], "Planned");
-  assert.equal(result.issueStatuses["March 2026 Newsbrief"], "Open");
+  assert.equal(result.issueStatuses["February 2026 News Brief"], "Planned");
+  assert.equal(result.issueStatuses["March 2026 News Brief"], "Open");
   assert.equal(result.result.created > 0, true);
 });
 
@@ -2664,15 +2664,15 @@ test("dashboard read-side summary returns live counts and preview-ready aggregat
       noteEntries: productionNoteEntry ? [productionNoteEntry] : []
     }),
     createItem({
-      title: "Newsbrief draft",
-      workstream: "Newsbrief",
-      issue: "March 2026 Newsbrief",
+      title: "News Brief draft",
+      workstream: "News Brief",
+      issue: "March 2026 News Brief",
       dueDate: "2026-04-01",
       status: "In Progress"
     })
   ];
   const issues: IssueRecord[] = [
-    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+    { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
     { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
   ];
   const workstreamSchedules = getDefaultWorkstreamSchedules();
@@ -2771,21 +2771,21 @@ test("publication issue summary query returns progress-ready rows for visible pu
   const items = [
     createItem({
       title: "Draft CEO message",
-      workstream: "Newsbrief",
-      issue: "March 2026 Newsbrief",
+      workstream: "News Brief",
+      issue: "March 2026 News Brief",
       type: "Deliverable",
       status: "Complete"
     }),
     createItem({
       title: "Layout proof",
-      workstream: "Newsbrief",
-      issue: "March 2026 Newsbrief",
+      workstream: "News Brief",
+      issue: "March 2026 News Brief",
       type: "Deliverable",
       status: "In Progress"
     })
   ];
   const issues: IssueRecord[] = [
-    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+    { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
     { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
   ];
 
@@ -2799,7 +2799,7 @@ test("publication issue summary query returns progress-ready rows for visible pu
   );
 
   assert.equal(publicationRows.length, 2);
-  assert.equal(publicationRows[0]?.label, "March 2026 Newsbrief");
+  assert.equal(publicationRows[0]?.label, "March 2026 News Brief");
   assert.equal(publicationRows[0]?.completeCount, 1);
   assert.equal(publicationRows[0]?.totalCount, 2);
   assert.equal(publicationRows[0]?.progressPercent, 50);
@@ -2811,35 +2811,35 @@ test("publication issue workspace summary derives progress and actions for open 
     createItem({
       id: "deliverable-complete",
       title: "Draft CEO message",
-      workstream: "Newsbrief",
-      issue: "March 2026 Newsbrief",
+      workstream: "News Brief",
+      issue: "March 2026 News Brief",
       type: "Deliverable",
       status: "Complete"
     }),
     createItem({
       id: "deliverable-open",
       title: "Layout proof",
-      workstream: "Newsbrief",
-      issue: "March 2026 Newsbrief",
+      workstream: "News Brief",
+      issue: "March 2026 News Brief",
       type: "Deliverable",
       status: "In Progress"
     })
   ];
   const issues: IssueRecord[] = [
-    { label: "February 2026 Newsbrief", status: "Planned", dueDate: "2026-03-01", workstream: "Newsbrief", year: 2026 },
-    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+    { label: "February 2026 News Brief", status: "Planned", dueDate: "2026-03-01", workstream: "News Brief", year: 2026 },
+    { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
     { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
   ];
 
   const workspace = getPublicationIssueWorkspaceSummary({
-    activeIssue: "March 2026 Newsbrief",
+    activeIssue: "March 2026 News Brief",
     items,
     issues
   });
 
   assert.ok(workspace);
-  assert.equal(workspace?.issue.label, "March 2026 Newsbrief");
-  assert.equal(workspace?.workstream, "Newsbrief");
+  assert.equal(workspace?.issue.label, "March 2026 News Brief");
+  assert.equal(workspace?.workstream, "News Brief");
   assert.equal(workspace?.completeCount, 1);
   assert.equal(workspace?.totalCount, 2);
   assert.equal(workspace?.remainingCount, 1);
@@ -2849,7 +2849,7 @@ test("publication issue workspace summary derives progress and actions for open 
   assert.equal(workspace?.canCompleteIssue, false);
   assert.deepEqual(
     workspace?.visiblePublicationIssues.map((issue) => issue.label),
-    ["March 2026 Newsbrief", "Spring 2026 The Voice"]
+    ["March 2026 News Brief", "Spring 2026 The Voice"]
   );
 });
 
@@ -2858,7 +2858,7 @@ test("publication issue workspace summary flags missing due dates and supports p
     activeIssue: "Spring 2026 The Voice",
     items: [],
     issues: [
-      { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 },
+      { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
       { label: "Spring 2026 The Voice", status: "Planned", dueDate: "", workstream: "The Voice", year: 2026 }
     ]
   });
@@ -2875,9 +2875,9 @@ test("publication issue workspace summary flags missing due dates and supports p
 test("publication issue workspace summary ignores unknown issue filters", () => {
   const workspace = getPublicationIssueWorkspaceSummary({
     activeIssue: "Sponsor Follow Up",
-    items: [createItem({ issue: "March 2026 Newsbrief" })],
+    items: [createItem({ issue: "March 2026 News Brief" })],
     issues: [
-      { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 }
+      { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 }
     ]
   });
 
@@ -2985,10 +2985,10 @@ test("dashboard firebase projection parser accepts the minimal valid payload", (
     ],
     issues: [
       {
-        label: "April 2026 Newsbrief",
+        label: "April 2026 News Brief",
         status: "Open",
         dueDate: "2026-04-18",
-        workstream: "Newsbrief",
+        workstream: "News Brief",
         year: 2026
       }
     ],
@@ -3045,10 +3045,10 @@ test("dashboard firebase read slice maps a valid remote payload into dashboard s
       ],
       issues: [
         {
-          label: "April 2026 Newsbrief",
+          label: "April 2026 News Brief",
           status: "Open",
           dueDate: "2026-04-18",
-          workstream: "Newsbrief",
+          workstream: "News Brief",
           year: 2026
         }
       ],
@@ -3063,7 +3063,7 @@ test("dashboard firebase read slice maps a valid remote payload into dashboard s
   assert.equal(source?.items[0]?.id, "remote-1");
   assert.equal(source?.items[0]?.noteEntries.length, 0);
   assert.equal(source?.items[0]?.isBlocked, true);
-  assert.equal(source?.issues[0]?.label, "April 2026 Newsbrief");
+  assert.equal(source?.issues[0]?.label, "April 2026 News Brief");
 });
 
 test("dashboard session source selection stays fixed after startup", async () => {
@@ -3681,14 +3681,14 @@ test("action item workspace query returns selected item detail and scoped edit o
     createItem({
       id: "action-1",
       title: "Linked event action",
-      workstream: "Newsbrief",
-      issue: "March 2026 Newsbrief",
+      workstream: "News Brief",
+      issue: "March 2026 News Brief",
       eventInstanceId: "legislative-day-2026",
       subEventId: "leg-day-legislative-visits"
     })
   ];
   const issues: IssueRecord[] = [
-    { label: "March 2026 Newsbrief", status: "Open", dueDate: "2026-04-01", workstream: "Newsbrief", year: 2026 }
+    { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 }
   ];
   const state = createDefaultAppStateData();
 
@@ -3701,8 +3701,8 @@ test("action item workspace query returns selected item detail and scoped edit o
   });
 
   assert.equal(workspace.selectedItem?.id, "action-1");
-  assert.equal(workspace.selectedIssueRecord?.label, "March 2026 Newsbrief");
-  assert.equal(workspace.selectedItemIssueOptions.includes("March 2026 Newsbrief"), true);
+  assert.equal(workspace.selectedIssueRecord?.label, "March 2026 News Brief");
+  assert.equal(workspace.selectedItemIssueOptions.includes("March 2026 News Brief"), true);
   assert.equal(
     workspace.selectedItemSubEvents.some((subEvent) => subEvent.id === "leg-day-legislative-visits"),
     true
@@ -3939,9 +3939,9 @@ test("selected collateral workspace query returns selected item and sub-event op
 });
 
 test("bootstrap import maps publication rows onto canonical issue labels when due dates match", () => {
-  assert.equal(inferBootstrapIssue("Newsbrief", "2026-04-20"), "April 2026 Newsbrief");
+  assert.equal(inferBootstrapIssue("News Brief", "2026-04-20"), "April 2026 News Brief");
   assert.equal(inferBootstrapIssue("The Voice", "2026-04-23", "Summer Voice"), "Summer 2026 The Voice");
-  assert.equal(inferBootstrapIssue("Newsbrief", "2026-04-21"), "");
+  assert.equal(inferBootstrapIssue("News Brief", "2026-04-21"), "");
   assert.equal(inferBootstrapIssue("General Operations", "2026-04-20"), "");
 });
 

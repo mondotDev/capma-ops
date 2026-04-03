@@ -10,7 +10,7 @@ CAPMA Ops Hub is a local-first Next.js operations workspace for CAPMA planning, 
 - `eventGroup`: legacy transitional grouping field
 - `operationalBucket`: non-event operational classification
 - `eventInstanceId`: concrete event occurrence linkage for event-based work
-- `issue`: optional publication issue linkage for `Newsbrief` and `The Voice`
+- `issue`: optional publication issue linkage for `News Brief` and `The Voice`
 - `blockedBy`, `owner`, `status`, `dueDate`, `waitingOn`: core execution fields
 - `lastUpdated`: last meaningful in-app mutation timestamp
 

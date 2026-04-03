@@ -54,8 +54,8 @@ export function mapBootstrapLinkedEvent(value: string): BootstrapLinkedEventMapp
     return { workstream: "Monday Mingle" };
   }
 
-  if (value === "NewsBrief") {
-    return { workstream: "Newsbrief" };
+  if (value === "News Brief") {
+    return { workstream: "News Brief" };
   }
 
   if (value === "The Voice") {
@@ -98,7 +98,7 @@ export function mapBootstrapStatus(value: string): ActionItem["status"] | null {
 }
 
 export function inferBootstrapIssue(workstream: string, dueDate: string, title = "") {
-  if (workstream !== "Newsbrief" && workstream !== "The Voice") {
+  if (workstream !== "News Brief" && workstream !== "The Voice") {
     return "";
   }
 
