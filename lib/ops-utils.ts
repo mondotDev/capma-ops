@@ -1,7 +1,7 @@
 import type { ActionItem, ActionNoteAuthor, ActionNoteEntry } from "@/lib/sample-data";
 
 import { LEGISLATIVE_DAY_2026_INSTANCE_ID } from "@/lib/event-instances";
-export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Canceled", "Complete"] as const;
+export const STATUS_OPTIONS = ["Not Started", "In Progress", "Waiting", "Cut", "Declined", "Canceled", "Complete"] as const;
 export const WAITING_ON_SUGGESTIONS = ["Sponsor", "Vendor", "Assets", "Internal", "Crystelle", "External"] as const;
 export const WORKSTREAM_OPTIONS = [
   "Legislative Day",
@@ -284,7 +284,7 @@ export function isArchivedItem(item: Pick<ActionItem, "archivedAt">) {
 }
 
 export function isTerminalStatus(status: string) {
-  return status === "Complete" || status === "Cut" || status === "Canceled";
+  return status === "Complete" || status === "Cut" || status === "Declined" || status === "Canceled";
 }
 
 export function isDueSoonExcludedStatus(status: string) {

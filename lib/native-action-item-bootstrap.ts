@@ -90,6 +90,10 @@ export function mapBootstrapStatus(value: string): ActionItem["status"] | null {
     return "Canceled";
   }
 
+  if (value === "Declined") {
+    return "Declined";
+  }
+
   if (value === "Cut") {
     return "Cut";
   }

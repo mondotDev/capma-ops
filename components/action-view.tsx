@@ -1197,7 +1197,7 @@ export function ActionView({
                 onChange={(event) => setShowCompleted(event.target.checked)}
                 type="checkbox"
               />
-              <span>Show Completed</span>
+              <span>Show Closed</span>
             </label>
             <span className="muted action-toolbar__hint">Select rows to bulk-assign owner.</span>
           </div>
@@ -1977,7 +1977,7 @@ function buildActionContextChips(input: {
   const chips: ActionContextChip[] = [];
 
   if (input.hidesCompleted) {
-    chips.push({ kind: "completed", label: "Completed hidden" });
+    chips.push({ kind: "completed", label: "Closed hidden" });
   }
 
   if (input.hidesArchived) {
@@ -2138,7 +2138,7 @@ function getActionItemExitNotice(
       title: `${itemLabel} left the current lane`,
       copy: `It is now marked ${item.status.toLowerCase()}, and closed work is hidden from active execution views by default.`,
       action: "showCompleted",
-      actionLabel: "Show completed"
+      actionLabel: "Show closed"
     };
   }
 

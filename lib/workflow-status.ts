@@ -1,4 +1,4 @@
-export type NormalizedWorkflowStatus = "active" | "waiting" | "ready" | "complete" | "cut" | "canceled";
+export type NormalizedWorkflowStatus = "active" | "waiting" | "ready" | "complete" | "cut" | "declined" | "canceled";
 
 export function normalizeActionWorkflowStatus(status: string): NormalizedWorkflowStatus {
   if (status === "Waiting") {
@@ -13,6 +13,10 @@ export function normalizeActionWorkflowStatus(status: string): NormalizedWorkflo
     return "cut";
   }
 
+  if (status === "Declined") {
+    return "declined";
+  }
+
   if (status === "Canceled") {
     return "canceled";
   }
@@ -21,5 +25,5 @@ export function normalizeActionWorkflowStatus(status: string): NormalizedWorkflo
 }
 
 export function isNormalizedTerminalStatus(status: NormalizedWorkflowStatus) {
-  return status === "complete" || status === "cut" || status === "canceled";
+  return status === "complete" || status === "cut" || status === "declined" || status === "canceled";
 }

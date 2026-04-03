@@ -288,6 +288,7 @@ test("isItemDueSoon excludes blocked terminal dates and includes next three days
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-04-02" })), false);
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-27" })), false);
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-30", status: "Complete" })), false);
+    assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-30", status: "Declined" })), false);
     assert.equal(isItemDueSoon(createItem({ dueDate: "2026-03-30", status: "Canceled" })), false);
   });
 });
@@ -296,6 +297,7 @@ test("isBlockedItem accepts either blocked flag or blockedBy text", () => {
   assert.equal(isBlockedItem(createItem({ isBlocked: true })), true);
   assert.equal(isBlockedItem(createItem({ blockedBy: "Vendor approval" })), true);
   assert.equal(isBlockedItem(createItem({ isBlocked: true, status: "Complete" })), false);
+  assert.equal(isBlockedItem(createItem({ isBlocked: true, status: "Declined" })), false);
   assert.equal(isBlockedItem(createItem({ isBlocked: true, status: "Canceled" })), false);
   assert.equal(isBlockedItem({ ...createItem(), blocked: true }), true);
 });
@@ -306,6 +308,7 @@ test("getDailyLoad groups only active due-dated items within the requested windo
       [
         createItem({ id: "a", dueDate: "2026-03-28" }),
         createItem({ id: "b", dueDate: "2026-03-28", status: "Complete" }),
+        createItem({ id: "b1", dueDate: "2026-03-28", status: "Declined" }),
         createItem({ id: "b2", dueDate: "2026-03-28", status: "Canceled" }),
         createItem({ id: "c", dueDate: "2026-03-29" }),
         createItem({ id: "d", dueDate: "" }),
@@ -343,6 +346,7 @@ test("getWorkstreamSummary returns workload rollups by workstream", () => {
 
 test("workflow status normalization keeps module-specific statuses mappable", () => {
   assert.equal(normalizeActionWorkflowStatus("Waiting"), "waiting");
+  assert.equal(normalizeActionWorkflowStatus("Declined"), "declined");
   assert.equal(normalizeActionWorkflowStatus("Canceled"), "canceled");
   assert.equal(normalizeCollateralWorkflowStatus("Ready for Print"), "ready");
   assert.equal(normalizeCollateralWorkflowStatus("Cut"), "cut");
@@ -2042,13 +2046,15 @@ test("waiting filter excludes blocked items while keeping true waiting items", (
   assert.equal(matchesActionFilter(createItem({ isBlocked: true }), "waiting"), false);
 });
 
-test("terminal helpers and action visibility treat canceled like complete and cut", () => {
+test("terminal helpers and action visibility treat declined and canceled like complete and cut", () => {
   assert.equal(isTerminalStatus("Complete"), true);
   assert.equal(isTerminalStatus("Cut"), true);
+  assert.equal(isTerminalStatus("Declined"), true);
   assert.equal(isTerminalStatus("Canceled"), true);
 
   const items = [
     createItem({ id: "active-item" }),
+    createItem({ id: "declined-item", status: "Declined" }),
     createItem({ id: "canceled-item", status: "Canceled" })
   ];
 
@@ -2074,7 +2080,7 @@ test("terminal helpers and action visibility treat canceled like complete and cu
   });
 
   assert.deepEqual(hiddenTerminalItems.map((item) => item.id), ["active-item"]);
-  assert.deepEqual(shownTerminalItems.map((item) => item.id), ["active-item", "canceled-item"]);
+  assert.deepEqual(shownTerminalItems.map((item) => item.id), ["active-item", "declined-item", "canceled-item"]);
 });
 
 test("shared item shaping and validation helpers align create and edit flows", () => {
