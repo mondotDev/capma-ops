@@ -661,6 +661,16 @@ textarea {
   gap: 8px;
 }
 
+.collateral-event-setup__header {
+  margin-bottom: 12px;
+}
+
+.collateral-event-setup__meta {
+  color: #6b7785;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .field__hint {
   margin-top: 6px;
   font-size: 12px;

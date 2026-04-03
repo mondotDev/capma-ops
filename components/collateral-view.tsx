@@ -39,6 +39,9 @@ import {
   type EventDateMode
 } from "@/lib/event-instances";
 import {
+  SCHEDULED_WORKSTREAM_OPTIONS,
+  type WorkstreamSchedule,
+  type WorkstreamScheduleMode,
   createActionNoteEntry,
   formatShortDate,
   getOwnerOptions,
@@ -82,7 +85,7 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
-  const { defaultOwnerForNewItems } = useAppStateValues();
+  const { defaultOwnerForNewItems, workstreamSchedules } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -91,6 +94,7 @@ export function CollateralView({
     ensureEventInstanceUnassignedSubEvent,
     setActiveEventInstanceId,
     setCollateralProfile,
+    setWorkstreamSchedules,
     updateCollateralItem
   } = useAppActions();
   const searchParams = useSearchParams();
@@ -136,6 +140,10 @@ export function CollateralView({
   const isSelectedCreateEventProgramSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
   const isSelectedEventProgramSupported = workspaceBundle.isSelectedEventProgramSupported;
   const activeProfile = workspaceBundle.activeProfile;
+  const scheduledWorkstream = getScheduledWorkstreamForEventProgram(currentEventProgram?.name ?? "");
+  const currentProgramSchedule = scheduledWorkstream
+    ? workstreamSchedules.find((entry) => entry.workstream === scheduledWorkstream) ?? null
+    : null;
 
   useEffect(() => {
     setIsActionsMenuOpen(false);
@@ -555,6 +563,66 @@ export function CollateralView({
     setShowArchived(false);
   }
 
+  function updateWorkstreamSchedule(
+    workstream: WorkstreamSchedule["workstream"],
+    updater: (schedule: WorkstreamSchedule) => WorkstreamSchedule
+  ) {
+    setWorkstreamSchedules(
+      workstreamSchedules.map((schedule) => (schedule.workstream === workstream ? updater(schedule) : schedule))
+    );
+  }
+
+  function handleWorkstreamScheduleModeChange(
+    workstream: WorkstreamSchedule["workstream"],
+    mode: WorkstreamScheduleMode
+  ) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      mode,
+      ...(mode === "multiple" && (!schedule.dates || schedule.dates.length === 0) ? { dates: [""] } : {})
+    }));
+  }
+
+  function handleWorkstreamScheduleFieldChange(
+    workstream: WorkstreamSchedule["workstream"],
+    field: "singleDate" | "startDate" | "endDate",
+    value: string
+  ) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      [field]: value
+    }));
+  }
+
+  function handleWorkstreamScheduleDateChange(
+    workstream: WorkstreamSchedule["workstream"],
+    index: number,
+    value: string
+  ) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      dates: (schedule.dates ?? []).map((date, dateIndex) => (dateIndex === index ? value : date))
+    }));
+  }
+
+  function handleAddWorkstreamScheduleDate(workstream: WorkstreamSchedule["workstream"]) {
+    updateWorkstreamSchedule(workstream, (schedule) => ({
+      ...schedule,
+      dates: [...(schedule.dates ?? []), ""]
+    }));
+  }
+
+  function handleRemoveWorkstreamScheduleDate(workstream: WorkstreamSchedule["workstream"], index: number) {
+    updateWorkstreamSchedule(workstream, (schedule) => {
+      const nextDates = (schedule.dates ?? []).filter((_, dateIndex) => dateIndex !== index);
+
+      return {
+        ...schedule,
+        dates: nextDates.length > 0 ? nextDates : [""]
+      };
+    });
+  }
+
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
     if (nextEventInstanceId === resolvedActiveEventInstanceId) {
       return;
@@ -711,6 +779,140 @@ export function CollateralView({
               </button>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {selectedEventInstance && currentProgramSchedule ? (
+        <div className="card card--secondary collateral-event-setup">
+          <div className="collateral-event-setup__header">
+            <div>
+              <div className="card__title">EVENT SETUP</div>
+              <div className="collateral-event-setup__meta">
+                Schedule rules for {currentProgramSchedule.workstream} now live with the active event instance instead of global settings.
+              </div>
+            </div>
+          </div>
+          <div className="schedule-settings">
+            <div className="schedule-settings__row">
+              <div className="schedule-settings__heading">
+                <div className="schedule-settings__name">{currentProgramSchedule.workstream}</div>
+              </div>
+
+              <div className="schedule-settings__controls">
+                <div className="field">
+                  <label htmlFor={`collateral-schedule-mode-${currentProgramSchedule.workstream}`}>Schedule Type</label>
+                  <select
+                    className="field-control"
+                    id={`collateral-schedule-mode-${currentProgramSchedule.workstream}`}
+                    onChange={(event) =>
+                      handleWorkstreamScheduleModeChange(
+                        currentProgramSchedule.workstream,
+                        event.target.value as WorkstreamScheduleMode
+                      )
+                    }
+                    value={currentProgramSchedule.mode}
+                  >
+                    <option value="none">None</option>
+                    <option value="single">Single day</option>
+                    <option value="range">Date range</option>
+                    <option value="multiple">Multiple dates</option>
+                  </select>
+                </div>
+
+                {currentProgramSchedule.mode === "single" ? (
+                  <div className="field">
+                    <label htmlFor={`collateral-schedule-single-${currentProgramSchedule.workstream}`}>Date</label>
+                    <input
+                      className="field-control"
+                      id={`collateral-schedule-single-${currentProgramSchedule.workstream}`}
+                      onChange={(event) =>
+                        handleWorkstreamScheduleFieldChange(
+                          currentProgramSchedule.workstream,
+                          "singleDate",
+                          event.target.value
+                        )
+                      }
+                      type="date"
+                      value={currentProgramSchedule.singleDate ?? ""}
+                    />
+                  </div>
+                ) : null}
+
+                {currentProgramSchedule.mode === "range" ? (
+                  <div className="schedule-settings__range">
+                    <div className="field">
+                      <label htmlFor={`collateral-schedule-start-${currentProgramSchedule.workstream}`}>Start Date</label>
+                      <input
+                        className="field-control"
+                        id={`collateral-schedule-start-${currentProgramSchedule.workstream}`}
+                        onChange={(event) =>
+                          handleWorkstreamScheduleFieldChange(
+                            currentProgramSchedule.workstream,
+                            "startDate",
+                            event.target.value
+                          )
+                        }
+                        type="date"
+                        value={currentProgramSchedule.startDate ?? ""}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`collateral-schedule-end-${currentProgramSchedule.workstream}`}>End Date</label>
+                      <input
+                        className="field-control"
+                        id={`collateral-schedule-end-${currentProgramSchedule.workstream}`}
+                        onChange={(event) =>
+                          handleWorkstreamScheduleFieldChange(
+                            currentProgramSchedule.workstream,
+                            "endDate",
+                            event.target.value
+                          )
+                        }
+                        type="date"
+                        value={currentProgramSchedule.endDate ?? ""}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {currentProgramSchedule.mode === "multiple" ? (
+                  <div className="schedule-settings__multiple">
+                    {(currentProgramSchedule.dates ?? [""]).map((date, index) => (
+                      <div className="schedule-settings__date-row" key={`${currentProgramSchedule.workstream}-${index}`}>
+                        <input
+                          aria-label={`${currentProgramSchedule.workstream} date ${index + 1}`}
+                          className="field-control"
+                          onChange={(event) =>
+                            handleWorkstreamScheduleDateChange(
+                              currentProgramSchedule.workstream,
+                              index,
+                              event.target.value
+                            )
+                          }
+                          type="date"
+                          value={date}
+                        />
+                        <button
+                          className="button-link button-link--inline-secondary"
+                          onClick={() => handleRemoveWorkstreamScheduleDate(currentProgramSchedule.workstream, index)}
+                          type="button"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => handleAddWorkstreamScheduleDate(currentProgramSchedule.workstream)}
+                      type="button"
+                    >
+                      Add Date
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -1586,4 +1788,8 @@ function getCollateralReadinessClassName(tone: "warning" | "attention") {
   return tone === "warning"
     ? "collateral-readiness__pill collateral-readiness__pill--warning"
     : "collateral-readiness__pill collateral-readiness__pill--attention";
+}
+
+function getScheduledWorkstreamForEventProgram(name: string): WorkstreamSchedule["workstream"] | null {
+  return SCHEDULED_WORKSTREAM_OPTIONS.find((option) => option === name) ?? null;
 }
