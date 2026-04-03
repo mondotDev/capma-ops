@@ -1888,6 +1888,12 @@ th {
   margin-right: auto;
 }
 
+.group-header-button__context {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 tr[data-clickable="true"] {
   cursor: pointer;
 }

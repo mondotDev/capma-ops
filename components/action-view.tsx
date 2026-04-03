@@ -812,18 +812,18 @@ export function ActionView({
                 <div className="card__title">DEADLINE COLLISION REVIEW</div>
                 <div className="collision-review__title">
                   {collisionReview.selectedDate
-                    ? `Reviewing ${formatShortDate(collisionReview.selectedDate.date)}`
+                    ? `Reviewing ${getCollisionDateLabel(collisionReview.selectedDate.date)}`
                     : `Next ${collisionReview.reviewWindowDays} days`}
                 </div>
                 <div className="collision-review__meta">
                   {collisionReview.selectedDate
-                    ? `${collisionReview.selectedDate.totalCount} ${collisionReview.selectedDate.totalCount === 1 ? "item" : "items"} due`
-                    : `${collisionReview.totalDueSoonRows} due-dated execution items in review window`}
+                    ? `${collisionReview.selectedDate.totalCount} ${collisionReview.selectedDate.totalCount === 1 ? "visible item is" : "visible items are"} due on this date. The table below is grouped by due date so you can review the full cluster together.`
+                    : `${collisionReview.totalDueSoonRows} due-dated execution items are in the current review window. Dates below count as collisions when more than one visible item lands on the same day.`}
                 </div>
               </div>
               {(activeDueDate || activeLens === "reviewCollisions") ? (
                 <button className="button-link button-link--inline-secondary" onClick={clearCollisionReview} type="button">
-                  Back to all work
+                  {collisionReview.selectedDate ? "Back to collision review" : "Back to all work"}
                 </button>
               ) : null}
             </div>
@@ -857,12 +857,12 @@ export function ActionView({
                     type="button"
                   >
                     <div className="collision-review__date-top">
-                      <strong>{formatShortDate(entry.date)}</strong>
+                      <strong>{getCollisionDateLabel(entry.date)}</strong>
                       <span>{entry.totalCount} due</span>
                     </div>
                     <div className="collision-review__date-meta">
                       {entry.ownerCollisionCount > 0
-                        ? `${entry.ownerCollisionCount} ${entry.ownerCollisionCount === 1 ? "owner" : "owners"} carrying multiple items`
+                        ? `${entry.ownerCollisionCount} ${entry.ownerCollisionCount === 1 ? "owner has" : "owners have"} multiple items due on this date`
                         : "No owner collisions yet"}
                     </div>
                     <div className="collision-review__owners">
@@ -875,7 +875,9 @@ export function ActionView({
                   </button>
                 ))
               ) : (
-                <div className="muted">No upcoming collisions in the current view.</div>
+                <div className="muted">
+                  No due-date clusters in the current view. Visible work is either spread across dates or lands one item per day.
+                </div>
               )}
             </div>
           </div>
@@ -1115,7 +1117,10 @@ export function ActionView({
                             type="button"
                           >
                             <span>{isCollapsed ? "Show" : "Hide"}</span>
-                            <strong>{activeLens === "reviewCollisions" ? formatShortDate(group.label) : group.label}</strong>
+                            <strong>{activeLens === "reviewCollisions" ? getCollisionDateLabel(group.label) : group.label}</strong>
+                            {activeLens === "reviewCollisions" ? (
+                              <span className="group-header-button__context">Due date group</span>
+                            ) : null}
                             <span>{group.items.length} {group.items.length === 1 ? "item" : "items"}</span>
                           </button>
                         </td>
@@ -1767,6 +1772,42 @@ function getActionEmptyStateCopy(chips: ActionContextChip[], activeLens: ActionL
 
 function getLensLabel(lens: ActionLens) {
   return LENS_OPTIONS.find((option) => option.value === lens)?.label ?? "All Work";
+}
+
+function getCollisionDateLabel(dateValue: string) {
+  if (!dateValue) {
+    return "No Due Date";
+  }
+
+  const targetDate = new Date(`${dateValue}T12:00:00`);
+
+  if (Number.isNaN(targetDate.getTime())) {
+    return formatShortDate(dateValue);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const targetStart = new Date(targetDate);
+  targetStart.setHours(0, 0, 0, 0);
+  const dayDelta = Math.round((targetStart.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (dayDelta < 0) {
+    return `Overdue · ${formatShortDate(dateValue)}`;
+  }
+
+  if (dayDelta === 0) {
+    return `Today · ${formatShortDate(dateValue)}`;
+  }
+
+  if (dayDelta === 1) {
+    return `Tomorrow · ${formatShortDate(dateValue)}`;
+  }
+
+  if (dayDelta <= 7) {
+    return `This Week · ${formatShortDate(dateValue)}`;
+  }
+
+  return formatShortDate(dateValue);
 }
 
 function getActionContextMetaCopy(activeLens: ActionLens, hasActiveExecutionContext: boolean) {
