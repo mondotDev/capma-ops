@@ -11,12 +11,9 @@ import {
   type GenerateDeliverablesResult
 } from "@/lib/publication-issue-actions";
 import {
-  applyBulkActionItemUpdates,
-  deleteActionItemById,
-  prependActionItem,
-  updateActionItemById,
   type NewActionItemInput
 } from "@/lib/action-item-mutations";
+import { localNativeActionItemStore } from "@/lib/action-item-store";
 import {
   initialLegDayCollateralProfile,
   normalizeCollateralUpdateType,
@@ -313,7 +310,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const addItem = useCallback((item: NewActionItem) => {
     enablePersistence();
     setItems((current) =>
-      prependActionItem(current, item, {
+      localNativeActionItemStore.create(current, item, {
         eventInstances: eventInstancesRef.current,
         eventPrograms: eventTypesRef.current,
         eventSubEvents: eventSubEventsRef.current
@@ -324,7 +321,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const archiveItem = useCallback((id: string) => {
     enablePersistence();
     setItems((current) =>
-      updateActionItemById(current, id, { archivedAt: new Date().toISOString().slice(0, 10) }, {
+      localNativeActionItemStore.archive(current, id, {
         eventInstances: eventInstancesRef.current,
         eventPrograms: eventTypesRef.current,
         eventSubEvents: eventSubEventsRef.current
@@ -334,7 +331,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const deleteItem = useCallback((id: string) => {
     enablePersistence();
-    setItems((current) => deleteActionItemById(current, id));
+    setItems((current) => localNativeActionItemStore.delete(current, id));
   }, [enablePersistence]);
 
   const addCollateralItem = useCallback((item: Omit<CollateralItem, "id" | "lastUpdated">) => {
@@ -572,7 +569,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const restoreItem = useCallback((id: string) => {
     enablePersistence();
     setItems((current) =>
-      updateActionItemById(current, id, { archivedAt: undefined }, {
+      localNativeActionItemStore.restore(current, id, {
         eventInstances: eventInstancesRef.current,
         eventPrograms: eventTypesRef.current,
         eventSubEvents: eventSubEventsRef.current
@@ -583,7 +580,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const bulkUpdateItems = useCallback((ids: string[], updates: Partial<ActionItem>) => {
     enablePersistence();
     setItems((current) =>
-      applyBulkActionItemUpdates(current, ids, updates, {
+      localNativeActionItemStore.bulkUpdate(current, ids, updates, {
         eventInstances: eventInstancesRef.current,
         eventPrograms: eventTypesRef.current,
         eventSubEvents: eventSubEventsRef.current
@@ -636,7 +633,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const updateItem = useCallback((id: string, updates: Partial<ActionItem>) => {
     enablePersistence();
     setItems((current) =>
-      updateActionItemById(current, id, updates, {
+      localNativeActionItemStore.update(current, id, updates, {
         eventInstances: eventInstancesRef.current,
         eventPrograms: eventTypesRef.current,
         eventSubEvents: eventSubEventsRef.current

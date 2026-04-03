@@ -8,6 +8,7 @@ import {
   normalizeActionItems,
   updateActionItemById
 } from "../lib/action-item-mutations";
+import { localNativeActionItemStore } from "../lib/action-item-store";
 import {
   ACTION_VIEW_COLLATERAL_STATUS_OPTIONS,
   isActionViewCollateralStatus,
@@ -1885,6 +1886,21 @@ test("archive and restore remain meaningful native action item mutations", () =>
   const restored = applyActionItemUpdates(archived, { archivedAt: undefined });
   assert.equal(restored.archivedAt, undefined);
   assert.match(restored.lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("local native action item store preserves identity on no-op updates and routes lifecycle changes through shared semantics", () => {
+  const items = normalizeActionItems([
+    createItem({ id: "item-1", title: "Keep same title", lastUpdated: "2026-03-28" }),
+    createItem({ id: "item-2", title: "Second item", lastUpdated: "2026-03-28" })
+  ]);
+
+  const unchanged = localNativeActionItemStore.update(items, "item-1", { title: "Keep same title" });
+  assert.equal(unchanged, items);
+
+  const archived = localNativeActionItemStore.archive(items, "item-1");
+  assert.notEqual(archived, items);
+  assert.equal(archived[0].archivedAt !== undefined, true);
+  assert.match(archived[0].lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test("opening a publication issue keeps only one open issue per publication workstream", () => {

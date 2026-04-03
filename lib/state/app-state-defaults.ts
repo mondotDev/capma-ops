@@ -9,9 +9,7 @@ import {
   initialEventSubEvents,
   initialEventTypes
 } from "@/lib/event-instances";
-import {
-  normalizeActionItems
-} from "@/lib/action-item-mutations";
+import { localNativeActionItemStore } from "@/lib/action-item-store";
 import { initialActionItems } from "@/lib/sample-data";
 import {
   DEFAULT_OWNER,
@@ -20,7 +18,7 @@ import {
 import type { AppStateData, CollateralProfilesByInstance } from "@/lib/state/app-state-types";
 
 export function createDefaultActionItems() {
-  return normalizeActionItems(initialActionItems, {
+  return localNativeActionItemStore.normalizeLoaded(initialActionItems, {
     eventPrograms: initialEventPrograms,
     eventInstances: initialEventInstances,
     eventSubEvents: initialEventSubEvents
