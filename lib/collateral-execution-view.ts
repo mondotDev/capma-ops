@@ -1,5 +1,6 @@
 import {
   isActionViewCollateralStatus,
+  isCollateralArchived,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
@@ -91,6 +92,7 @@ export function getVisibleCollateralExecutionRows(input: {
     .filter(
       (item) =>
         item.eventInstanceId === resolvedActiveEventInstanceId &&
+        !isCollateralArchived(item) &&
         isActionViewCollateralStatus(item.status)
     )
     .map<CollateralExecutionRow>((item) => ({

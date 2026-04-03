@@ -6,6 +6,10 @@ import type { CollateralProfileDeadlineFilter } from "@/components/collateral-pr
 import type { CollateralSummaryFilter } from "@/components/collateral-summary-strip";
 import type { CollateralItem } from "@/lib/collateral-data";
 import {
+  getCollateralCreateTraceId,
+  traceCollateralCreate
+} from "@/lib/collateral-create-trace";
+import {
   getDashboardSessionReadSelection,
   type DashboardSessionReadSelection
 } from "@/lib/firebase-dashboard-source";
@@ -283,6 +287,60 @@ export function useCollateralWorkspaceReadModel(input: {
     () => getSelectedCollateralItemWorkspace(collateralDetailSource),
     [collateralDetailSource]
   );
+
+  useEffect(() => {
+    const traceId = getCollateralCreateTraceId();
+
+    if (!traceId) {
+      return;
+    }
+
+    const workspaceItem = workspaceSource.collateralItems.find((item) => item.id === traceId) ?? null;
+    const visibleItem = collateralListView.visibleInstanceItems.find((item) => item.id === traceId) ?? null;
+    const groupedPresence = collateralListView.groupedItems.find(([, items]) =>
+      items.some((item) => item.id === traceId)
+    );
+
+    traceCollateralCreate("read-model-workspace", {
+      traceId,
+      activeEventInstanceId,
+      resolvedActiveEventInstanceId: workspaceBundle.resolvedActiveEventInstanceId,
+      activeSummaryFilter: input.activeSummaryFilter,
+      activeProfileDeadlineFilter: input.activeProfileDeadlineFilter,
+      showArchived: input.showArchived,
+      inWorkspaceSource: workspaceItem
+        ? {
+            id: workspaceItem.id,
+            eventInstanceId: workspaceItem.eventInstanceId,
+            subEventId: workspaceItem.subEventId,
+            status: workspaceItem.status,
+            archivedAt: workspaceItem.archivedAt
+          }
+        : null,
+      inVisibleItems: visibleItem
+        ? {
+            id: visibleItem.id,
+            eventInstanceId: visibleItem.eventInstanceId,
+            subEventId: visibleItem.subEventId,
+            status: visibleItem.status,
+            archivedAt: visibleItem.archivedAt
+          }
+        : null,
+      groupedUnder: groupedPresence?.[0] ?? null,
+      groupedIds: collateralListView.groupedItems.flatMap(([, items]) => items.map((item) => item.id)),
+      selectedId: input.selectedId
+    });
+  }, [
+    activeEventInstanceId,
+    collateralListView.groupedItems,
+    collateralListView.visibleInstanceItems,
+    input.activeProfileDeadlineFilter,
+    input.activeSummaryFilter,
+    input.selectedId,
+    input.showArchived,
+    workspaceBundle.resolvedActiveEventInstanceId,
+    workspaceSource.collateralItems
+  ]);
 
   return {
     workspaceBundle,

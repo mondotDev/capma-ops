@@ -24,6 +24,7 @@ import {
   type CollateralItem,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
+import { traceCollateralCreate } from "@/lib/collateral-create-trace";
 import { localCollateralStore } from "@/lib/collateral-store";
 import {
   getDefaultTemplatePackForEventType,
@@ -485,10 +486,43 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const addCollateralItem = useCallback((item: Omit<CollateralItem, "archivedAt" | "id" | "lastUpdated">) => {
     enablePersistence();
-    const nextItem = localCollateralStore.create([], item, getCollateralContext())[0];
-    setCollateralItems((current) => [nextItem, ...current]);
+    let nextItemId = "";
 
-    return nextItem.id;
+    setCollateralItems((current) => {
+      const nextItems = localCollateralStore.create(current, item, getCollateralContext());
+      const createdItem = nextItems[0] ?? null;
+      nextItemId = createdItem?.id ?? "";
+
+      traceCollateralCreate("app-state-create", {
+        requested: {
+          eventInstanceId: item.eventInstanceId,
+          subEventId: item.subEventId,
+          status: item.status
+        },
+        created: createdItem
+          ? {
+              id: createdItem.id,
+              eventInstanceId: createdItem.eventInstanceId,
+              subEventId: createdItem.subEventId,
+              status: createdItem.status,
+              archivedAt: createdItem.archivedAt
+            }
+          : null,
+        activeEventInstanceId: activeEventInstanceIdRef.current,
+        canonicalIdsForActiveInstance: nextItems
+          .filter((entry) => entry.eventInstanceId === activeEventInstanceIdRef.current)
+          .map((entry) => entry.id),
+        createdVisibleInActiveInstance:
+          createdItem !== null &&
+          nextItems.some(
+            (entry) => entry.id === createdItem.id && entry.eventInstanceId === activeEventInstanceIdRef.current
+          )
+      });
+
+      return nextItems;
+    });
+
+    return nextItemId;
   }, [enablePersistence, getCollateralContext]);
 
   const ensureEventInstanceUnassignedSubEvent = useCallback((instanceId: string) => {

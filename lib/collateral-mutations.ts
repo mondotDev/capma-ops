@@ -6,6 +6,7 @@ import {
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
 import type { CollateralTemplateItem, CollateralTemplateSubEvent } from "@/lib/collateral-templates";
+import { traceCollateralCreate } from "@/lib/collateral-create-trace";
 import { getUnassignedSubEventId, type EventInstance, type EventSubEvent } from "@/lib/event-instances";
 import { DEFAULT_OWNER, normalizeNoteEntries } from "@/lib/ops-utils";
 
@@ -42,6 +43,21 @@ export function createCollateralItem(
     },
     context
   );
+
+  traceCollateralCreate("seam-create", {
+    input: {
+      eventInstanceId: input.eventInstanceId,
+      subEventId: input.subEventId,
+      status: input.status
+    },
+    normalized: {
+      id: normalized.id,
+      eventInstanceId: normalized.eventInstanceId,
+      subEventId: normalized.subEventId,
+      status: normalized.status,
+      archivedAt: normalized.archivedAt
+    }
+  });
 
   return normalized;
 }
@@ -279,7 +295,7 @@ function resolveEventInstanceId(
     return trimmed;
   }
 
-  return eventInstances.some((instance) => instance.id === trimmed) ? trimmed : eventInstances[0]?.id ?? trimmed;
+  return eventInstances.some((instance) => instance.id === trimmed) ? trimmed : trimmed;
 }
 
 function normalizeSubEventId(

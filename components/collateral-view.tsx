@@ -27,6 +27,11 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem,
 } from "@/lib/collateral-data";
+import {
+  getCollateralCreateTraceId,
+  setCollateralCreateTraceId,
+  traceCollateralCreate
+} from "@/lib/collateral-create-trace";
 import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
 import {
   createSuggestedEventInstanceName,
@@ -260,6 +265,50 @@ export function CollateralView({
     setIsEditingTitle(false);
     setTitleDraft(selectedItem?.itemName ?? "");
   }, [selectedItem?.id, selectedItem?.itemName]);
+
+  useEffect(() => {
+    const traceId = getCollateralCreateTraceId();
+
+    if (!traceId) {
+      return;
+    }
+
+    const renderedItem = groupedItems.flatMap(([, items]) => items).find((item) => item.id === traceId) ?? null;
+
+    traceCollateralCreate("collateral-view-render", {
+      traceId,
+      activeEventInstanceId: resolvedActiveEventInstanceId,
+      activeSummaryFilter,
+      activeProfileDeadlineFilter,
+      showArchived,
+      selectedId,
+      instanceItemIds: instanceItems.map((item) => item.id),
+      visibleItemIds: visibleInstanceItems.map((item) => item.id),
+      groupedSections: groupedItems.map(([subEvent, items]) => ({
+        subEvent,
+        itemIds: items.map((item) => item.id)
+      })),
+      renderedItem: renderedItem
+        ? {
+            id: renderedItem.id,
+            eventInstanceId: renderedItem.eventInstanceId,
+            subEventId: renderedItem.subEventId,
+            status: renderedItem.status,
+            archivedAt: renderedItem.archivedAt
+          }
+        : null
+    });
+  }, [
+    activeProfileDeadlineFilter,
+    activeSummaryFilter,
+    groupedItems,
+    instanceItems,
+    resolvedActiveEventInstanceId,
+    selectedId,
+    showArchived,
+    visibleInstanceItems
+  ]);
+
   const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
   const pendingTemplateInstance =
     pendingTemplateInstanceId
@@ -275,12 +324,19 @@ export function CollateralView({
   function handleAddCollateralItem() {
     if (draftCollateralItem && draftCollateralItem.eventInstanceId === resolvedActiveEventInstanceId) {
       setSelectedId(draftCollateralItem.id);
+      traceCollateralCreate("draft-reselected", {
+        id: draftCollateralItem.id,
+        eventInstanceId: draftCollateralItem.eventInstanceId,
+        subEventId: draftCollateralItem.subEventId,
+        status: draftCollateralItem.status,
+        archivedAt: draftCollateralItem.archivedAt,
+        activeEventInstanceId: resolvedActiveEventInstanceId
+      });
       return;
     }
 
-    const fallbackSubEventId =
-      instanceSubEvents[0]?.id ?? ensureEventInstanceUnassignedSubEvent(resolvedActiveEventInstanceId);
-    setDraftCollateralItem({
+    const fallbackSubEventId = ensureEventInstanceUnassignedSubEvent(resolvedActiveEventInstanceId);
+    const nextDraft = {
       id: DRAFT_COLLATERAL_ID,
       eventInstanceId: resolvedActiveEventInstanceId,
       subEventId: fallbackSubEventId,
@@ -294,8 +350,21 @@ export function CollateralView({
       updateType: "",
       noteEntries: [],
       lastUpdated: new Date().toISOString().slice(0, 10)
-    });
+    } satisfies CollateralItem;
+    setDraftCollateralItem(nextDraft);
     setSelectedId(DRAFT_COLLATERAL_ID);
+    setCollateralCreateTraceId(null);
+    traceCollateralCreate("draft-created", {
+      id: nextDraft.id,
+      eventInstanceId: nextDraft.eventInstanceId,
+      subEventId: nextDraft.subEventId,
+      status: nextDraft.status,
+      archivedAt: undefined,
+      activeEventInstanceId: resolvedActiveEventInstanceId,
+      activeSummaryFilter,
+      activeProfileDeadlineFilter,
+      showArchived
+    });
   }
 
   function toggleSummaryFilter(nextFilter: CollateralSummaryFilter) {
@@ -434,6 +503,18 @@ export function CollateralView({
       return;
     }
 
+    traceCollateralCreate("save-requested", {
+      id: draftCollateralItem.id,
+      eventInstanceId: draftCollateralItem.eventInstanceId,
+      subEventId: draftCollateralItem.subEventId,
+      status: draftCollateralItem.status,
+      archivedAt: draftCollateralItem.archivedAt,
+      activeEventInstanceId: resolvedActiveEventInstanceId,
+      activeSummaryFilter,
+      activeProfileDeadlineFilter,
+      showArchived
+    });
+
     const nextId = addCollateralItem({
       eventInstanceId: draftCollateralItem.eventInstanceId,
       subEventId: draftCollateralItem.subEventId,
@@ -452,7 +533,19 @@ export function CollateralView({
     });
 
     setDraftCollateralItem(null);
+    setActiveSummaryFilter("all");
+    setActiveProfileDeadlineFilter("none");
     setSelectedId(nextId);
+    setCollateralCreateTraceId(nextId);
+    traceCollateralCreate("save-returned", {
+      id: nextId,
+      eventInstanceId: draftCollateralItem.eventInstanceId,
+      subEventId: draftCollateralItem.subEventId,
+      status: draftCollateralItem.status,
+      archivedAt: draftCollateralItem.archivedAt,
+      activeEventInstanceId: resolvedActiveEventInstanceId,
+      filtersCleared: true
+    });
   }
 
   function clearCollateralFilters() {

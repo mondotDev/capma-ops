@@ -423,6 +423,99 @@ test("collateral store restore clears archived state and updates lastUpdated onl
   });
 });
 
+test("new collateral stays visible through the full create-to-workspace pipeline even when create context lags", () => {
+  const targetInstanceId = "new-instance-2026";
+  const state = createDefaultAppStateData();
+  const created = localCollateralStore.create(
+    [],
+    {
+      eventInstanceId: targetInstanceId,
+      subEventId: `${targetInstanceId}-unassigned`,
+      itemName: "New collateral item",
+      status: "Backlog",
+      owner: "Melissa",
+      blockedBy: "",
+      dueDate: "",
+      printer: "",
+      quantity: "",
+      updateType: "",
+      noteEntries: []
+    },
+    {
+      defaultOwner: "Melissa",
+      eventInstances: initialEventInstances,
+      eventSubEvents: initialEventSubEvents
+    }
+  )[0];
+
+  assert.equal(created?.eventInstanceId, targetInstanceId);
+  assert.equal(created?.subEventId, `${targetInstanceId}-unassigned`);
+  assert.equal(created?.status, "Backlog");
+  assert.equal(created?.archivedAt, undefined);
+
+  const readSource = createLocalAppReadSource({
+    items: state.items,
+    issues: getGeneratedIssues(state.issueStatuses),
+    activeEventInstanceId: targetInstanceId,
+    collateralItems: [created],
+    collateralProfiles: state.collateralProfiles,
+    eventInstances: [
+      ...state.eventInstances,
+      {
+        id: targetInstanceId,
+        eventTypeId: "legislative-day",
+        name: "New Instance 2026",
+        dateMode: "single",
+        dates: ["2026-04-10"],
+        startDate: "2026-04-10",
+        endDate: "2026-04-10",
+        location: "",
+        notes: ""
+      }
+    ],
+    eventSubEvents: [
+      ...state.eventSubEvents,
+      {
+        id: `${targetInstanceId}-unassigned`,
+        eventInstanceId: targetInstanceId,
+        name: "Unassigned",
+        sortOrder: 0
+      }
+    ],
+    eventPrograms: state.eventTypes,
+    eventTypes: state.eventTypes,
+    workstreamSchedules: state.workstreamSchedules
+  });
+
+  const workspaceSource = readSource.getCollateralWorkspaceSource({ activeEventInstanceId: targetInstanceId });
+  assert.deepEqual(workspaceSource.collateralItems.map((item) => item.id), [created.id]);
+
+  const workspaceBundle = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: workspaceSource.activeEventInstanceId,
+    collateralItems: workspaceSource.collateralItems,
+    collateralProfiles: workspaceSource.collateralProfiles,
+    eventInstances: workspaceSource.eventInstances,
+    eventSubEvents: workspaceSource.eventSubEvents,
+    eventPrograms: workspaceSource.eventPrograms
+  });
+
+  const listView = getCollateralInstanceListView({
+    collateralItems: workspaceSource.collateralItems,
+    resolvedActiveEventInstanceId: workspaceBundle.resolvedActiveEventInstanceId,
+    instanceSubEvents: workspaceBundle.instanceSubEvents,
+    activeProfile: workspaceBundle.activeProfile,
+    activeSummaryFilter: "all",
+    activeProfileDeadlineFilter: "none",
+    draftCollateralItem: null,
+    showArchived: false
+  });
+
+  assert.equal(
+    listView.groupedItems.some(([, items]) => items.some((item) => item.id === created.id)),
+    true
+  );
+});
+
 test("collateral store normalizes invalid sub-events and gives template-applied items stable ids", () => {
   const normalized = localCollateralStore.normalizeLoaded(
     [
@@ -658,6 +751,35 @@ test("non-surfaced collateral statuses remain collateral-only in action view", (
   });
 
   assert.deepEqual(rows, []);
+});
+
+test("archived collateral execution items do not reappear in action view even if their status is execution-visible", () => {
+  const rows = getVisibleCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: "legislative-day-2026",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    collateralItems: [
+      createCollateralItem({
+        id: "archived-ready",
+        status: "Ready for Print",
+        archivedAt: "2026-03-30"
+      }),
+      createCollateralItem({
+        id: "active-ready",
+        status: "Ready for Print"
+      })
+    ],
+    eventInstances: initialEventInstances,
+    eventSubEvents: initialEventSubEvents,
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+  });
+
+  assert.deepEqual(rows.map((row) => row.collateralId), ["active-ready"]);
 });
 
 test("collateral execution rows participate in action filters without becoming native action items", () => {
@@ -3305,6 +3427,31 @@ test("dashboard execution items exclude archived action items from active summar
   });
 
   assert.deepEqual(executionItems.map((item) => item.id), ["active-item", "complete-item"]);
+});
+
+test("dashboard execution items exclude archived collateral even when status stays execution-visible", () => {
+  const state = createDefaultAppStateData();
+
+  const executionItems = buildDashboardExecutionItems({
+    items: [],
+    collateralItems: [
+      createCollateralItem({
+        id: "archived-collateral",
+        status: "Ready for Print",
+        archivedAt: "2026-04-01"
+      }),
+      createCollateralItem({
+        id: "active-collateral",
+        status: "Ready for Print"
+      })
+    ],
+    activeEventInstanceId: state.activeEventInstanceId,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+
+  assert.deepEqual(executionItems.map((item) => item.id), ["collateral-execution-active-collateral"]);
 });
 
 test("action item workspace query returns selected item detail and scoped edit options", () => {
