@@ -103,6 +103,7 @@ export function ActionView({
     archiveItem,
     bulkUpdateItems,
     completeIssue,
+    deleteItem,
     generateMissingDeliverablesForIssue,
     importNativeActionItemsFromLocalRecovery,
     openIssue,
@@ -118,6 +119,7 @@ export function ActionView({
   const [showArchived, setShowArchived] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkOwner, setBulkOwner] = useState("");
@@ -270,6 +272,7 @@ export function ActionView({
 
   useEffect(() => {
     setIsArchiveConfirmOpen(false);
+    setIsDeleteConfirmOpen(false);
     setIsActionsMenuOpen(false);
   }, [selectedId]);
 
@@ -1378,6 +1381,12 @@ export function ActionView({
               item={selectedItem}
               onArchiveRequest={() => {
                 setIsArchiveConfirmOpen(true);
+                setIsDeleteConfirmOpen(false);
+                setIsActionsMenuOpen(false);
+              }}
+              onDeleteRequest={() => {
+                setIsDeleteConfirmOpen(true);
+                setIsArchiveConfirmOpen(false);
                 setIsActionsMenuOpen(false);
               }}
               onCancelTitleEdit={() => cancelTitleEdit(selectedItem)}
@@ -1714,6 +1723,36 @@ export function ActionView({
                       type="button"
                     >
                       {selectedItem.archivedAt ? "Restore" : "Archive"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {isDeleteConfirmOpen ? (
+              <div className="drawer__confirm-bar">
+                <div className="confirm-delete">
+                  <div className="confirm-delete__title">Delete this action item?</div>
+                  <div className="confirm-delete__copy">
+                    This permanently removes the item. Use archive instead if you want it hidden but recoverable.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => setIsDeleteConfirmOpen(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button-danger"
+                      onClick={() => {
+                        deleteItem(selectedItem.id);
+                        setSelectedId(null);
+                        setIsDeleteConfirmOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Delete permanently
                     </button>
                   </div>
                 </div>

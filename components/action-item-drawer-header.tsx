@@ -21,6 +21,7 @@ type ActionItemDrawerHeaderProps = {
   onCancelTitleEdit: () => void;
   onToggleActionsMenu: () => void;
   onArchiveRequest: () => void;
+  onDeleteRequest: () => void;
   onClose: () => void;
 };
 
@@ -37,6 +38,7 @@ export function ActionItemDrawerHeader({
   onCancelTitleEdit,
   onToggleActionsMenu,
   onArchiveRequest,
+  onDeleteRequest,
   onClose
 }: ActionItemDrawerHeaderProps) {
   return (
@@ -118,12 +120,20 @@ export function ActionItemDrawerHeader({
             {isActionsMenuOpen ? (
               <div className="drawer__actions-popover" role="menu">
                 <button
-                  className="drawer__actions-item drawer__actions-item--danger"
+                  className="drawer__actions-item"
                   onClick={onArchiveRequest}
                   role="menuitem"
                   type="button"
                 >
                   {item.archivedAt ? "Restore to active lane" : "Archive"}
+                </button>
+                <button
+                  className="drawer__actions-item drawer__actions-item--danger"
+                  onClick={onDeleteRequest}
+                  role="menuitem"
+                  type="button"
+                >
+                  Delete permanently
                 </button>
               </div>
             ) : null}
