@@ -1582,6 +1582,8 @@ function normalizeOperationalReason(reason?: string) {
   return matchedSuggestion ?? trimmedReason;
 }
 
+export { normalizeOperationalReason };
+
 function buildNewsbriefIssues(years: number[]) {
   return years.flatMap((year) =>
     NEWSBRIEF_MONTHS.map((month, monthIndex) => ({

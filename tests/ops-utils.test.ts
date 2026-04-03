@@ -49,6 +49,12 @@ import {
 } from "../lib/publication-issue-actions";
 import { openNativeDateInputPicker } from "../lib/date-input";
 import { normalizeCliFilePathInput, resolveCliFilePath } from "../lib/cli-paths";
+import {
+  inferBootstrapIssue,
+  inferBootstrapWaitingOn,
+  mapBootstrapLinkedEvent,
+  mapBootstrapStatus
+} from "../lib/native-action-item-bootstrap";
 import { parseImportedAppState } from "../lib/app-transfer";
 import {
   APP_STATE_BACKUP_STORAGE_KEY,
@@ -3405,4 +3411,32 @@ test("selected collateral workspace query returns selected item and sub-event op
   assert.ok(selectedWorkspace.selectedItem);
   assert.equal(selectedWorkspace.subEventOptions.length, workspace.instanceSubEvents.length);
   assert.equal(selectedWorkspace.emptySubEventId, "legislative-day-2026-unassigned");
+});
+
+test("bootstrap import maps publication rows onto canonical issue labels when due dates match", () => {
+  assert.equal(inferBootstrapIssue("Newsbrief", "2026-04-20"), "April 2026 Newsbrief");
+  assert.equal(inferBootstrapIssue("The Voice", "2026-04-23", "Summer Voice"), "Summer 2026 The Voice");
+  assert.equal(inferBootstrapIssue("Newsbrief", "2026-04-21"), "");
+  assert.equal(inferBootstrapIssue("General Operations", "2026-04-20"), "");
+});
+
+test("bootstrap import infers waitingOn only from explicit waiting notes", () => {
+  assert.equal(inferBootstrapWaitingOn("Waiting", "waiting for sponsor"), "Sponsor");
+  assert.equal(inferBootstrapWaitingOn("Waiting", "Waiting on Vince Scoville | Flyer + Raffle link"), "Vince Scoville");
+  assert.equal(inferBootstrapWaitingOn("Waiting", "Need rooms"), "rooms");
+  assert.equal(inferBootstrapWaitingOn("Waiting", "emailed 4/1"), "");
+  assert.equal(inferBootstrapWaitingOn("In Progress", "waiting for sponsor"), "");
+});
+
+test("bootstrap import keeps linked event mapping narrow and explicit", () => {
+  assert.deepEqual(mapBootstrapLinkedEvent("Golf - Leg Day"), {
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026"
+  });
+  assert.deepEqual(mapBootstrapLinkedEvent("Member"), {
+    workstream: "Membership Campaigns",
+    operationalBucket: "Membership Campaigns"
+  });
+  assert.equal(mapBootstrapLinkedEvent("Unknown Event"), null);
+  assert.equal(mapBootstrapStatus("Ready"), "In Progress");
 });

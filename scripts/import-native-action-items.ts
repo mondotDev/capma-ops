@@ -1,9 +1,15 @@
 import fs from "node:fs";
 import { doc, getDoc, writeBatch } from "firebase/firestore";
 import { resolveCliFilePath } from "@/lib/cli-paths";
+import {
+  inferBootstrapIssue,
+  inferBootstrapWaitingOn,
+  mapBootstrapLinkedEvent,
+  mapBootstrapStatus
+} from "@/lib/native-action-item-bootstrap";
 import { loadLocalScriptEnv } from "@/lib/script-env";
 import { getFirestoreDb, isFirebaseConfigured } from "@/lib/firebase";
-import { initialEventInstances, initialEventPrograms, initialEventSubEvents, LEGISLATIVE_DAY_2026_INSTANCE_ID } from "@/lib/event-instances";
+import { initialEventInstances, initialEventPrograms, initialEventSubEvents } from "@/lib/event-instances";
 import { mapActionItemToFirestoreDocument } from "@/lib/firestore-native-action-item-store";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import { createActionNoteEntry, DEFAULT_OWNER, LOCAL_FALLBACK_NOTE_AUTHOR } from "@/lib/ops-utils";
@@ -202,7 +208,7 @@ function mapCsvRowToImportableActionItem(
     return { kind: "failed", rowLink: null, reason: `Row "${title}" is missing Row_Link.` };
   }
 
-  const status = mapStatus(row["Status (Auto)"]?.trim() ?? "");
+  const status = mapBootstrapStatus(row["Status (Auto)"]?.trim() ?? "");
 
   if (!status) {
     return {
@@ -213,7 +219,7 @@ function mapCsvRowToImportableActionItem(
   }
 
   const linkedEvent = row["Linked Event"]?.trim() ?? "";
-  const linkedEventMapping = mapLinkedEvent(linkedEvent);
+  const linkedEventMapping = mapBootstrapLinkedEvent(linkedEvent);
 
   if (!linkedEventMapping) {
     return {
@@ -226,6 +232,8 @@ function mapCsvRowToImportableActionItem(
   const dueDate = normalizeCsvDate(row["Due Date"]?.trim() ?? "");
   const vendorDeadline = normalizeCsvDate(row["Vendor Deadline"]?.trim() ?? "");
   const printDeadline = normalizeCsvDate(row.Print_Deadline?.trim() ?? "");
+  const waitingOn = inferBootstrapWaitingOn(status, row.Notes?.trim() ?? "");
+  const issue = inferBootstrapIssue(linkedEventMapping.workstream, dueDate, title);
   const noteEntries = buildImportedNoteEntries({
     notes: row.Notes?.trim() ?? "",
     vendorDeadline,
@@ -243,12 +251,12 @@ function mapCsvRowToImportableActionItem(
         dueDate,
         status,
         owner: DEFAULT_OWNER,
-        waitingOn: "",
+        waitingOn,
         lastUpdated: today,
         noteEntries,
         eventInstanceId: linkedEventMapping.eventInstanceId,
         operationalBucket: linkedEventMapping.operationalBucket,
-        issue: undefined,
+        issue: issue || undefined,
         blockedBy: undefined,
         isBlocked: undefined,
         subEventId: undefined,
@@ -271,101 +279,6 @@ function mapCsvRowToImportableActionItem(
       docId: getBootstrapDocumentId(rowLink)
     }
   };
-}
-
-function mapLinkedEvent(value: string):
-  | {
-      workstream: string;
-      eventInstanceId?: string;
-      operationalBucket?: "General Operations" | "Membership Campaigns";
-    }
-  | null {
-  if (!value || value === "Admin" || value === "Website" || value === "District") {
-    return {
-      workstream: "General Operations",
-      operationalBucket: "General Operations"
-    };
-  }
-
-  if (value === "Member") {
-    return {
-      workstream: "Membership Campaigns",
-      operationalBucket: "Membership Campaigns"
-    };
-  }
-
-  if (value === "Leg Day" || value === "Golf - Leg Day") {
-    return {
-      workstream: "Legislative Day",
-      eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID
-    };
-  }
-
-  if (value === "Best Pest" || value === "Golf - Best Pest") {
-    return { workstream: "Best Pest Expo" };
-  }
-
-  if (value === "FF") {
-    return { workstream: "First Friday" };
-  }
-
-  if (value === "May Hands-On") {
-    return { workstream: "Hands-On Workshops" };
-  }
-
-  if (value === "Termite Academy") {
-    return { workstream: "Termite Academy" };
-  }
-
-  if (value === "Development Summit") {
-    return { workstream: "Development Summit" };
-  }
-
-  if (value === "Monday Mingle") {
-    return { workstream: "Monday Mingle" };
-  }
-
-  if (value === "NewsBrief") {
-    return { workstream: "Newsbrief" };
-  }
-
-  if (value === "The Voice") {
-    return { workstream: "The Voice" };
-  }
-
-  return null;
-}
-
-function mapStatus(value: string): ActionItem["status"] | null {
-  if (value === "Backlog") {
-    return "Not Started";
-  }
-
-  if (value === "In Progress") {
-    return "In Progress";
-  }
-
-  if (value === "Waiting") {
-    return "Waiting";
-  }
-
-  if (value === "Complete") {
-    return "Complete";
-  }
-
-  if (value === "Ready") {
-    return "In Progress";
-  }
-
-  if (value === "Canceled") {
-    return "Canceled";
-  }
-
-  if (value === "Cut") {
-    return "Cut";
-  }
-
-  return null;
 }
 
 function normalizeCsvDate(value: string) {
