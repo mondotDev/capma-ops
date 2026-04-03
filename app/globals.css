@@ -1851,6 +1851,21 @@ th {
   min-width: 96px;
 }
 
+.cell-updated {
+  white-space: nowrap;
+}
+
+.cell-updated__date {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cell-updated__age {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .table-head__label {
   display: block;
   font-size: 11px;
@@ -3060,6 +3075,24 @@ tr.blocked-row {
 
 .drawer--action .action-drawer__blocked-field .field-hint {
   max-width: none;
+}
+
+.drawer--action .action-drawer__last-updated-field {
+  padding: 12px 14px 14px;
+  border: 1px solid #d5dee8;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8fc 100%);
+}
+
+.drawer--action .action-drawer__last-updated-value {
+  margin-top: 2px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.drawer--action .action-drawer__aging-hint {
+  color: #8a4b12;
+  font-weight: 600;
 }
 
 .drawer--action .drawer-section--notes-panel {

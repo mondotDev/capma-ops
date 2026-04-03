@@ -185,6 +185,7 @@ export function ActionView({
   const selectedItemIssueOptions = selectedWorkspace.selectedItemIssueOptions;
   const selectedItemSubEvents = selectedWorkspace.selectedItemSubEvents;
   const selectedItemMeaningUi = selectedItem ? getActionMeaningUiState(selectedItem.eventInstanceId) : null;
+  const selectedItemAgingHint = selectedItem ? getSelectedItemAgingHint(selectedItem, activeLens) : null;
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
     () => selectedItemIds.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)),
@@ -1225,7 +1226,10 @@ export function ActionView({
                                 </td>
                                 <td className="cell-muted cell-workstream">{row.workstreamLabel}</td>
                                 <td className="cell-muted cell-type">{row.typeLabel}</td>
-                                <td className="cell-muted cell-updated">{formatShortDate(row.lastUpdated)}</td>
+                                <td className="cell-muted cell-updated">
+                                  <div className="cell-updated__date">{formatShortDate(row.lastUpdated)}</div>
+                                  <div className="cell-updated__age">{getLastUpdatedAgeLabel(row.lastUpdated)}</div>
+                                </td>
                               </tr>
                             ) : (
                               <tr className={row.rowClassName} key={row.id}>
@@ -1261,7 +1265,10 @@ export function ActionView({
                                 <td className="cell-muted cell-owner">{row.owner || "Unassigned"}</td>
                                 <td className="cell-muted cell-workstream">{row.subEventName}</td>
                                 <td className="cell-muted cell-type">{row.typeLabel}</td>
-                                <td className="cell-muted cell-updated">{formatShortDate(row.lastUpdated)}</td>
+                                <td className="cell-muted cell-updated">
+                                  <div className="cell-updated__date">{formatShortDate(row.lastUpdated)}</div>
+                                  <div className="cell-updated__age">{getLastUpdatedAgeLabel(row.lastUpdated)}</div>
+                                </td>
                               </tr>
                             )
                           )
@@ -1382,6 +1389,18 @@ export function ActionView({
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="field field--wide action-drawer__last-updated-field">
+                    <label>Last Updated in CAPMA Ops</label>
+                    <div className="field-static action-drawer__last-updated-value">
+                      {getLastUpdatedSummary(selectedItem.lastUpdated)}
+                    </div>
+                    <div className="field-hint">
+                      Based on the last in-app edit to this item, not external progress happening elsewhere.
+                    </div>
+                    {selectedItemAgingHint ? (
+                      <div className="field-hint action-drawer__aging-hint">{selectedItemAgingHint}</div>
+                    ) : null}
                   </div>
                   <div
                     className={`field action-drawer__blocked-control action-drawer__blocked-toggle-field${selectedItem.isBlocked ? " action-drawer__blocked-toggle-field--active" : ""}`}
@@ -1824,6 +1843,64 @@ function getActionContextMetaCopy(activeLens: ActionLens, hasActiveExecutionCont
   }
 
   return "No extra constraints are hiding rows right now.";
+}
+
+function getLastUpdatedAgeLabel(lastUpdated: string) {
+  if (!lastUpdated) {
+    return "Unknown";
+  }
+
+  const ageInDays = daysSince(lastUpdated);
+
+  if (ageInDays <= 0) {
+    return "Updated today";
+  }
+
+  if (ageInDays === 1) {
+    return "1d ago";
+  }
+
+  return `${ageInDays}d ago`;
+}
+
+function getLastUpdatedSummary(lastUpdated: string) {
+  if (!lastUpdated) {
+    return "Unknown";
+  }
+
+  const ageInDays = daysSince(lastUpdated);
+
+  if (ageInDays <= 0) {
+    return `${formatShortDate(lastUpdated)} - updated today`;
+  }
+
+  if (ageInDays === 1) {
+    return `${formatShortDate(lastUpdated)} - updated 1 day ago`;
+  }
+
+  return `${formatShortDate(lastUpdated)} - updated ${ageInDays} days ago`;
+}
+
+function getSelectedItemAgingHint(item: ActionItem, activeLens: ActionLens) {
+  const ageInDays = daysSince(item.lastUpdated);
+
+  if (item.status === "Waiting" && ageInDays >= 7) {
+    if (activeLens === "reviewWaitingTooLong") {
+      return `This item appears in Waiting Too Long because it has been waiting without an in-app update for ${ageInDays} days.`;
+    }
+
+    return `This waiting item has not been updated in CAPMA Ops for ${ageInDays} days.`;
+  }
+
+  if (!isTerminalStatus(item.status) && item.status !== "Waiting" && ageInDays >= 14) {
+    if (activeLens === "reviewStale") {
+      return `This item appears in Stale because it has no in-app update for ${ageInDays} days.`;
+    }
+
+    return `This active item has no in-app update for ${ageInDays} days.`;
+  }
+
+  return null;
 }
 
 function formatUrgencyBadge(item: ActionItem) {
