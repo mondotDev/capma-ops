@@ -8,7 +8,17 @@ import {
   normalizeActionItems,
   updateActionItemById
 } from "../lib/action-item-mutations";
-import { localNativeActionItemStore } from "../lib/action-item-store";
+import {
+  getNativeActionItemRecoveryInfo,
+  getNativeActionItemStoreMode,
+  localNativeActionItemStore
+} from "../lib/action-item-store";
+import {
+  createFirestoreNativeActionItemStore,
+  mapActionItemToFirestoreDocument,
+  mapFirestoreDocumentToActionItem,
+  parseFirestoreActionItemDocument
+} from "../lib/firestore-native-action-item-store";
 import {
   ACTION_VIEW_COLLATERAL_STATUS_OPTIONS,
   isActionViewCollateralStatus,
@@ -38,6 +48,7 @@ import {
   setPublicationIssueStatus
 } from "../lib/publication-issue-actions";
 import { openNativeDateInputPicker } from "../lib/date-input";
+import { normalizeCliFilePathInput, resolveCliFilePath } from "../lib/cli-paths";
 import { parseImportedAppState } from "../lib/app-transfer";
 import {
   APP_STATE_BACKUP_STORAGE_KEY,
@@ -1888,19 +1899,151 @@ test("archive and restore remain meaningful native action item mutations", () =>
   assert.match(restored.lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
 });
 
-test("local native action item store preserves identity on no-op updates and routes lifecycle changes through shared semantics", () => {
+test("local native action item store preserves identity on no-op updates and routes lifecycle changes through shared semantics", async () => {
   const items = normalizeActionItems([
     createItem({ id: "item-1", title: "Keep same title", lastUpdated: "2026-03-28" }),
     createItem({ id: "item-2", title: "Second item", lastUpdated: "2026-03-28" })
   ]);
 
-  const unchanged = localNativeActionItemStore.update(items, "item-1", { title: "Keep same title" });
+  const unchanged = await localNativeActionItemStore.update(items, "item-1", { title: "Keep same title" });
   assert.equal(unchanged, items);
 
-  const archived = localNativeActionItemStore.archive(items, "item-1");
+  const archived = await localNativeActionItemStore.archive(items, "item-1");
   assert.notEqual(archived, items);
   assert.equal(archived[0].archivedAt !== undefined, true);
   assert.match(archived[0].lastUpdated, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("native action item store mode defaults to firebase and supports explicit local override", () => {
+  assert.equal(getNativeActionItemStoreMode(undefined), "firebase");
+  assert.equal(getNativeActionItemStoreMode("firebase"), "firebase");
+  assert.equal(getNativeActionItemStoreMode("local"), "local");
+  assert.equal(getNativeActionItemStoreMode(" LOCAL "), "local");
+});
+
+test("native action item recovery info only offers explicit import when firestore is empty and local items exist", () => {
+  assert.deepEqual(
+    getNativeActionItemRecoveryInfo({
+      mode: "firebase",
+      firestoreItemCount: 0,
+      localRecoveryItemCount: 3
+    }),
+    {
+      firestoreEmpty: true,
+      localRecoveryItemCount: 3,
+      canImportFromLocal: true
+    }
+  );
+
+  assert.deepEqual(
+    getNativeActionItemRecoveryInfo({
+      mode: "firebase",
+      firestoreItemCount: 2,
+      localRecoveryItemCount: 3
+    }),
+    {
+      firestoreEmpty: false,
+      localRecoveryItemCount: 3,
+      canImportFromLocal: false
+    }
+  );
+
+  assert.deepEqual(
+    getNativeActionItemRecoveryInfo({
+      mode: "local",
+      firestoreItemCount: 0,
+      localRecoveryItemCount: 3
+    }),
+    {
+      firestoreEmpty: false,
+      localRecoveryItemCount: 3,
+      canImportFromLocal: false
+    }
+  );
+});
+
+test("cli file path normalization removes cmd-style caret escapes and preserves Windows absolute paths", () => {
+  assert.equal(
+    normalizeCliFilePathInput('^C:\\Users\\melis\\Downloads\\2026^ CAPMA^ Planning^ -^ Kanban_Input.csv^'),
+    "C:\\Users\\melis\\Downloads\\2026 CAPMA Planning - Kanban_Input.csv"
+  );
+  assert.equal(
+    resolveCliFilePath('^C:\\Users\\melis\\Downloads\\2026^ CAPMA^ Planning^ -^ Kanban_Input.csv^'),
+    "C:\\Users\\melis\\Downloads\\2026 CAPMA Planning - Kanban_Input.csv"
+  );
+});
+
+test("cli file path resolution supports Windows absolute, forward-slash, msys, and relative paths", () => {
+  assert.equal(
+    resolveCliFilePath("C:/Users/melis/Downloads/2026 CAPMA Planning - Kanban_Input.csv"),
+    "C:\\Users\\melis\\Downloads\\2026 CAPMA Planning - Kanban_Input.csv"
+  );
+  assert.equal(
+    resolveCliFilePath("/c/Users/melis/Downloads/2026 CAPMA Planning - Kanban_Input.csv"),
+    "C:\\Users\\melis\\Downloads\\2026 CAPMA Planning - Kanban_Input.csv"
+  );
+  assert.equal(
+    resolveCliFilePath("./data/bootstrap.csv", "C:\\Users\\melis\\Documents\\git-repos\\capma-ops"),
+    "C:\\Users\\melis\\Documents\\git-repos\\capma-ops\\data\\bootstrap.csv"
+  );
+});
+
+test("firestore action item mapping preserves canonical lastUpdated and note entries", () => {
+  const item = createItem({
+    id: "firestore-item",
+    lastUpdated: "2026-04-02",
+    noteEntries: [
+      {
+        id: "note-1",
+        text: "Called sponsor",
+        createdAt: "2026-04-02T12:00:00.000Z",
+        author: {
+          userId: null,
+          initials: "MO",
+          displayName: "Melissa"
+        }
+      }
+    ],
+    operationalBucket: "Sponsor Follow-Up"
+  });
+
+  const document = mapActionItemToFirestoreDocument(item);
+  assert.equal(document.lastUpdated, "2026-04-02");
+  assert.equal(document.noteEntries?.[0]?.author.displayName, "Melissa");
+
+  const roundTripped = mapFirestoreDocumentToActionItem(item.id, document);
+  assert.equal(roundTripped.id, item.id);
+  assert.equal(roundTripped.lastUpdated, item.lastUpdated);
+  assert.equal(roundTripped.operationalBucket, "Sponsor Follow-Up");
+  assert.equal(roundTripped.noteEntries[0]?.text, "Called sponsor");
+});
+
+test("firestore action item parser rejects malformed persisted documents", () => {
+  assert.equal(
+    parseFirestoreActionItemDocument({
+      title: "Bad item",
+      type: "Task",
+      workstream: "General Operations",
+      dueDate: "2026-04-02",
+      status: "Not Started",
+      owner: "Melissa",
+      waitingOn: "Vendor",
+      lastUpdated: 42
+    }),
+    null
+  );
+});
+
+test("firestore native action item store fails clearly when firebase mode is selected but unavailable", async () => {
+  const store = createFirestoreNativeActionItemStore({
+    getDb: () => null,
+    isConfigured: () => false
+  });
+
+  await assert.rejects(
+    () => store.load([]),
+    /Native action-item store mode is set to firebase, but Firebase is not configured\./
+  );
 });
 
 test("opening a publication issue keeps only one open issue per publication workstream", () => {

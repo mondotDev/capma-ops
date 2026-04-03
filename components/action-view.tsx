@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemDrawerHeader } from "@/components/action-item-drawer-header";
 import { useActionViewReadModel } from "@/components/app-read-models";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
-import { useAppActions } from "@/components/app-state";
+import { useAppActions, useAppStateValues } from "@/components/app-state";
 import {
   ACTION_ITEM_MEANING_HINT,
   getActionMeaningUiState,
@@ -104,11 +104,13 @@ export function ActionView({
     bulkUpdateItems,
     completeIssue,
     generateMissingDeliverablesForIssue,
+    importNativeActionItemsFromLocalRecovery,
     openIssue,
     restoreItem,
     setIssueStatus,
     updateItem
   } = useAppActions();
+  const { nativeActionItemRecovery, nativeActionItemStoreMode } = useAppStateValues();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -120,6 +122,7 @@ export function ActionView({
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkFeedback, setBulkFeedback] = useState("");
+  const [nativeItemRecoveryFeedback, setNativeItemRecoveryFeedback] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
@@ -496,9 +499,63 @@ export function ActionView({
     router.push(`/collateral?${params.toString()}`);
   }
 
+  async function handleImportNativeActionItemsRecovery() {
+    try {
+      const importedCount = await importNativeActionItemsFromLocalRecovery();
+      setNativeItemRecoveryFeedback(
+        importedCount > 0
+          ? `Imported ${importedCount} native action ${importedCount === 1 ? "item" : "items"} into Firestore.`
+          : "No local native action items were available to import."
+      );
+    } catch (error) {
+      setNativeItemRecoveryFeedback(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "CAPMA Ops Hub could not import local native action items into Firestore."
+      );
+    }
+  }
+
   return (
     <section className="action-view">
       <div className="action-controls">
+        {nativeActionItemStoreMode === "firebase" && nativeActionItemRecovery.firestoreEmpty ? (
+          <div className="card card--secondary action-recovery-card">
+            <div className="action-recovery-card__title">NATIVE ACTION ITEMS ARE CURRENTLY EMPTY IN FIRESTORE</div>
+            <p className="action-recovery-card__copy">
+              Firestore is the active native action-item source, and the `actionItems` collection is currently empty.
+            </p>
+            {nativeActionItemRecovery.canImportFromLocal ? (
+              <>
+                <p className="action-recovery-card__copy">
+                  CAPMA Ops found {nativeActionItemRecovery.localRecoveryItemCount} native action{" "}
+                  {nativeActionItemRecovery.localRecoveryItemCount === 1 ? "item" : "items"} in prior local browser
+                  state. Import them into Firestore to restore Action View.
+                </p>
+                <div className="action-recovery-card__actions">
+                  <button
+                    className="topbar__button"
+                    disabled={nativeActionItemRecovery.isImporting}
+                    onClick={() => void handleImportNativeActionItemsRecovery()}
+                    type="button"
+                  >
+                    {nativeActionItemRecovery.isImporting ? "Importing..." : "Import Local Native Items to Firestore"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="action-recovery-card__copy">
+                CAPMA Ops did not find any recoverable local native action items in browser storage. Action View is
+                empty because Firestore is the current source of truth and it has no native action-item documents yet.
+              </p>
+            )}
+            {nativeActionItemRecovery.importError || nativeItemRecoveryFeedback ? (
+              <div className="action-recovery-card__feedback">
+                {nativeActionItemRecovery.importError ?? nativeItemRecoveryFeedback}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {publicationIssueWorkspace ? (
           <div className="card card--secondary publication-workspace">
             <div className="publication-workspace__header">

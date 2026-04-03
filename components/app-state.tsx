@@ -11,9 +11,14 @@ import {
   type GenerateDeliverablesResult
 } from "@/lib/publication-issue-actions";
 import {
+  type ActionItemMutationContext,
   type NewActionItemInput
 } from "@/lib/action-item-mutations";
-import { localNativeActionItemStore } from "@/lib/action-item-store";
+import {
+  getNativeActionItemRecoveryInfo,
+  getSelectedNativeActionItemStore,
+  getNativeActionItemStoreMode
+} from "@/lib/action-item-store";
 import {
   initialLegDayCollateralProfile,
   normalizeCollateralUpdateType,
@@ -35,6 +40,7 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
+import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   type IssueRecord,
@@ -87,6 +93,14 @@ type AppStateContextValue = {
   eventTypes: EventType[];
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
+  nativeActionItemStoreMode: "firebase" | "local";
+  nativeActionItemRecovery: {
+    firestoreEmpty: boolean;
+    localRecoveryItemCount: number;
+    canImportFromLocal: boolean;
+    importError: string | null;
+    isImporting: boolean;
+  };
   workstreamSchedules: WorkstreamSchedule[];
   addItem: (item: NewActionItem) => void;
   addCollateralItem: (item: Omit<CollateralItem, "id" | "lastUpdated">) => string;
@@ -101,6 +115,7 @@ type AppStateContextValue = {
   generateMissingDeliverablesForIssue: (issue: string) => GenerateDeliverablesResult;
   generateIssueDeliverables: (issue: string) => GenerateDeliverablesResult;
   importAppStateSnapshot: (value: unknown) => ImportAppStateResult;
+  importNativeActionItemsFromLocalRecovery: () => Promise<number>;
   openIssue: (issue: string) => GenerateDeliverablesResult;
   ensureEventInstanceUnassignedSubEvent: (instanceId: string) => string;
   resetAppState: () => void;
@@ -126,6 +141,8 @@ type AppStateValuesContextValue = Pick<
   | "eventTypes"
   | "issues"
   | "items"
+  | "nativeActionItemRecovery"
+  | "nativeActionItemStoreMode"
   | "workstreamSchedules"
 >;
 
@@ -147,10 +164,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [eventSubEvents, setEventSubEvents] = useState<EventSubEvent[]>(createDefaultEventSubEvents);
   const [workstreamSchedules, setWorkstreamSchedulesState] = useState<WorkstreamSchedule[]>(getDefaultWorkstreamSchedules);
   const [hasHydrated, setHasHydrated] = useState(false);
+  const [nativeActionItemStoreBootError, setNativeActionItemStoreBootError] = useState<string | null>(null);
+  const [nativeActionItemRecovery, setNativeActionItemRecovery] = useState<AppStateContextValue["nativeActionItemRecovery"]>({
+    firestoreEmpty: false,
+    localRecoveryItemCount: 0,
+    canImportFromLocal: false,
+    importError: null,
+    isImporting: false
+  });
   const [shouldPersist, setShouldPersist] = useState(true);
   const appStateRepository = useMemo(() => getAppStateRepository(), []);
+  const nativeActionItemStore = useMemo(() => getSelectedNativeActionItemStore(), []);
+  const nativeActionItemStoreMode = useMemo(() => getNativeActionItemStoreMode(), []);
   const pendingPersistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPersistStateRef = useRef<AppStateData | null>(null);
+  const nativeActionItemWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const nativeActionItemRecoveryItemsRef = useRef<ActionItem[]>([]);
   const itemsRef = useRef(items);
   const issueStatusesRef = useRef(issueStatuses);
   const collateralItemsRef = useRef(collateralItems);
@@ -175,20 +204,129 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   eventSubEventsRef.current = eventSubEvents;
   workstreamSchedulesRef.current = workstreamSchedules;
 
-  useEffect(() => {
-    const loadResult = appStateRepository.load();
+  const getNativeActionItemContext = useCallback(
+    (overrides?: Partial<Pick<AppStateData, "eventInstances" | "eventSubEvents" | "eventTypes">>): ActionItemMutationContext => ({
+      eventInstances: overrides?.eventInstances ?? eventInstancesRef.current,
+      eventPrograms: overrides?.eventTypes ?? eventTypesRef.current,
+      eventSubEvents: overrides?.eventSubEvents ?? eventSubEventsRef.current
+    }),
+    []
+  );
 
-    if (loadResult.state) {
-      hydrateAppState(loadResult.state);
+  const enqueueNativeActionItemStoreWrite = useCallback((task: () => Promise<void>) => {
+    nativeActionItemWriteQueueRef.current = nativeActionItemWriteQueueRef.current
+      .catch(() => undefined)
+      .then(task)
+      .catch((error) => {
+        if (typeof console !== "undefined") {
+          console.error("CAPMA Ops Hub could not persist native action items.", error);
+        }
+      });
+  }, []);
+
+  const enablePersistence = useCallback(() => {
+    setShouldPersist(true);
+  }, []);
+
+  const hydrateAppState = useCallback((state: AppStateData) => {
+    setItems(state.items);
+    setIssueStatuses(state.issueStatuses);
+    setCollateralItems(state.collateralItems);
+    setCollateralProfiles(state.collateralProfiles);
+    setActiveEventInstanceIdState(state.activeEventInstanceId);
+    setDefaultOwnerForNewItemsState(state.defaultOwnerForNewItems);
+    setEventFamilies(state.eventFamilies);
+    setEventTypes(state.eventTypes);
+    setEventInstances(state.eventInstances);
+    setEventSubEvents(state.eventSubEvents);
+    setWorkstreamSchedulesState(state.workstreamSchedules);
+  }, []);
+
+  const clearNativeActionItemRecovery = useCallback(() => {
+    nativeActionItemRecoveryItemsRef.current = [];
+    setNativeActionItemRecovery({
+      firestoreEmpty: false,
+      localRecoveryItemCount: 0,
+      canImportFromLocal: false,
+      importError: null,
+      isImporting: false
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateFromSelectedNativeActionItemStore() {
+      const loadResult = appStateRepository.load();
+      const baseState = loadResult.state ?? createDefaultAppStateData();
+      setShouldPersist(loadResult.shouldPersist);
+
+      try {
+        const context = getNativeActionItemContext({
+          eventInstances: baseState.eventInstances,
+          eventSubEvents: baseState.eventSubEvents,
+          eventTypes: baseState.eventTypes
+        });
+        const localRecoveryItems = nativeActionItemMutator.normalizeLoaded(baseState.items, context);
+        const loadedItems = await nativeActionItemStore.load(
+          baseState.items,
+          context
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        hydrateAppState({
+          ...baseState,
+          items: loadedItems
+        });
+        setNativeActionItemStoreBootError(null);
+        nativeActionItemRecoveryItemsRef.current = localRecoveryItems;
+        setNativeActionItemRecovery({
+          ...getNativeActionItemRecoveryInfo({
+            mode: nativeActionItemStoreMode,
+            firestoreItemCount: loadedItems.length,
+            localRecoveryItemCount: localRecoveryItems.length
+          }),
+          importError: null,
+          isImporting: false
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        const defaultMessage =
+          nativeActionItemStoreMode === "firebase"
+            ? "Action-item persistence mode is set to Firestore, but Firestore is not configured or unavailable."
+            : "Action-item persistence could not be initialized.";
+
+        setNativeActionItemStoreBootError(
+          error instanceof Error && error.message.trim().length > 0 ? error.message : defaultMessage
+        );
+      } finally {
+        if (!cancelled) {
+          setHasHydrated(true);
+        }
+      }
     }
 
-    setShouldPersist(loadResult.shouldPersist);
-    setHasHydrated(true);
-  }, []);
+    void hydrateFromSelectedNativeActionItemStore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appStateRepository, getNativeActionItemContext, hydrateAppState, nativeActionItemStore, nativeActionItemStoreMode]);
 
   const persistableState = useMemo<AppStateData>(
     () => ({
-      items,
+      items:
+        nativeActionItemStoreMode === "local"
+          ? items
+          : nativeActionItemRecovery.canImportFromLocal
+            ? nativeActionItemRecoveryItemsRef.current
+            : [],
       issueStatuses,
       collateralItems,
       collateralProfiles,
@@ -211,6 +349,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       eventTypes,
       issueStatuses,
       items,
+      nativeActionItemStoreMode,
+      nativeActionItemRecovery.canImportFromLocal,
       workstreamSchedules
     ]
   );
@@ -279,24 +419,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const issues = useMemo(() => getGeneratedIssues(issueStatuses), [issueStatuses]);
 
-  const enablePersistence = useCallback(() => {
-    setShouldPersist(true);
-  }, []);
-
-  const hydrateAppState = useCallback((state: AppStateData) => {
-    setItems(state.items);
-    setIssueStatuses(state.issueStatuses);
-    setCollateralItems(state.collateralItems);
-    setCollateralProfiles(state.collateralProfiles);
-    setActiveEventInstanceIdState(state.activeEventInstanceId);
-    setDefaultOwnerForNewItemsState(state.defaultOwnerForNewItems);
-    setEventFamilies(state.eventFamilies);
-    setEventTypes(state.eventTypes);
-    setEventInstances(state.eventInstances);
-    setEventSubEvents(state.eventSubEvents);
-    setWorkstreamSchedulesState(state.workstreamSchedules);
-  }, []);
-
   const setActiveEventInstanceId = useCallback((instanceId: string) => {
     enablePersistence();
     setActiveEventInstanceIdState(instanceId);
@@ -309,30 +431,42 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback((item: NewActionItem) => {
     enablePersistence();
-    setItems((current) =>
-      localNativeActionItemStore.create(current, item, {
-        eventInstances: eventInstancesRef.current,
-        eventPrograms: eventTypesRef.current,
-        eventSubEvents: eventSubEventsRef.current
-      })
-    );
-  }, [enablePersistence]);
+    if (nativeActionItemStoreMode === "firebase") {
+      clearNativeActionItemRecovery();
+    }
+    setItems((current) => {
+      const context = getNativeActionItemContext();
+      const nextItems = nativeActionItemMutator.create(current, item, context);
+      enqueueNativeActionItemStoreWrite(() => nativeActionItemStore.create(current, item, context).then(() => undefined));
+      return nextItems;
+    });
+  }, [
+    clearNativeActionItemRecovery,
+    enablePersistence,
+    enqueueNativeActionItemStoreWrite,
+    getNativeActionItemContext,
+    nativeActionItemStore,
+    nativeActionItemStoreMode
+  ]);
 
   const archiveItem = useCallback((id: string) => {
     enablePersistence();
-    setItems((current) =>
-      localNativeActionItemStore.archive(current, id, {
-        eventInstances: eventInstancesRef.current,
-        eventPrograms: eventTypesRef.current,
-        eventSubEvents: eventSubEventsRef.current
-      })
-    );
-  }, [enablePersistence]);
+    setItems((current) => {
+      const context = getNativeActionItemContext();
+      const nextItems = nativeActionItemMutator.archive(current, id, context);
+      enqueueNativeActionItemStoreWrite(() => nativeActionItemStore.archive(current, id, context).then(() => undefined));
+      return nextItems;
+    });
+  }, [enablePersistence, enqueueNativeActionItemStoreWrite, getNativeActionItemContext, nativeActionItemStore]);
 
   const deleteItem = useCallback((id: string) => {
     enablePersistence();
-    setItems((current) => localNativeActionItemStore.delete(current, id));
-  }, [enablePersistence]);
+    setItems((current) => {
+      const nextItems = nativeActionItemMutator.delete(current, id);
+      enqueueNativeActionItemStoreWrite(() => nativeActionItemStore.delete(current, id).then(() => undefined));
+      return nextItems;
+    });
+  }, [enablePersistence, enqueueNativeActionItemStoreWrite, nativeActionItemStore]);
 
   const addCollateralItem = useCallback((item: Omit<CollateralItem, "id" | "lastUpdated">) => {
     enablePersistence();
@@ -495,15 +629,28 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const generateIssueDeliverables = useCallback((issue: string): GenerateDeliverablesResult => {
     enablePersistence();
+    if (nativeActionItemStoreMode === "firebase") {
+      clearNativeActionItemRecovery();
+    }
     let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
     setItems((current) => {
       const nextState = generatePublicationIssueDeliverables(current, issue);
       result = nextState.result;
+      enqueueNativeActionItemStoreWrite(() =>
+        nativeActionItemStore.replaceAll(nextState.items, getNativeActionItemContext()).then(() => undefined)
+      );
       return nextState.items;
     });
 
     return result;
-  }, [enablePersistence]);
+  }, [
+    clearNativeActionItemRecovery,
+    enablePersistence,
+    enqueueNativeActionItemStoreWrite,
+    getNativeActionItemContext,
+    nativeActionItemStore,
+    nativeActionItemStoreMode
+  ]);
 
   const generateMissingDeliverablesForIssue = useCallback((issue: string): GenerateDeliverablesResult => {
     return generateIssueDeliverables(issue);
@@ -511,6 +658,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const openIssue = useCallback((issue: string): GenerateDeliverablesResult => {
     enablePersistence();
+    if (nativeActionItemStoreMode === "firebase") {
+      clearNativeActionItemRecovery();
+    }
     let result: GenerateDeliverablesResult = { created: 0, skipped: 0 };
 
     setItems((currentItems) => {
@@ -523,11 +673,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         return nextState.issueStatuses;
       });
 
+      enqueueNativeActionItemStoreWrite(() =>
+        nativeActionItemStore.replaceAll(nextItems, getNativeActionItemContext()).then(() => undefined)
+      );
+
       return nextItems;
     });
 
     return result;
-  }, [enablePersistence]);
+  }, [
+    clearNativeActionItemRecovery,
+    enablePersistence,
+    enqueueNativeActionItemStoreWrite,
+    getNativeActionItemContext,
+    nativeActionItemStore,
+    nativeActionItemStoreMode
+  ]);
 
   const completeIssue = useCallback((issue: string) => {
     enablePersistence();
@@ -563,30 +724,52 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const resetAppState = useCallback(() => {
     appStateRepository.clear();
     enablePersistence();
-    hydrateAppState(createDefaultAppStateData());
-  }, [appStateRepository, enablePersistence, hydrateAppState]);
+    clearNativeActionItemRecovery();
+    const nextState = createDefaultAppStateData();
+    hydrateAppState(nextState);
+    enqueueNativeActionItemStoreWrite(() =>
+      nativeActionItemStore
+        .replaceAll(
+          nextState.items,
+          getNativeActionItemContext({
+            eventInstances: nextState.eventInstances,
+            eventSubEvents: nextState.eventSubEvents,
+            eventTypes: nextState.eventTypes
+          })
+        )
+        .then(() => undefined)
+    );
+  }, [
+    appStateRepository,
+    clearNativeActionItemRecovery,
+    enablePersistence,
+    enqueueNativeActionItemStoreWrite,
+    getNativeActionItemContext,
+    hydrateAppState,
+    nativeActionItemStore
+  ]);
 
   const restoreItem = useCallback((id: string) => {
     enablePersistence();
-    setItems((current) =>
-      localNativeActionItemStore.restore(current, id, {
-        eventInstances: eventInstancesRef.current,
-        eventPrograms: eventTypesRef.current,
-        eventSubEvents: eventSubEventsRef.current
-      })
-    );
-  }, [enablePersistence]);
+    setItems((current) => {
+      const context = getNativeActionItemContext();
+      const nextItems = nativeActionItemMutator.restore(current, id, context);
+      enqueueNativeActionItemStoreWrite(() => nativeActionItemStore.restore(current, id, context).then(() => undefined));
+      return nextItems;
+    });
+  }, [enablePersistence, enqueueNativeActionItemStoreWrite, getNativeActionItemContext, nativeActionItemStore]);
 
   const bulkUpdateItems = useCallback((ids: string[], updates: Partial<ActionItem>) => {
     enablePersistence();
-    setItems((current) =>
-      localNativeActionItemStore.bulkUpdate(current, ids, updates, {
-        eventInstances: eventInstancesRef.current,
-        eventPrograms: eventTypesRef.current,
-        eventSubEvents: eventSubEventsRef.current
-      })
-    );
-  }, [enablePersistence]);
+    setItems((current) => {
+      const context = getNativeActionItemContext();
+      const nextItems = nativeActionItemMutator.bulkUpdate(current, ids, updates, context);
+      enqueueNativeActionItemStoreWrite(() =>
+        nativeActionItemStore.bulkUpdate(current, ids, updates, context).then(() => undefined)
+      );
+      return nextItems;
+    });
+  }, [enablePersistence, enqueueNativeActionItemStoreWrite, getNativeActionItemContext, nativeActionItemStore]);
 
   const exportAppStateSnapshot = useCallback(
     () =>
@@ -609,13 +792,70 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const importAppStateSnapshot = useCallback((value: unknown) => {
     const importedState = appStateRepository.import(value);
     enablePersistence();
+    clearNativeActionItemRecovery();
     hydrateAppState(importedState);
+    enqueueNativeActionItemStoreWrite(() =>
+      nativeActionItemStore
+        .replaceAll(
+          importedState.items,
+          getNativeActionItemContext({
+            eventInstances: importedState.eventInstances,
+            eventSubEvents: importedState.eventSubEvents,
+            eventTypes: importedState.eventTypes
+          })
+        )
+        .then(() => undefined)
+    );
 
     return {
       itemCount: importedState.itemCount,
       usedLegacyFormat: importedState.usedLegacyFormat
     };
-  }, [appStateRepository, enablePersistence, hydrateAppState]);
+  }, [
+    appStateRepository,
+    clearNativeActionItemRecovery,
+    enablePersistence,
+    enqueueNativeActionItemStoreWrite,
+    getNativeActionItemContext,
+    hydrateAppState,
+    nativeActionItemStore
+  ]);
+
+  const importNativeActionItemsFromLocalRecovery = useCallback(async () => {
+    const recoveryItems = nativeActionItemRecoveryItemsRef.current;
+
+    if (!nativeActionItemRecovery.canImportFromLocal || recoveryItems.length === 0) {
+      return 0;
+    }
+
+    setNativeActionItemRecovery((current) => ({
+      ...current,
+      importError: null,
+      isImporting: true
+    }));
+
+    try {
+      const importedItems = await nativeActionItemStore.replaceAll(recoveryItems, getNativeActionItemContext());
+      setItems(importedItems);
+      clearNativeActionItemRecovery();
+      return importedItems.length;
+    } catch (error) {
+      setNativeActionItemRecovery((current) => ({
+        ...current,
+        importError:
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : "CAPMA Ops Hub could not import local native action items into Firestore.",
+        isImporting: false
+      }));
+      throw error;
+    }
+  }, [
+    clearNativeActionItemRecovery,
+    getNativeActionItemContext,
+    nativeActionItemRecovery.canImportFromLocal,
+    nativeActionItemStore
+  ]);
 
   const setCollateralProfile = useCallback((instanceId: string, profile: LegDayCollateralProfile) => {
     enablePersistence();
@@ -632,14 +872,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const updateItem = useCallback((id: string, updates: Partial<ActionItem>) => {
     enablePersistence();
-    setItems((current) =>
-      localNativeActionItemStore.update(current, id, updates, {
-        eventInstances: eventInstancesRef.current,
-        eventPrograms: eventTypesRef.current,
-        eventSubEvents: eventSubEventsRef.current
-      })
-    );
-  }, [enablePersistence]);
+    setItems((current) => {
+      const context = getNativeActionItemContext();
+      const nextItems = nativeActionItemMutator.update(current, id, updates, context);
+      enqueueNativeActionItemStoreWrite(() =>
+        nativeActionItemStore.update(current, id, updates, context).then(() => undefined)
+      );
+      return nextItems;
+    });
+  }, [enablePersistence, enqueueNativeActionItemStoreWrite, getNativeActionItemContext, nativeActionItemStore]);
 
   const values = useMemo<AppStateValuesContextValue>(
     () => ({
@@ -653,6 +894,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     eventTypes,
     eventInstances,
     eventSubEvents,
+    nativeActionItemRecovery,
+    nativeActionItemStoreMode,
     workstreamSchedules
     }),
     [
@@ -666,6 +909,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       eventTypes,
       issues,
       items,
+      nativeActionItemRecovery,
+      nativeActionItemStoreMode,
       workstreamSchedules
     ]
   );
@@ -685,6 +930,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     generateMissingDeliverablesForIssue,
     generateIssueDeliverables,
     importAppStateSnapshot,
+    importNativeActionItemsFromLocalRecovery,
     openIssue,
     ensureEventInstanceUnassignedSubEvent,
     resetAppState,
@@ -712,6 +958,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       generateIssueDeliverables,
       generateMissingDeliverablesForIssue,
       importAppStateSnapshot,
+      importNativeActionItemsFromLocalRecovery,
       openIssue,
       resetAppState,
       restoreItem,
@@ -724,6 +971,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       updateItem
     ]
   );
+
+  if (!hasHydrated) {
+    return <div className="app-loading-state">Loading CAPMA Ops...</div>;
+  }
+
+  if (nativeActionItemStoreBootError) {
+    return (
+      <div className="app-loading-state">
+        <div className="app-loading-title">Native Action Item Store Unavailable</div>
+        <p>{nativeActionItemStoreBootError}</p>
+      </div>
+    );
+  }
 
   return (
     <AppStateActionsContext.Provider value={actions}>

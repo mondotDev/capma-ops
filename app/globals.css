@@ -3650,10 +3650,57 @@ textarea,
     min-width: 100%;
   }
 
-  .collision-review__header,
-  .collision-review__date-top,
-  .review-lens-card__header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.collision-review__header,
+.collision-review__date-top,
+.review-lens-card__header {
+  flex-direction: column;
+  align-items: flex-start;
+}
+}
+
+.app-loading-state {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.app-loading-title {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.action-recovery-card {
+  display: grid;
+  gap: 10px;
+}
+
+.action-recovery-card__title {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.action-recovery-card__copy {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.action-recovery-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-recovery-card__feedback {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
 }

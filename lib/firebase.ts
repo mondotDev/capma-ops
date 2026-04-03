@@ -74,6 +74,3 @@ export function getFirestoreDb(): Firestore | null {
   firestoreDbInstance = getFirestore(firebaseApp);
   return firestoreDbInstance;
 }
-
-export const firebaseApp = getFirebaseApp();
-export const firestoreDb = getFirestoreDb();

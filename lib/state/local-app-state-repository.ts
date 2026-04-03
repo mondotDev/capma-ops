@@ -8,7 +8,7 @@ import {
   migratePersistedItems,
   savePersistedAppState
 } from "@/lib/app-persistence";
-import { localNativeActionItemStore } from "@/lib/action-item-store";
+import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import { LEGACY_SAMPLE_ITEM_IDS } from "@/lib/sample-data";
 import { normalizeActionItemFields } from "@/lib/ops-utils";
 import {
@@ -46,7 +46,7 @@ class LocalAppStateRepository implements AppStateRepository {
     }
 
     return {
-      items: localNativeActionItemStore.normalizeLoaded(parsedState.items, {
+      items: nativeActionItemMutator.normalizeLoaded(parsedState.items, {
         eventPrograms: parsedState.eventTypes,
         eventInstances: parsedState.eventInstances,
         eventSubEvents: parsedState.eventSubEvents
@@ -77,7 +77,7 @@ class LocalAppStateRepository implements AppStateRepository {
       ...result,
       state: {
         ...result.state,
-        items: localNativeActionItemStore.normalizeLoaded(
+        items: nativeActionItemMutator.normalizeLoaded(
           migratePersistedItems(result.state.items, {
             legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,
             getDefaultItems: createDefaultActionItems,
