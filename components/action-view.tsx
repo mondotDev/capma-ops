@@ -36,6 +36,7 @@ import {
   LOCAL_FALLBACK_NOTE_AUTHOR,
   OPERATIONAL_BUCKET_OPTIONS,
   isBlockedItem,
+  isPublicationWorkstream,
   isTerminalStatus,
   isWaitingIssue,
   isWaitingMissingReason,
@@ -1246,12 +1247,22 @@ export function ActionView({
                                       .join(" ")}
                                   >
                                     {row.title}
+                                    {getPublicationRowBadgeLabel(row) ? (
+                                      <span className="publication-origin-badge">{getPublicationRowBadgeLabel(row)}</span>
+                                    ) : null}
                                   </div>
+                                  {getPublicationIssueRowLabel(row) ? (
+                                    <div className="cell-subtext cell-subtext--publication">
+                                      {getPublicationIssueRowLabel(row)}
+                                    </div>
+                                  ) : null}
                                   {row.blockedBy?.trim() ? (
                                     <div className="cell-subtext cell-subtext--blocked">Blocked by: {row.blockedBy.trim()}</div>
                                   ) : null}
                                   {row.subEventLabel ? <div className="cell-subtext">{row.subEventLabel}</div> : null}
-                                  {row.issueLabel ? <div className="cell-subtext">{row.issueLabel}</div> : null}
+                                  {!getPublicationIssueRowLabel(row) && row.issueLabel ? (
+                                    <div className="cell-subtext">{row.issueLabel}</div>
+                                  ) : null}
                                 </td>
                                 <td className="cell-due-date">
                                   <div>{formatShortDate(row.dueDate)}</div>
@@ -2008,6 +2019,30 @@ function getActionContextMetaCopy(activeLens: ActionLens, hasActiveExecutionCont
   }
 
   return "No extra constraints are hiding rows right now.";
+}
+
+function getPublicationRowBadgeLabel(row: {
+  kind: "action" | "collateral";
+  issueLabel?: string;
+  workstreamLabel?: string;
+}) {
+  if (row.kind !== "action" || !row.issueLabel || !row.workstreamLabel) {
+    return "";
+  }
+
+  return isPublicationWorkstream(row.workstreamLabel) ? row.workstreamLabel : "";
+}
+
+function getPublicationIssueRowLabel(row: {
+  kind: "action" | "collateral";
+  issueLabel?: string;
+  workstreamLabel?: string;
+}) {
+  if (!getPublicationRowBadgeLabel(row) || !row.issueLabel) {
+    return "";
+  }
+
+  return `Issue: ${row.issueLabel}`;
 }
 
 function getLastUpdatedAgeLabel(lastUpdated: string) {
