@@ -575,13 +575,14 @@ export function ActionView({
                 <div className="publication-workspace__title">{publicationIssueWorkspace.issue.label}</div>
                 <div className="publication-workspace__meta">
                   <span>{publicationIssueWorkspace.workstream}</span>
+                  <span>{publicationIssueWorkspace.issue.status}</span>
                   <span>
                     {publicationIssueWorkspace.isMissingDueDate
                       ? "Missing due date"
                       : `Due ${formatShortDate(publicationIssueWorkspace.dueDate)}`}
                   </span>
                   <span>{publicationIssueWorkspace.progressCopy}</span>
-                  <span>{publicationIssueWorkspace.remainingCount} open</span>
+                  <span>{publicationIssueWorkspace.remainingCount} open deliverables</span>
                 </div>
               </div>
               <button className="button-link button-link--inline-secondary" onClick={clearIssueFilter} type="button">
@@ -710,8 +711,12 @@ export function ActionView({
                 <strong className="summary-chip__value">{publicationIssueWorkspace.progressCopy}</strong>
               </span>
               <span className="summary-chip">
-                <span className="summary-chip__label">Remaining</span>
+                <span className="summary-chip__label">Open Deliverables</span>
                 <strong className="summary-chip__value">{publicationIssueWorkspace.remainingCount}</strong>
+              </span>
+              <span className="summary-chip">
+                <span className="summary-chip__label">Visible Issue Rows</span>
+                <strong className="summary-chip__value">{actionListView.visibleActionItemCount}</strong>
               </span>
               {publicationIssueWorkspace.isMissingDueDate ? (
                 <span className="summary-chip summary-chip--overdue">
@@ -721,7 +726,10 @@ export function ActionView({
               ) : null}
             </div>
 
-            {publicationFeedback ? <div className="card__subhead">{publicationFeedback}</div> : null}
+            <div className="card__subhead">
+              {publicationFeedback ||
+                "This workspace shows only items linked to the selected publication issue. Progress and open counts refer to deliverables for this issue."}
+            </div>
           </div>
         ) : activeIssue ? (
           <div className="issue-context">
@@ -1363,7 +1371,15 @@ export function ActionView({
               {visibleRows.length === 0 ? (
                 <div className="empty-state empty-state--actionable">
                   <div className="empty-state__title">No items match this view.</div>
-                  <div className="empty-state__copy">{getActionEmptyStateCopy(contextChips, activeLens)}</div>
+                  <div className="empty-state__copy">
+                    {getActionEmptyStateCopy(contextChips, activeLens, publicationIssueWorkspace
+                      ? {
+                          canGenerateMissing: publicationIssueWorkspace.canGenerateMissing,
+                          canOpenIssue: publicationIssueWorkspace.canOpenIssue,
+                          issueLabel: publicationIssueWorkspace.issue.label
+                        }
+                      : null)}
+                  </div>
                   {hasActiveExecutionContext ? (
                     <div className="empty-state__actions">
                       <button className="topbar__button" onClick={clearAllContext} type="button">
@@ -1898,7 +1914,15 @@ function getContextChipClearHandler(
   return null;
 }
 
-function getActionEmptyStateCopy(chips: ActionContextChip[], activeLens: ActionLens) {
+function getActionEmptyStateCopy(
+  chips: ActionContextChip[],
+  activeLens: ActionLens,
+  publicationIssueWorkspace?: {
+    canGenerateMissing: boolean;
+    canOpenIssue: boolean;
+    issueLabel: string;
+  } | null
+) {
   if (chips.length === 0) {
     return "There are no visible execution items yet. Add work or broaden the current review window.";
   }
@@ -1913,6 +1937,18 @@ function getActionEmptyStateCopy(chips: ActionContextChip[], activeLens: ActionL
 
   if (activeLens === "reviewStale") {
     return `No non-waiting active items in the current view have gone 14+ days without an update. Current context: ${contextPreview}.`;
+  }
+
+  if (publicationIssueWorkspace) {
+    if (publicationIssueWorkspace.canOpenIssue) {
+      return `${publicationIssueWorkspace.issueLabel} is still planned. Open the issue to generate its deliverables, or clear one or more constraints if you expected linked rows here. Current context: ${contextPreview}.`;
+    }
+
+    if (publicationIssueWorkspace.canGenerateMissing) {
+      return `No rows are currently visible for ${publicationIssueWorkspace.issueLabel}. This workspace only shows items linked to the selected issue. Generate missing deliverables or clear one or more constraints to broaden the lane. Current context: ${contextPreview}.`;
+    }
+
+    return `No rows are currently visible for ${publicationIssueWorkspace.issueLabel}. This workspace only shows items linked to the selected issue. Completed, archived, or filtered rows may be hidden. Current context: ${contextPreview}.`;
   }
 
   return `No execution items match the current view: ${contextPreview}. Clear one or more constraints to broaden the lane.`;
