@@ -1354,10 +1354,18 @@ export function ActionView({
                                       .join(" ")}
                                   >
                                     {row.title}
+                                    <span className="row-kind-badge row-kind-badge--native">{row.typeLabel}</span>
                                     {getPublicationRowBadgeLabel(row) ? (
                                       <span className="publication-origin-badge">{getPublicationRowBadgeLabel(row)}</span>
                                     ) : null}
                                   </div>
+                                  {getActionRowPriorityCue(row) ? (
+                                    <div className="cell-badges">
+                                      <span className={getActionRowPriorityCueClassName(getActionRowPriorityCue(row)!)}>
+                                        {getActionRowPriorityCue(row)}
+                                      </span>
+                                    </div>
+                                  ) : null}
                                   {getPublicationIssueRowLabel(row) ? (
                                     <div className="cell-subtext cell-subtext--publication">
                                       {getPublicationIssueRowLabel(row)}
@@ -1452,6 +1460,13 @@ export function ActionView({
                                       {row.title}
                                       <span className="collateral-origin-badge">{row.badgeLabel}</span>
                                     </div>
+                                    {getCollateralRowPriorityCue(row) ? (
+                                      <div className="cell-badges">
+                                        <span className={getCollateralRowPriorityCueClassName(getCollateralRowPriorityCue(row)!)}>
+                                          {getCollateralRowPriorityCue(row)}
+                                        </span>
+                                      </div>
+                                    ) : null}
                                     <div className="cell-subtext">{row.eventInstanceName}</div>
                                     {row.blockedBy?.trim() ? (
                                       <div className="cell-subtext cell-subtext--blocked">Blocked by: {row.blockedBy.trim()}</div>
@@ -2374,6 +2389,52 @@ function getPublicationReadinessClassName(
   }
 
   return `${prefix} ${prefix}--attention`;
+}
+
+function getActionRowPriorityCue(row: {
+  isBlocked: boolean;
+  isOverdue: boolean;
+  isWaiting: boolean;
+  lastUpdated: string;
+}) {
+  if (row.isBlocked) {
+    return "Blocked";
+  }
+
+  if (row.isOverdue) {
+    return "Overdue";
+  }
+
+  if (row.isWaiting && daysSince(row.lastUpdated) >= 7) {
+    return "Waiting 7+ days";
+  }
+
+  return "";
+}
+
+function getActionRowPriorityCueClassName(label: string) {
+  if (label === "Blocked") {
+    return "row-priority-badge row-priority-badge--blocked";
+  }
+
+  if (label === "Overdue") {
+    return "row-priority-badge row-priority-badge--overdue";
+  }
+
+  return "row-priority-badge row-priority-badge--waiting";
+}
+
+function getCollateralRowPriorityCue(row: {
+  isBlocked: boolean;
+  isOverdue: boolean;
+  isWaiting: boolean;
+  lastUpdated: string;
+}) {
+  return getActionRowPriorityCue(row);
+}
+
+function getCollateralRowPriorityCueClassName(label: string) {
+  return getActionRowPriorityCueClassName(label);
 }
 
 function getLastUpdatedAgeLabel(lastUpdated: string) {

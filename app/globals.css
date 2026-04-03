@@ -2132,6 +2132,26 @@ tr.blocked-row {
   vertical-align: middle;
 }
 
+.row-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #516171;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.row-kind-badge--native {
+  background: #f1f5f9;
+  color: #516171;
+}
+
 .cell-status__text {
   font-size: 13px;
   font-weight: 700;
@@ -2177,6 +2197,39 @@ tr.blocked-row {
 .cell-subtext--publication {
   color: #2f6950;
   font-weight: 600;
+}
+
+.cell-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.row-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.row-priority-badge--blocked {
+  background: #fff0dc;
+  color: #8a4b12;
+}
+
+.row-priority-badge--overdue {
+  background: #ffeceb;
+  color: var(--danger);
+}
+
+.row-priority-badge--waiting {
+  background: #fff3dd;
+  color: #9a5b00;
 }
 
 .sort-indicator {
