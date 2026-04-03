@@ -179,6 +179,7 @@ export function ActionView({
   const groupedRows = actionListView.groupedRows;
   const visibleSelectableRows = actionListView.visibleSelectableRows;
   const collisionReview = actionListView.collisionReview;
+  const reviewLensSummary = actionListView.reviewLensSummary;
   const selectedItem = selectedWorkspace.selectedItem;
   const selectedIssueRecord = selectedWorkspace.selectedIssueRecord;
   const selectedItemIssueOptions = selectedWorkspace.selectedItemIssueOptions;
@@ -759,9 +760,7 @@ export function ActionView({
                 {totalExecutionCount !== visibleExecutionCount ? ` of ${totalExecutionCount}` : ""}
               </div>
               <div className="action-context-strip__meta">
-                {hasActiveExecutionContext
-                  ? "Rows are narrowed by the active execution context below."
-                  : "No extra constraints are hiding rows right now."}
+                {getActionContextMetaCopy(activeLens, hasActiveExecutionContext)}
               </div>
             </div>
             {hasActiveExecutionContext ? (
@@ -878,6 +877,46 @@ export function ActionView({
               ) : (
                 <div className="muted">No upcoming collisions in the current view.</div>
               )}
+            </div>
+          </div>
+        ) : null}
+
+        {reviewLensSummary ? (
+          <div className="card card--secondary review-lens-card">
+            <div className="review-lens-card__header">
+              <div>
+                <div className="card__title">{reviewLensSummary.title}</div>
+                <div className="review-lens-card__title">
+                  {reviewLensSummary.kind === "waitingTooLong"
+                    ? `Waiting items untouched for ${reviewLensSummary.thresholdDays}+ days`
+                    : `Open items untouched for ${reviewLensSummary.thresholdDays}+ days`}
+                </div>
+                <div className="review-lens-card__meta">
+                  {reviewLensSummary.description} {reviewLensSummary.totalCount}{" "}
+                  {reviewLensSummary.totalCount === 1 ? "item matches" : "items match"} in the current view.
+                </div>
+              </div>
+              <button
+                className="button-link button-link--inline-secondary"
+                onClick={() => handleLensChange("all")}
+                type="button"
+              >
+                Back to all work
+              </button>
+            </div>
+            <div className="review-lens-card__signals">
+              <span className="summary-chip">
+                <span className="summary-chip__label">Aged Items</span>
+                <strong className="summary-chip__value">{reviewLensSummary.totalCount}</strong>
+              </span>
+              <span className="summary-chip summary-chip--blocked">
+                <span className="summary-chip__label">Still Blocked</span>
+                <strong className="summary-chip__value">{reviewLensSummary.blockedCount}</strong>
+              </span>
+              <span className="summary-chip summary-chip--overdue">
+                <span className="summary-chip__label">Already Overdue</span>
+                <strong className="summary-chip__value">{reviewLensSummary.overdueCount}</strong>
+              </span>
             </div>
           </div>
         ) : null}
@@ -1230,7 +1269,7 @@ export function ActionView({
               {visibleRows.length === 0 ? (
                 <div className="empty-state empty-state--actionable">
                   <div className="empty-state__title">No items match this view.</div>
-                  <div className="empty-state__copy">{getActionEmptyStateCopy(contextChips)}</div>
+                  <div className="empty-state__copy">{getActionEmptyStateCopy(contextChips, activeLens)}</div>
                   {hasActiveExecutionContext ? (
                     <div className="empty-state__actions">
                       <button className="topbar__button" onClick={clearAllContext} type="button">
@@ -1706,7 +1745,7 @@ function getContextChipClearHandler(
   return null;
 }
 
-function getActionEmptyStateCopy(chips: ActionContextChip[]) {
+function getActionEmptyStateCopy(chips: ActionContextChip[], activeLens: ActionLens) {
   if (chips.length === 0) {
     return "There are no visible execution items yet. Add work or broaden the current review window.";
   }
@@ -1715,11 +1754,35 @@ function getActionEmptyStateCopy(chips: ActionContextChip[]) {
     .map((chip) => chip.label)
     .join(" • ");
 
+  if (activeLens === "reviewWaitingTooLong") {
+    return `No waiting items in the current view have gone 7+ days without an update. Current context: ${contextPreview}.`;
+  }
+
+  if (activeLens === "reviewStale") {
+    return `No non-waiting active items in the current view have gone 14+ days without an update. Current context: ${contextPreview}.`;
+  }
+
   return `No execution items match the current view: ${contextPreview}. Clear one or more constraints to broaden the lane.`;
 }
 
 function getLensLabel(lens: ActionLens) {
   return LENS_OPTIONS.find((option) => option.value === lens)?.label ?? "All Work";
+}
+
+function getActionContextMetaCopy(activeLens: ActionLens, hasActiveExecutionContext: boolean) {
+  if (activeLens === "reviewWaitingTooLong") {
+    return "Reviewing waiting items with no update in 7+ days.";
+  }
+
+  if (activeLens === "reviewStale") {
+    return "Reviewing open non-waiting items with no update in 14+ days.";
+  }
+
+  if (hasActiveExecutionContext) {
+    return "Rows are narrowed by the active execution context below.";
+  }
+
+  return "No extra constraints are hiding rows right now.";
 }
 
 function formatUrgencyBadge(item: ActionItem) {

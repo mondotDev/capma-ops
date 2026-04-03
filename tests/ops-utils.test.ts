@@ -2623,6 +2623,130 @@ test("review collisions lens keeps only active upcoming due-dated work", () => {
   });
 });
 
+test("review waiting-too-long lens keeps only waiting items aged 7+ days and reports a focused summary", () => {
+  const state = createDefaultAppStateData();
+
+  const listView = withMockedToday("2026-03-30T12:00:00", () =>
+    getActionListViewData({
+      items: [
+        createItem({
+          id: "waiting-aged",
+          title: "Old waiting item",
+          status: "Waiting",
+          lastUpdated: "2026-03-20",
+          waitingOn: "Vendor",
+          dueDate: "2026-03-31"
+        }),
+        createItem({
+          id: "waiting-fresh",
+          title: "Fresh waiting item",
+          status: "Waiting",
+          lastUpdated: "2026-03-26",
+          waitingOn: "Sponsor"
+        }),
+        createItem({
+          id: "blocked-aged",
+          title: "Blocked but not waiting",
+          isBlocked: true,
+          blockedBy: "Assets",
+          lastUpdated: "2026-03-20"
+        })
+      ],
+      collateralItems: [],
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventTypes: state.eventTypes,
+      activeEventInstanceId: "legislative-day-2026",
+      filters: {
+        activeDueDate: "",
+        activeEventGroup: "all",
+        activeFilter: "all",
+        activeFocus: "all",
+        activeLens: "reviewWaitingTooLong",
+        activeIssue: "",
+        activeQuery: "",
+        showCompleted: false
+      }
+    })
+  );
+
+  assert.deepEqual(listView.visibleRows.map((row) => row.id), ["waiting-aged"]);
+  assert.deepEqual(listView.reviewLensSummary, {
+    kind: "waitingTooLong",
+    thresholdDays: 7,
+    title: "WAITING TOO LONG REVIEW",
+    description: "Waiting items with no update in 7+ days.",
+    totalCount: 1,
+    blockedCount: 0,
+    overdueCount: 0
+  });
+});
+
+test("review stale lens keeps only active non-waiting items aged 14+ days and reports summary counts", () => {
+  const state = createDefaultAppStateData();
+
+  const listView = withMockedToday("2026-03-30T12:00:00", () =>
+    getActionListViewData({
+      items: [
+        createItem({
+          id: "stale-overdue",
+          title: "Stale overdue item",
+          status: "In Progress",
+          lastUpdated: "2026-03-10",
+          dueDate: "2026-03-28"
+        }),
+        createItem({
+          id: "stale-blocked",
+          title: "Stale blocked item",
+          status: "Not Started",
+          lastUpdated: "2026-03-10",
+          isBlocked: true,
+          blockedBy: "Internal",
+          dueDate: "2026-04-02"
+        }),
+        createItem({
+          id: "waiting-aged",
+          title: "Waiting aged item",
+          status: "Waiting",
+          lastUpdated: "2026-03-10"
+        }),
+        createItem({
+          id: "fresh-item",
+          title: "Fresh item",
+          status: "In Progress",
+          lastUpdated: "2026-03-28"
+        })
+      ],
+      collateralItems: [],
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents,
+      eventTypes: state.eventTypes,
+      activeEventInstanceId: "legislative-day-2026",
+      filters: {
+        activeDueDate: "",
+        activeEventGroup: "all",
+        activeFilter: "all",
+        activeFocus: "all",
+        activeLens: "reviewStale",
+        activeIssue: "",
+        activeQuery: "",
+        showCompleted: false
+      }
+    })
+  );
+
+  assert.deepEqual(listView.visibleRows.map((row) => row.id), ["stale-blocked", "stale-overdue"]);
+  assert.deepEqual(listView.reviewLensSummary, {
+    kind: "stale",
+    thresholdDays: 14,
+    title: "STALE WORK REVIEW",
+    description: "Active non-waiting items with no update in 14+ days.",
+    totalCount: 2,
+    blockedCount: 1,
+    overdueCount: 1
+  });
+});
+
 test("collision review href keeps action view in review mode and preserves date drill-ins", () => {
   assert.equal(getCollisionReviewHref(), "/action?lens=reviewCollisions");
   assert.equal(

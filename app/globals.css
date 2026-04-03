@@ -2234,6 +2234,36 @@ tr.blocked-row {
   font-weight: 600;
 }
 
+.review-lens-card {
+  display: grid;
+  gap: 12px;
+}
+
+.review-lens-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-lens-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.review-lens-card__meta {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.review-lens-card__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .filter-bar,
 .summary-row {
   display: flex;
@@ -3537,7 +3567,8 @@ textarea,
   }
 
   .collision-review__header,
-  .collision-review__date-top {
+  .collision-review__date-top,
+  .review-lens-card__header {
     flex-direction: column;
     align-items: flex-start;
   }

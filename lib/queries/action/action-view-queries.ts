@@ -66,6 +66,7 @@ export type ActionListViewData = {
   visibleRows: ActionViewRow[];
   visibleSelectableRows: NativeActionViewRow[];
   collisionReview: CollisionReviewSummary | null;
+  reviewLensSummary: ReviewLensSummary | null;
 };
 
 export type ActionDetailWorkspaceData = {
@@ -105,6 +106,16 @@ export type CollisionReviewDateSummary = {
   totalCount: number;
   ownerCollisionCount: number;
   owners: { owner: string; count: number }[];
+};
+
+export type ReviewLensSummary = {
+  kind: "waitingTooLong" | "stale";
+  thresholdDays: number;
+  title: string;
+  description: string;
+  totalCount: number;
+  blockedCount: number;
+  overdueCount: number;
 };
 
 export function getActionCollateralExecutionRows(input: Omit<CollateralExecutionQueryInput, "collateralItems"> & {
@@ -198,6 +209,7 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     collateralExecutionInstanceIds: collateralRows.map((row) => row.eventInstanceId)
   });
   const collisionReview = getCollisionReviewSummary(visibleRows, input.filters.activeDueDate);
+  const reviewLensSummary = getReviewLensSummary(visibleRows, input.filters.activeLens);
 
   return {
     eventGroupOptions: actionScopes.map((scope) => ({
@@ -214,7 +226,8 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     totalExecutionCount: totalVisibleItems.length + totalCollateralRows.length,
     visibleRows,
     visibleSelectableRows,
-    collisionReview: input.filters.activeLens === "reviewCollisions" ? collisionReview : null
+    collisionReview: input.filters.activeLens === "reviewCollisions" ? collisionReview : null,
+    reviewLensSummary
   };
 }
 
@@ -358,5 +371,35 @@ function getCollisionReviewSummary(rows: ActionViewRow[], activeDueDate: string)
     ownerCollisionCount: dateSummaries.reduce((total, entry) => total + entry.ownerCollisionCount, 0),
     overloadedDates: dateSummaries.filter((entry) => entry.totalCount > 1).slice(0, 5),
     selectedDate: activeDueDate ? dateSummaries.find((entry) => entry.date === activeDueDate) ?? null : null
+  };
+}
+
+function getReviewLensSummary(rows: ActionViewRow[], lens: ActionViewFilters["activeLens"]): ReviewLensSummary | null {
+  if (lens !== "reviewWaitingTooLong" && lens !== "reviewStale") {
+    return null;
+  }
+
+  const visibleActiveRows = rows.filter((row) => !row.isTerminal);
+
+  if (lens === "reviewWaitingTooLong") {
+    return {
+      kind: "waitingTooLong",
+      thresholdDays: 7,
+      title: "WAITING TOO LONG REVIEW",
+      description: "Waiting items with no update in 7+ days.",
+      totalCount: visibleActiveRows.length,
+      blockedCount: visibleActiveRows.filter((row) => row.isBlocked).length,
+      overdueCount: visibleActiveRows.filter((row) => row.isOverdue).length
+    };
+  }
+
+  return {
+    kind: "stale",
+    thresholdDays: 14,
+    title: "STALE WORK REVIEW",
+    description: "Active non-waiting items with no update in 14+ days.",
+    totalCount: visibleActiveRows.length,
+    blockedCount: visibleActiveRows.filter((row) => row.isBlocked).length,
+    overdueCount: visibleActiveRows.filter((row) => row.isOverdue).length
   };
 }
