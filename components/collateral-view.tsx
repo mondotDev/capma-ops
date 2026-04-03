@@ -315,6 +315,7 @@ export function CollateralView({
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
   const hasAppliedTemplateItems = workspaceBundle.hasAppliedTemplateItems;
+  const readiness = workspaceBundle.readiness;
   const hasActiveCollateralFilters =
     activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none" || showArchived;
   const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
@@ -660,6 +661,56 @@ export function CollateralView({
           <span>
             This event instance is visible for context, but collateral workflows are not configured for this event program yet.
           </span>
+        </div>
+      ) : null}
+
+      {selectedEventInstance && isSelectedEventProgramSupported ? (
+        <div className="collateral-readiness card card--secondary" role="status">
+          <div className="collateral-readiness__header">
+            <div>
+              <div className="card__title">INSTANCE READINESS</div>
+              <div className="collateral-readiness__meta">
+                {readiness.signals.length > 0
+                  ? "This instance still has setup gaps or active work that needs attention."
+                  : "No obvious setup gaps detected for the current instance."}
+              </div>
+            </div>
+            {readiness.signals.some((signal) => signal.kind === "blockedItems") ? (
+              <button
+                className="button-link button-link--inline-secondary"
+                onClick={() => setActiveSummaryFilter("needsAttention")}
+                type="button"
+              >
+                View needs attention
+              </button>
+            ) : null}
+          </div>
+          {readiness.signals.length > 0 ? (
+            <div className="collateral-readiness__signals">
+              {readiness.signals.map((signal) => (
+                <span
+                  className={getCollateralReadinessClassName(signal.tone)}
+                  key={signal.kind}
+                  title={signal.copy}
+                >
+                  {signal.shortLabel}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="collateral-readiness__empty">Template, profile dates, and active item setup look usable.</div>
+          )}
+          {defaultTemplatePack && !hasAppliedTemplateItems ? (
+            <div className="collateral-readiness__actions">
+              <button
+                className="topbar__button"
+                onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
+                type="button"
+              >
+                Apply Default Template
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1529,4 +1580,10 @@ function getCollateralProfileDeadlineFilterLabel(filter: CollateralProfileDeadli
   }
 
   return "";
+}
+
+function getCollateralReadinessClassName(tone: "warning" | "attention") {
+  return tone === "warning"
+    ? "collateral-readiness__pill collateral-readiness__pill--warning"
+    : "collateral-readiness__pill collateral-readiness__pill--attention";
 }

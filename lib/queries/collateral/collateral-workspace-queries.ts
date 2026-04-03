@@ -14,7 +14,7 @@ import {
   type EventProgram,
   type EventSubEvent,
 } from "@/lib/event-instances";
-import { formatShortDate } from "@/lib/ops-utils";
+import { formatShortDate, hasDueDate } from "@/lib/ops-utils";
 
 export type CollateralWorkspaceSummaryFilter =
   | "all"
@@ -51,6 +51,24 @@ export type CollateralEventInstanceWorkspaceBundle = {
   eventInstancesByType?: CollateralWorkspaceInstanceGroup[];
   instanceSubEvents: EventSubEvent[];
   hasAppliedTemplateItems: boolean;
+  readiness: CollateralInstanceReadinessSummary;
+};
+
+export type CollateralInstanceReadinessSignal = {
+  kind:
+    | "templateNotApplied"
+    | "missingLogoDeadline"
+    | "missingExternalPrintingDue"
+    | "missingInternalPrintingStart"
+    | "activeMissingDueDates"
+    | "blockedItems";
+  tone: "warning" | "attention";
+  shortLabel: string;
+  copy: string;
+};
+
+export type CollateralInstanceReadinessSummary = {
+  signals: CollateralInstanceReadinessSignal[];
 };
 
 export type CollateralWorkspaceSummary = {
@@ -136,6 +154,12 @@ export function getCollateralEventInstanceWorkspaceBundle(input: {
   const hasAppliedTemplateItems = input.collateralItems.some(
     (item) => item.eventInstanceId === resolvedActiveEventInstanceId && Boolean(item.templateOriginId)
   );
+  const readiness = getCollateralInstanceReadiness({
+    activeProfile,
+    defaultTemplatePack,
+    hasAppliedTemplateItems,
+    items: input.collateralItems.filter((item) => item.eventInstanceId === resolvedActiveEventInstanceId)
+  });
 
   return {
     resolvedActiveEventInstanceId,
@@ -152,7 +176,8 @@ export function getCollateralEventInstanceWorkspaceBundle(input: {
     eventInstancesByProgram,
     eventInstancesByType: eventInstancesByProgram,
     instanceSubEvents,
-    hasAppliedTemplateItems
+    hasAppliedTemplateItems,
+    readiness
   } satisfies CollateralEventInstanceWorkspaceBundle;
 }
 
@@ -285,6 +310,85 @@ function getDefaultLegDayProfile(instance: { startDate: string; endDate: string 
     externalPrintingDue: "",
     internalPrintingStart: ""
   };
+}
+
+function getCollateralInstanceReadiness(input: {
+  activeProfile: LegDayCollateralProfile | null;
+  defaultTemplatePack: ReturnType<typeof getDefaultTemplatePackForEventType> | null;
+  hasAppliedTemplateItems: boolean;
+  items: CollateralItem[];
+}): CollateralInstanceReadinessSummary {
+  const activeItems = input.items.filter((item) => !isCollateralArchived(item));
+  const blockedCount = activeItems.filter((item) => isCollateralBlocked(item)).length;
+  const missingDueDateCount = activeItems.filter((item) => !hasDueDate(item)).length;
+  const signals: CollateralInstanceReadinessSignal[] = [];
+
+  if (input.defaultTemplatePack && !input.hasAppliedTemplateItems) {
+    signals.push({
+      kind: "templateNotApplied",
+      tone: "warning",
+      shortLabel: "Template not applied",
+      copy: "This event instance has a default collateral template available, but it has not been applied yet."
+    });
+  }
+
+  if (input.activeProfile) {
+    if (!input.activeProfile.logoDeadline) {
+      signals.push({
+        kind: "missingLogoDeadline",
+        tone: "attention",
+        shortLabel: "Logo deadline missing",
+        copy: "The logo deadline is still blank in the event profile."
+      });
+    }
+
+    if (!input.activeProfile.externalPrintingDue) {
+      signals.push({
+        kind: "missingExternalPrintingDue",
+        tone: "attention",
+        shortLabel: "External printing due missing",
+        copy: "The external printing due date is still blank in the event profile."
+      });
+    }
+
+    if (!input.activeProfile.internalPrintingStart) {
+      signals.push({
+        kind: "missingInternalPrintingStart",
+        tone: "attention",
+        shortLabel: "Internal printing start missing",
+        copy: "The internal printing start date is still blank in the event profile."
+      });
+    }
+  }
+
+  if (missingDueDateCount > 0) {
+    signals.push({
+      kind: "activeMissingDueDates",
+      tone: "warning",
+      shortLabel:
+        missingDueDateCount === 1
+          ? "1 active item missing due date"
+          : `${missingDueDateCount} active items missing due dates`,
+      copy:
+        missingDueDateCount === 1
+          ? "1 active collateral item is missing a due date."
+          : `${missingDueDateCount} active collateral items are missing due dates.`
+    });
+  }
+
+  if (blockedCount > 0) {
+    signals.push({
+      kind: "blockedItems",
+      tone: "warning",
+      shortLabel: blockedCount === 1 ? "1 blocked item" : `${blockedCount} blocked items`,
+      copy:
+        blockedCount === 1
+          ? "1 active collateral item is currently blocked."
+          : `${blockedCount} active collateral items are currently blocked.`
+    });
+  }
+
+  return { signals };
 }
 
 function matchesCollateralSummaryFilter(item: CollateralItem, filter: CollateralWorkspaceSummaryFilter) {

@@ -3872,6 +3872,55 @@ test("collateral workspace bundle resolves the active instance and scoped metada
   assert.equal(workspace.isSelectedEventTypeSupported, true);
   assert.equal(workspace.instanceSubEvents.length > 0, true);
   assert.equal(workspace.eventInstancesByType.length > 0, true);
+  assert.equal(Array.isArray(workspace.readiness.signals), true);
+});
+
+test("collateral workspace readiness flags missing template, profile dates, blocked items, and missing due dates", () => {
+  const state = createDefaultAppStateData();
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: "legislative-day-2026",
+    collateralItems: [
+      createCollateralItem({
+        id: "blocked-collateral",
+        status: "Blocked",
+        blockedBy: "Logo approval",
+        dueDate: "2026-03-30"
+      }),
+      createCollateralItem({
+        id: "missing-due-date-collateral",
+        dueDate: "",
+        status: "Backlog"
+      })
+    ],
+    collateralProfiles: {
+      ...state.collateralProfiles,
+      "legislative-day-2026": {
+        eventStartDate: "2026-04-21",
+        eventEndDate: "2026-04-23",
+        roomBlockDeadline: "",
+        roomBlockNote: "",
+        logoDeadline: "",
+        logoDeadlineNote: "",
+        externalPrintingDue: "",
+        internalPrintingStart: ""
+      }
+    },
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+
+  assert.deepEqual(
+    workspace.readiness.signals.map((signal) => signal.shortLabel),
+    [
+      "Template not applied",
+      "Logo deadline missing",
+      "External printing due missing",
+      "Internal printing start missing",
+      "1 active item missing due date",
+      "1 blocked item"
+    ]
+  );
 });
 
 test("collateral instance list query stays scoped to the active event instance", () => {

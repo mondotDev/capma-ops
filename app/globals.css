@@ -608,6 +608,59 @@ textarea {
   color: #7a5a18;
 }
 
+.collateral-readiness {
+  display: grid;
+  gap: 10px;
+}
+
+.collateral-readiness__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.collateral-readiness__meta,
+.collateral-readiness__empty {
+  font-size: 13px;
+  color: #627283;
+}
+
+.collateral-readiness__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collateral-readiness__pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.collateral-readiness__pill--warning {
+  border: 1px solid rgba(183, 28, 28, 0.16);
+  background: #fff5f5;
+  color: #9f1d1d;
+}
+
+.collateral-readiness__pill--attention {
+  border: 1px solid rgba(191, 102, 0, 0.18);
+  background: #fff8eb;
+  color: #8a5700;
+}
+
+.collateral-readiness__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .field__hint {
   margin-top: 6px;
   font-size: 12px;
