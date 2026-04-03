@@ -186,6 +186,20 @@ export function ActionView({
   const selectedItemSubEvents = selectedWorkspace.selectedItemSubEvents;
   const selectedItemMeaningUi = selectedItem ? getActionMeaningUiState(selectedItem.eventInstanceId) : null;
   const selectedItemAgingHint = selectedItem ? getSelectedItemAgingHint(selectedItem, activeLens) : null;
+  const selectedEventInstanceName = useMemo(
+    () =>
+      selectedItem?.eventInstanceId
+        ? eventInstances.find((instance) => instance.id === selectedItem.eventInstanceId)?.name ?? null
+        : null,
+    [eventInstances, selectedItem?.eventInstanceId]
+  );
+  const selectedSubEventName = useMemo(
+    () =>
+      selectedItem?.subEventId
+        ? selectedItemSubEvents.find((subEvent) => subEvent.id === selectedItem.subEventId)?.name ?? null
+        : null,
+    [selectedItem?.subEventId, selectedItemSubEvents]
+  );
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
     () => selectedItemIds.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)),
@@ -1301,6 +1315,7 @@ export function ActionView({
             aria-label="Action item workspace"
           >
             <ActionItemDrawerHeader
+              eventInstanceName={selectedEventInstanceName}
               isActionsMenuOpen={isActionsMenuOpen}
               isEditingTitle={isEditingTitle}
               item={selectedItem}
@@ -1314,12 +1329,16 @@ export function ActionView({
               onStartTitleEdit={() => setIsEditingTitle(true)}
               onTitleDraftChange={setTitleDraft}
               onToggleActionsMenu={() => setIsActionsMenuOpen((current) => !current)}
+              subEventName={selectedSubEventName}
               titleDraft={titleDraft}
             />
             <div className="drawer__sections">
               <section className="drawer-section drawer-section--form action-drawer">
                 <div className="action-drawer__group">
-                  <div className="drawer__panel-title">Execution</div>
+                  <div className="drawer__panel-heading">
+                    <div className="drawer__panel-title">Execution</div>
+                    <div className="drawer__panel-copy">Status, timing, follow-up, and blockers for moving the item forward.</div>
+                  </div>
                   <div className="drawer__grid action-drawer__group-grid action-drawer__group-grid--execution">
                   <div className="field field--priority">
                     <label htmlFor="drawer-status">Status</label>
@@ -1444,7 +1463,10 @@ export function ActionView({
                   </div>
                 </div>
                 <div className="action-drawer__group">
-                  <div className="drawer__panel-title">Context</div>
+                  <div className="drawer__panel-heading">
+                    <div className="drawer__panel-title">Scope & Routing</div>
+                    <div className="drawer__panel-copy">Where this work lives, what it is linked to, and how it should be interpreted.</div>
+                  </div>
                   <div className="drawer__grid action-drawer__group-grid action-drawer__group-grid--context">
                     <div className="field field--secondary">
                       <label htmlFor="drawer-workstream">Workstream</label>
@@ -1580,9 +1602,6 @@ export function ActionView({
                       </div>
                     </div>
                   ) : null}
-                  </div>
-                </div>
-
                   <div className="field field--secondary action-drawer__type-field">
                     <label htmlFor="drawer-type">Type</label>
                     <input
@@ -1590,7 +1609,10 @@ export function ActionView({
                       onChange={(event) => updateItem(selectedItem.id, { type: event.target.value })}
                       value={selectedItem.type}
                     />
+                    <div className="field-hint">Use a concise work type so the item reads clearly in the execution lane.</div>
                   </div>
+                  </div>
+                </div>
               </section>
 
               <ActionItemNotesPanel
@@ -1598,6 +1620,8 @@ export function ActionView({
                 noteEntries={selectedItem.noteEntries}
                 onAddNote={() => addNote(selectedItem)}
                 onNoteDraftChange={setNoteDraft}
+                subtitle="Capture operational decisions, follow-ups, and unblock updates in one place."
+                title="Operational Notes"
               />
             </div>
             {isArchiveConfirmOpen ? (

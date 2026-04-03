@@ -2970,6 +2970,13 @@ tr.blocked-row {
   margin-top: 10px;
 }
 
+.action-drawer__context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .action-drawer__meta-pill {
   display: inline-flex;
   align-items: center;
@@ -2978,6 +2985,18 @@ tr.blocked-row {
   border-radius: 999px;
   background: #f3eee6;
   color: #65594d;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.action-drawer__context-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f7f3ed;
+  color: #6b5f52;
   font-size: 12px;
   font-weight: 600;
 }
@@ -3095,6 +3114,21 @@ tr.blocked-row {
   font-weight: 600;
 }
 
+.drawer--action .action-drawer__issue-status .field-static {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #e7dfd4;
+  border-radius: 14px;
+  background: #fcfaf6;
+  color: var(--text);
+}
+
+.drawer--action .action-drawer__type-field input {
+  background: #fcfaf6;
+}
+
 .drawer--action .drawer-section--notes-panel {
   padding: 18px 18px 16px;
   border-radius: 18px;
@@ -3172,6 +3206,17 @@ tr.blocked-row {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #607181;
+}
+
+.drawer__panel-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.drawer__panel-copy {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 .note-entry__rail {

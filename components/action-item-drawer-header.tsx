@@ -10,6 +10,8 @@ import { formatShortDate, isItemMissingDueDate } from "@/lib/ops-utils";
 
 type ActionItemDrawerHeaderProps = {
   item: ActionItem;
+  eventInstanceName?: string | null;
+  subEventName?: string | null;
   isEditingTitle: boolean;
   titleDraft: string;
   isActionsMenuOpen: boolean;
@@ -24,6 +26,8 @@ type ActionItemDrawerHeaderProps = {
 
 export function ActionItemDrawerHeader({
   item,
+  eventInstanceName,
+  subEventName,
   isEditingTitle,
   titleDraft,
   isActionsMenuOpen,
@@ -78,10 +82,26 @@ export function ActionItemDrawerHeader({
             ) : null}
           </div>
           <div className="action-drawer__meta-row">
-            <span className="action-drawer__meta-pill">Owner: {item.owner}</span>
+            <span className="action-drawer__meta-pill">Owner: {item.owner || "Unassigned"}</span>
             <span className="action-drawer__meta-pill">Type: {item.type}</span>
             {item.issue ? <span className="action-drawer__meta-pill">Issue: {item.issue}</span> : null}
           </div>
+          {eventInstanceName || subEventName || item.operationalBucket || (item.status === "Waiting" && item.waitingOn.trim()) ? (
+            <div className="action-drawer__context-row">
+              {eventInstanceName ? (
+                <span className="action-drawer__context-pill">Event: {eventInstanceName}</span>
+              ) : null}
+              {subEventName ? (
+                <span className="action-drawer__context-pill">Sub-Event: {subEventName}</span>
+              ) : null}
+              {item.operationalBucket ? (
+                <span className="action-drawer__context-pill">Operational: {item.operationalBucket}</span>
+              ) : null}
+              {item.status === "Waiting" && item.waitingOn.trim() ? (
+                <span className="action-drawer__context-pill">Waiting On: {item.waitingOn.trim()}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         <div className="drawer__header-actions">
           <div className="drawer__actions-menu">

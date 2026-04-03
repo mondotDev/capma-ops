@@ -8,17 +8,24 @@ type ActionItemNotesPanelProps = {
   noteDraft: string;
   onNoteDraftChange: (value: string) => void;
   onAddNote: () => void;
+  title?: string;
+  subtitle?: string;
 };
 
 export function ActionItemNotesPanel({
   noteEntries,
   noteDraft,
   onNoteDraftChange,
-  onAddNote
+  onAddNote,
+  title = "Notes",
+  subtitle
 }: ActionItemNotesPanelProps) {
   return (
     <section className="drawer-section drawer-section--notes drawer-section--notes-panel">
-      <h3 className="drawer__panel-title">Notes</h3>
+      <div className="drawer__panel-heading">
+        <h3 className="drawer__panel-title">{title}</h3>
+        {subtitle ? <div className="drawer__panel-copy">{subtitle}</div> : null}
+      </div>
       {noteEntries.length > 0 ? (
         <div className="note-history">
           {[...sortNoteEntriesNewestFirst(noteEntries)].reverse().map((entry) => (
