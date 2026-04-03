@@ -1471,6 +1471,44 @@ textarea {
   font-weight: 600;
 }
 
+.publication-row__readiness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.publication-row__readiness-pill,
+.publication-workspace__readiness-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.publication-row__readiness-pill--warning,
+.publication-workspace__readiness-pill--warning {
+  border: 1px solid rgba(183, 28, 28, 0.16);
+  background: #fff5f5;
+  color: #9f1d1d;
+}
+
+.publication-row__readiness-pill--attention,
+.publication-workspace__readiness-pill--attention {
+  border: 1px solid rgba(191, 102, 0, 0.18);
+  background: #fff8eb;
+  color: #8a5700;
+}
+
+.publication-row__readiness-pill--positive,
+.publication-workspace__readiness-pill--positive {
+  border: 1px solid rgba(47, 105, 80, 0.18);
+  background: #eef8f1;
+  color: #2f6950;
+}
+
 .publication-row__actions {
   display: flex;
   flex-wrap: wrap;
@@ -2193,6 +2231,17 @@ tr.blocked-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.publication-workspace__readiness {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.publication-workspace__readiness-empty {
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .collision-review {

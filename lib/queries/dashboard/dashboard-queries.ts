@@ -3,10 +3,11 @@ import {
   type DashboardExecutionItem
 } from "@/lib/dashboard-execution-items";
 import type { ActionItem } from "@/lib/sample-data";
-import type { IssueRecord, WorkstreamSchedule } from "@/lib/ops-utils";
+import type { IssueRecord, PublicationIssueReadinessSignal, WorkstreamSchedule } from "@/lib/ops-utils";
 import {
   getCurrentDate,
   getDashboardMetrics,
+  getPublicationIssueReadiness,
   getVisiblePublicationIssues,
   getWorkstreamDateContext,
 } from "@/lib/ops-utils";
@@ -48,6 +49,7 @@ export type PublicationIssueSummaryRow = {
   progressCopy: string;
   canCompleteIssue: boolean;
   isMissingDueDate: boolean;
+  readinessSignals: PublicationIssueReadinessSignal[];
 };
 
 export type DashboardLiveSummary = {
@@ -323,7 +325,8 @@ export function getPublicationIssueSummary(input: DashboardQueryInput): Publicat
           ? `${issueProgress.complete} of ${issueProgress.total} complete`
           : "No deliverables yet",
       canCompleteIssue: issueProgress.total > 0 && issueProgress.complete === issueProgress.total,
-      isMissingDueDate: !issue.dueDate
+      isMissingDueDate: !issue.dueDate,
+      readinessSignals: getPublicationIssueReadiness(issue, input.items)
     };
   });
 }

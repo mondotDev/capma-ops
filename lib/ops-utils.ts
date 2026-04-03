@@ -184,6 +184,18 @@ export type IssueProgress = {
   complete: number;
   total: number;
 };
+export type PublicationIssueReadinessSignal = {
+  kind:
+    | "missingDueDate"
+    | "plannedOverdue"
+    | "plannedDueSoon"
+    | "missingDeliverables"
+    | "deliverablesMissingDueDates"
+    | "readyToComplete";
+  tone: "warning" | "attention" | "positive";
+  shortLabel: string;
+  copy: string;
+};
 export type StuckReasonCount = {
   label: string;
   count: number;
@@ -968,6 +980,83 @@ export function getIssueProgress(items: ActionItem[], issue: string): IssueProgr
     complete: deliverables.filter((item) => item.status === "Complete").length,
     total: deliverables.length
   };
+}
+
+export function getPublicationIssueReadiness(
+  issue: IssueRecord,
+  items: ActionItem[],
+  currentDate = getCurrentDate()
+): PublicationIssueReadinessSignal[] {
+  const signals: PublicationIssueReadinessSignal[] = [];
+  const deliverables = items.filter((item) => item.issue === issue.label && item.type === "Deliverable");
+  const deliverablesMissingDueDateCount = deliverables.filter((item) => !hasDueDate(item)).length;
+  const issueProgress = getIssueProgress(items, issue.label);
+
+  if (!issue.dueDate) {
+    signals.push({
+      kind: "missingDueDate",
+      tone: "warning",
+      shortLabel: "Missing due date",
+      copy: "This issue does not have a due date yet."
+    });
+  } else if (issue.status === "Planned") {
+    const days = Math.floor((parseDate(issue.dueDate)?.getTime() ?? currentDate.getTime()) - currentDate.getTime());
+    const dayDelta = Math.round(days / (24 * 60 * 60 * 1000));
+
+    if (dayDelta < 0) {
+      signals.push({
+        kind: "plannedOverdue",
+        tone: "warning",
+        shortLabel: "Planned and overdue",
+        copy: "This issue is still planned even though its due date has passed."
+      });
+    } else if (dayDelta <= 14) {
+      signals.push({
+        kind: "plannedDueSoon",
+        tone: "attention",
+        shortLabel: dayDelta === 0 ? "Planned, due today" : `Planned, due in ${dayDelta} day${dayDelta === 1 ? "" : "s"}`,
+        copy:
+          dayDelta === 0
+            ? "This issue is still planned and due today."
+            : `This issue is still planned and due in ${dayDelta} day${dayDelta === 1 ? "" : "s"}.`
+      });
+    }
+  }
+
+  if (issue.status === "Open" && issueProgress.total === 0) {
+    signals.push({
+      kind: "missingDeliverables",
+      tone: "warning",
+      shortLabel: "No deliverables generated",
+      copy: "This issue is open but no deliverable items exist yet."
+    });
+  }
+
+  if (issue.status === "Open" && deliverablesMissingDueDateCount > 0) {
+    signals.push({
+      kind: "deliverablesMissingDueDates",
+      tone: "attention",
+      shortLabel:
+        deliverablesMissingDueDateCount === 1
+          ? "1 deliverable missing due date"
+          : `${deliverablesMissingDueDateCount} deliverables missing due dates`,
+      copy:
+        deliverablesMissingDueDateCount === 1
+          ? "1 deliverable linked to this issue is missing a due date."
+          : `${deliverablesMissingDueDateCount} deliverables linked to this issue are missing due dates.`
+    });
+  }
+
+  if (issue.status === "Open" && issueProgress.total > 0 && issueProgress.complete === issueProgress.total) {
+    signals.push({
+      kind: "readyToComplete",
+      tone: "positive",
+      shortLabel: "Ready to complete",
+      copy: "All deliverables for this issue are complete. The issue can be closed when you are ready."
+    });
+  }
+
+  return signals;
 }
 
 export function formatShortDate(dateValue: string) {

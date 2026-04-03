@@ -40,6 +40,7 @@ import {
   OPERATIONAL_BUCKET_OPTIONS,
   isBlockedItem,
   isPublicationWorkstream,
+  type PublicationIssueReadinessSignal,
   isTerminalStatus,
   isWaitingIssue,
   isWaitingMissingReason,
@@ -771,6 +772,22 @@ export function ActionView({
                   <strong className="summary-chip__value">Missing</strong>
                 </span>
               ) : null}
+            </div>
+
+            <div className="publication-workspace__readiness">
+              {publicationIssueWorkspace.readinessSignals.length > 0 ? (
+                publicationIssueWorkspace.readinessSignals.map((signal) => (
+                  <span
+                    className={getPublicationReadinessClassName("workspace", signal)}
+                    key={`${publicationIssueWorkspace.issue.label}-${signal.kind}`}
+                    title={signal.copy}
+                  >
+                    {signal.shortLabel}
+                  </span>
+                ))
+              ) : (
+                <span className="publication-workspace__readiness-empty">No setup gaps detected for this issue.</span>
+              )}
             </div>
 
             <div className="card__subhead">
@@ -2340,6 +2357,23 @@ function getPublicationIssueRowLabel(row: {
   }
 
   return `Issue: ${row.issueLabel}`;
+}
+
+function getPublicationReadinessClassName(
+  surface: "workspace" | "row",
+  signal: PublicationIssueReadinessSignal
+) {
+  const prefix = surface === "workspace" ? "publication-workspace__readiness-pill" : "publication-row__readiness-pill";
+
+  if (signal.tone === "warning") {
+    return `${prefix} ${prefix}--warning`;
+  }
+
+  if (signal.tone === "positive") {
+    return `${prefix} ${prefix}--positive`;
+  }
+
+  return `${prefix} ${prefix}--attention`;
 }
 
 function getLastUpdatedAgeLabel(lastUpdated: string) {

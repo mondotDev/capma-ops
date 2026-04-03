@@ -20,12 +20,14 @@ import type { EventInstance, EventProgram, EventSubEvent } from "@/lib/event-ins
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getIssueProgress,
+  getPublicationIssueReadiness,
   getIssuesForWorkstream,
   getVisiblePublicationIssues,
   isPublicationWorkstream,
   isTerminalStatus,
   type ActionSummaryCounts,
-  type IssueRecord
+  type IssueRecord,
+  type PublicationIssueReadinessSignal
 } from "@/lib/ops-utils";
 
 export type ActionListQueryInput = {
@@ -85,6 +87,7 @@ export type PublicationIssueWorkspaceSummary = {
   totalCount: number;
   remainingCount: number;
   progressCopy: string;
+  readinessSignals: PublicationIssueReadinessSignal[];
   canOpenIssue: boolean;
   canGenerateMissing: boolean;
   canCompleteIssue: boolean;
@@ -272,6 +275,7 @@ export function getPublicationIssueWorkspaceSummary(input: {
   const progressCopy =
     progress.total > 0 ? `${progress.complete} of ${progress.total} complete` : "No deliverables yet";
   const visiblePublicationIssues = getVisiblePublicationIssueOptions(input.issues, issue);
+  const readinessSignals = getPublicationIssueReadiness(issue, input.items);
 
   return {
     issue,
@@ -282,6 +286,7 @@ export function getPublicationIssueWorkspaceSummary(input: {
     totalCount: progress.total,
     remainingCount,
     progressCopy,
+    readinessSignals,
     canOpenIssue: issue.status === "Planned",
     canGenerateMissing: issue.status === "Open",
     canCompleteIssue:

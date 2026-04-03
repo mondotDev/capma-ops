@@ -180,7 +180,19 @@ export function DashboardView() {
                       <div aria-hidden="true" className="publication-row__progress">
                         <span className="publication-row__progress-bar" style={{ width: `${issue.progressPercent}%` }} />
                       </div>
-                      {issue.isMissingDueDate ? <div className="publication-row__warning">missing due date</div> : null}
+                      {issue.readinessSignals.length > 0 ? (
+                        <div className="publication-row__readiness">
+                          {issue.readinessSignals.slice(0, 2).map((signal) => (
+                            <div
+                              className={getPublicationReadinessClassName(signal)}
+                              key={`${issue.label}-${signal.kind}`}
+                              title={signal.copy}
+                            >
+                              {signal.shortLabel}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="publication-row__actions" onClick={(event) => event.stopPropagation()}>
                       {issue.status === "Planned" ? (
@@ -400,6 +412,18 @@ function formatCompletionBlockedFeedback(issue: string, blockedDeliverables: str
   }
 
   return `${issue} cannot be completed. Open deliverables remain: ${preview}.`;
+}
+
+function getPublicationReadinessClassName(signal: PublicationIssueSummaryRow["readinessSignals"][number]) {
+  if (signal.tone === "warning") {
+    return "publication-row__readiness-pill publication-row__readiness-pill--warning";
+  }
+
+  if (signal.tone === "positive") {
+    return "publication-row__readiness-pill publication-row__readiness-pill--positive";
+  }
+
+  return "publication-row__readiness-pill publication-row__readiness-pill--attention";
 }
 
 function reorderVisibleIssues(

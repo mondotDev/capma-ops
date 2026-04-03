@@ -2774,6 +2774,7 @@ test("publication issue summary query returns progress-ready rows for visible pu
       workstream: "News Brief",
       issue: "March 2026 News Brief",
       type: "Deliverable",
+      dueDate: "2026-03-31",
       status: "Complete"
     }),
     createItem({
@@ -2781,12 +2782,13 @@ test("publication issue summary query returns progress-ready rows for visible pu
       workstream: "News Brief",
       issue: "March 2026 News Brief",
       type: "Deliverable",
+      dueDate: "",
       status: "In Progress"
     })
   ];
   const issues: IssueRecord[] = [
     { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
-    { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
+    { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-10", workstream: "The Voice", year: 2026 }
   ];
 
   const publicationRows = withMockedToday("2026-03-30T12:00:00", () =>
@@ -2804,6 +2806,14 @@ test("publication issue summary query returns progress-ready rows for visible pu
   assert.equal(publicationRows[0]?.totalCount, 2);
   assert.equal(publicationRows[0]?.progressPercent, 50);
   assert.equal(publicationRows[0]?.canCompleteIssue, false);
+  assert.deepEqual(
+    publicationRows[0]?.readinessSignals.map((signal) => signal.shortLabel),
+    ["1 deliverable missing due date"]
+  );
+  assert.deepEqual(
+    publicationRows[1]?.readinessSignals.map((signal) => signal.shortLabel),
+    ["Planned, due in 11 days"]
+  );
 });
 
 test("publication issue workspace summary derives progress and actions for open publication issues", () => {
@@ -2814,6 +2824,7 @@ test("publication issue workspace summary derives progress and actions for open 
       workstream: "News Brief",
       issue: "March 2026 News Brief",
       type: "Deliverable",
+      dueDate: "2026-03-31",
       status: "Complete"
     }),
     createItem({
@@ -2822,6 +2833,7 @@ test("publication issue workspace summary derives progress and actions for open 
       workstream: "News Brief",
       issue: "March 2026 News Brief",
       type: "Deliverable",
+      dueDate: "",
       status: "In Progress"
     })
   ];
@@ -2848,6 +2860,10 @@ test("publication issue workspace summary derives progress and actions for open 
   assert.equal(workspace?.canGenerateMissing, true);
   assert.equal(workspace?.canCompleteIssue, false);
   assert.deepEqual(
+    workspace?.readinessSignals.map((signal) => signal.shortLabel),
+    ["1 deliverable missing due date"]
+  );
+  assert.deepEqual(
     workspace?.visiblePublicationIssues.map((issue) => issue.label),
     ["March 2026 News Brief", "Spring 2026 The Voice"]
   );
@@ -2870,6 +2886,47 @@ test("publication issue workspace summary flags missing due dates and supports p
   assert.equal(workspace?.canGenerateMissing, false);
   assert.equal(workspace?.canCompleteIssue, false);
   assert.equal(workspace?.progressCopy, "No deliverables yet");
+  assert.deepEqual(
+    workspace?.readinessSignals.map((signal) => signal.shortLabel),
+    ["Missing due date"]
+  );
+});
+
+test("publication readiness flags open issues with no deliverables and ready-to-complete issues", () => {
+  const openMissingWorkspace = getPublicationIssueWorkspaceSummary({
+    activeIssue: "March 2026 News Brief",
+    items: [],
+    issues: [
+      { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 }
+    ]
+  });
+
+  assert.deepEqual(
+    openMissingWorkspace?.readinessSignals.map((signal) => signal.shortLabel),
+    ["No deliverables generated"]
+  );
+
+  const readyToCompleteWorkspace = getPublicationIssueWorkspaceSummary({
+    activeIssue: "Spring 2026 The Voice",
+    items: [
+      createItem({
+        title: "President message",
+        workstream: "The Voice",
+        issue: "Spring 2026 The Voice",
+        type: "Deliverable",
+        dueDate: "2026-04-20",
+        status: "Complete"
+      })
+    ],
+    issues: [
+      { label: "Spring 2026 The Voice", status: "Open", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
+    ]
+  });
+
+  assert.deepEqual(
+    readyToCompleteWorkspace?.readinessSignals.map((signal) => signal.shortLabel),
+    ["Ready to complete"]
+  );
 });
 
 test("publication issue workspace summary ignores unknown issue filters", () => {
