@@ -5,6 +5,7 @@ import {
   type CollateralItem,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
+import { localCollateralStore } from "@/lib/collateral-store";
 import {
   createUnassignedSubEvent,
   resolveActiveEventInstanceId,
@@ -133,41 +134,47 @@ export function parseImportedAppState(
     return null;
   }
 
+  const normalizedEventScopedState = normalizeEventScopedState({
+    activeEventInstanceId:
+      typeof snapshot.activeEventInstanceId === "string" && snapshot.activeEventInstanceId.length > 0
+        ? snapshot.activeEventInstanceId
+        : initialEventInstances[0].id,
+    collateralItems,
+    collateralProfiles: isCollateralProfileMap(snapshot.collateralProfiles)
+      ? Object.fromEntries(
+          Object.entries(snapshot.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+        )
+      : snapshot.collateralProfile && isCollateralProfileRecord(snapshot.collateralProfile)
+        ? { [initialEventInstances[0].id]: { ...snapshot.collateralProfile } }
+        : {},
+    eventInstances: Array.isArray(snapshot.eventInstances)
+      ? snapshot.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
+          if (isEventInstanceRecord(instance)) {
+            const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
+
+            if (normalizedInstance) {
+              accumulator.push(normalizedInstance);
+            }
+          }
+
+          return accumulator;
+        }, [])
+      : initialEventInstances.map((instance) => ({ ...instance })),
+    eventSubEvents: Array.isArray(snapshot.eventSubEvents)
+      ? snapshot.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
+      : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
+    eventTypes: Array.isArray(snapshot.eventTypes)
+      ? snapshot.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
+      : initialEventTypes.map((eventType) => ({ ...eventType }))
+  });
+
   return {
     items,
     issueStatuses: snapshot.issueStatuses,
-    ...normalizeEventScopedState({
-      activeEventInstanceId:
-        typeof snapshot.activeEventInstanceId === "string" && snapshot.activeEventInstanceId.length > 0
-          ? snapshot.activeEventInstanceId
-          : initialEventInstances[0].id,
-      collateralItems,
-      collateralProfiles: isCollateralProfileMap(snapshot.collateralProfiles)
-        ? Object.fromEntries(
-            Object.entries(snapshot.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
-          )
-        : snapshot.collateralProfile && isCollateralProfileRecord(snapshot.collateralProfile)
-          ? { [initialEventInstances[0].id]: { ...snapshot.collateralProfile } }
-          : {},
-      eventInstances: Array.isArray(snapshot.eventInstances)
-        ? snapshot.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
-            if (isEventInstanceRecord(instance)) {
-              const normalizedInstance = normalizeEventInstance(instance as Partial<EventInstance>);
-
-              if (normalizedInstance) {
-                accumulator.push(normalizedInstance);
-              }
-            }
-
-            return accumulator;
-          }, [])
-        : initialEventInstances.map((instance) => ({ ...instance })),
-      eventSubEvents: Array.isArray(snapshot.eventSubEvents)
-        ? snapshot.eventSubEvents.filter(isEventSubEventRecord).map((subEvent) => ({ ...subEvent }))
-        : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
-      eventTypes: Array.isArray(snapshot.eventTypes)
-        ? snapshot.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
-        : initialEventTypes.map((eventType) => ({ ...eventType }))
+    ...normalizedEventScopedState,
+    collateralItems: localCollateralStore.normalizeLoaded(normalizedEventScopedState.collateralItems, {
+      eventInstances: normalizedEventScopedState.eventInstances,
+      eventSubEvents: normalizedEventScopedState.eventSubEvents
     }),
     defaultOwnerForNewItems:
       typeof snapshot.defaultOwnerForNewItems === "string" ? snapshot.defaultOwnerForNewItems : "Melissa",

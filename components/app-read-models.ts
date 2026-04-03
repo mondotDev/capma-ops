@@ -221,6 +221,7 @@ export function useCollateralWorkspaceReadModel(input: {
   activeProfileDeadlineFilter: CollateralProfileDeadlineFilter;
   selectedId: string | null;
   draftCollateralItem: CollateralItem | null;
+  showArchived: boolean;
 }): {
   workspaceBundle: CollateralEventInstanceWorkspaceBundle;
   collateralListView: CollateralInstanceListView;
@@ -257,12 +258,14 @@ export function useCollateralWorkspaceReadModel(input: {
         activeProfile: workspaceBundle.activeProfile,
         activeSummaryFilter: input.activeSummaryFilter,
         activeProfileDeadlineFilter: input.activeProfileDeadlineFilter,
-        draftCollateralItem: input.draftCollateralItem
+        draftCollateralItem: input.draftCollateralItem,
+        showArchived: input.showArchived
       }),
     [
       input.activeProfileDeadlineFilter,
       input.activeSummaryFilter,
       input.draftCollateralItem,
+      input.showArchived,
       workspaceBundle,
       workspaceSource.collateralItems
     ]

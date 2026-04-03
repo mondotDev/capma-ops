@@ -2,6 +2,7 @@ import {
   initialLegDayCollateralItems,
   initialLegDayCollateralProfile
 } from "@/lib/collateral-data";
+import { localCollateralStore } from "@/lib/collateral-store";
 import {
   initialEventFamilies,
   initialEventInstances,
@@ -26,7 +27,13 @@ export function createDefaultActionItems() {
 }
 
 export function createDefaultCollateralItems() {
-  return initialLegDayCollateralItems.map((item) => ({ ...item }));
+  return localCollateralStore.normalizeLoaded(
+    initialLegDayCollateralItems.map((item) => ({ ...item })),
+    {
+      eventInstances: initialEventInstances,
+      eventSubEvents: initialEventSubEvents
+    }
+  );
 }
 
 export function createDefaultCollateralProfiles(): CollateralProfilesByInstance {

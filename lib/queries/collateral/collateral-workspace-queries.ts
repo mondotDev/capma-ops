@@ -1,9 +1,9 @@
 import {
+  isCollateralArchived,
+  type CollateralItem,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
-  isCollateralTerminalStatus,
-  type CollateralItem,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
 import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
@@ -164,16 +164,20 @@ export function getCollateralInstanceListView(input: {
   activeSummaryFilter: CollateralWorkspaceSummaryFilter;
   activeProfileDeadlineFilter: CollateralWorkspaceProfileDeadlineFilter;
   draftCollateralItem: CollateralItem | null;
+  showArchived: boolean;
 }) {
   const instanceItems = input.collateralItems.filter(
     (item) => item.eventInstanceId === input.resolvedActiveEventInstanceId
   );
+  const laneItems = input.showArchived
+    ? instanceItems
+    : instanceItems.filter((item) => !isCollateralArchived(item));
   const visibleInstanceItems =
     input.draftCollateralItem && input.draftCollateralItem.eventInstanceId === input.resolvedActiveEventInstanceId
-      ? [input.draftCollateralItem, ...instanceItems]
-      : instanceItems;
+      ? [input.draftCollateralItem, ...laneItems]
+      : laneItems;
   const subEventNameById = new Map(input.instanceSubEvents.map((subEvent) => [subEvent.id, subEvent.name]));
-  const activeItems = instanceItems.filter((item) => !isCollateralTerminalStatus(item.status));
+  const activeItems = instanceItems.filter((item) => !isCollateralArchived(item));
   const filteredVisibleItems = visibleInstanceItems.filter(
     (item) =>
       matchesCollateralSummaryFilter(item, input.activeSummaryFilter) &&
@@ -289,7 +293,7 @@ function matchesCollateralSummaryFilter(item: CollateralItem, filter: Collateral
   }
 
   if (filter === "active") {
-    return !isCollateralTerminalStatus(item.status);
+    return !isCollateralArchived(item);
   }
 
   if (filter === "needsAttention") {
@@ -316,7 +320,7 @@ function matchesCollateralProfileDeadlineFilter(
     return true;
   }
 
-  if (isCollateralTerminalStatus(item.status) || item.dueDate.length === 0 || !profile) {
+  if (isCollateralArchived(item) || item.dueDate.length === 0 || !profile) {
     return false;
   }
 

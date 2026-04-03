@@ -22,6 +22,7 @@ import {
 import {
   ACTION_VIEW_COLLATERAL_STATUS_OPTIONS,
   isActionViewCollateralStatus,
+  isCollateralArchived,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
@@ -29,6 +30,7 @@ import {
   normalizeCollateralWorkflowStatus,
   type CollateralItem
 } from "../lib/collateral-data";
+import { localCollateralStore } from "../lib/collateral-store";
 import { buildDashboardExecutionItems } from "../lib/dashboard-execution-items";
 import {
   getVisibleActionViewRows,
@@ -42,6 +44,10 @@ import {
   shouldClearEventLinkOnWorkstreamChange
 } from "../lib/action/action-item-ux";
 import { getVisibleCollateralExecutionRows } from "../lib/collateral-execution-view";
+import {
+  getTemplateItemsForPack,
+  getTemplateSubEventsForPack
+} from "../lib/collateral-templates";
 import {
   completePublicationIssue,
   openPublicationIssue,
@@ -65,6 +71,10 @@ import {
   getActionItemEventGroupLabel,
   getActionItemSubEventLabel
 } from "../lib/events/event-labels";
+import {
+  initialEventInstances,
+  initialEventSubEvents
+} from "../lib/event-instances";
 import {
   getDashboardLiveSummary,
   getDashboardUrgentPreview,
@@ -346,6 +356,107 @@ test("collateral blocked helper treats status and blockedBy as the same blocked 
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Blocked", blockedBy: "" })), true);
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "Vendor proof" })), true);
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "" })), false);
+});
+
+test("collateral store archives complete and cut items without hard deleting them", () => {
+  withMockedToday("2026-03-30T12:00:00.000Z", () => {
+    const completed = localCollateralStore.update(
+      [createCollateralItem({ id: "complete-me", status: "In Design", lastUpdated: "2026-03-28" })],
+      "complete-me",
+      { status: "Complete" },
+      {
+        eventInstances: initialEventInstances,
+        eventSubEvents: initialEventSubEvents
+      }
+    )[0];
+
+    assert.equal(completed?.status, "Complete");
+    assert.equal(completed?.archivedAt, "2026-03-30");
+    assert.equal(isCollateralArchived(completed!), true);
+
+    const cut = localCollateralStore.markCut(
+      [createCollateralItem({ id: "cut-me", status: "Ready for Print", lastUpdated: "2026-03-28" })],
+      "cut-me",
+      {
+        eventInstances: initialEventInstances,
+        eventSubEvents: initialEventSubEvents
+      }
+    )[0];
+
+    assert.equal(cut?.status, "Cut");
+    assert.equal(cut?.archivedAt, "2026-03-30");
+  });
+});
+
+test("collateral store restore clears archived state and updates lastUpdated only on real changes", () => {
+  withMockedToday("2026-03-30T12:00:00.000Z", () => {
+    const original = createCollateralItem({
+      id: "restore-me",
+      status: "Complete",
+      archivedAt: "2026-03-28",
+      lastUpdated: "2026-03-28"
+    });
+    const restored = localCollateralStore.restore(
+      [original],
+      "restore-me",
+      "In Design",
+      {
+        eventInstances: initialEventInstances,
+        eventSubEvents: initialEventSubEvents
+      }
+    )[0];
+
+    assert.equal(restored?.status, "In Design");
+    assert.equal(restored?.archivedAt, undefined);
+    assert.equal(restored?.lastUpdated, "2026-03-30");
+
+    const unchanged = localCollateralStore.update(
+      [createCollateralItem({ id: "same-item", lastUpdated: "2026-03-28" })],
+      "same-item",
+      {},
+      {
+        eventInstances: initialEventInstances,
+        eventSubEvents: initialEventSubEvents
+      }
+    )[0];
+    assert.equal(unchanged?.lastUpdated, "2026-03-28");
+  });
+});
+
+test("collateral store normalizes invalid sub-events and gives template-applied items stable ids", () => {
+  const normalized = localCollateralStore.normalizeLoaded(
+    [
+      createCollateralItem({
+        id: "invalid-subevent",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "wrong-instance-subevent",
+        status: "Cut"
+      })
+    ],
+    {
+      defaultOwner: "Melissa",
+      eventInstances: initialEventInstances,
+      eventSubEvents: initialEventSubEvents
+    }
+  )[0];
+
+  assert.equal(normalized?.subEventId, "legislative-day-2026-unassigned");
+  assert.equal(normalized?.archivedAt, "2026-03-28");
+
+  const templateResult = localCollateralStore.applyTemplate({
+    currentItems: [],
+    currentSubEvents: initialEventSubEvents,
+    defaultOwner: "Melissa",
+    eventInstanceId: "legislative-day-2026",
+    templateItems: getTemplateItemsForPack("legislative-day-core").slice(0, 1),
+    templateSubEvents: getTemplateSubEventsForPack("legislative-day-core")
+  });
+
+  assert.equal(templateResult.items[0]?.templateOriginId, "golf-reception-thank-you-sign");
+  assert.equal(
+    templateResult.items[0]?.id,
+    "collateral-legislative-day-2026-golf-reception-thank-you-sign"
+  );
 });
 
 test("action view collateral status contract stays explicit and narrow", () => {
@@ -3371,7 +3482,8 @@ test("collateral instance list query stays scoped to the active event instance",
     activeProfile: workspace.activeProfile,
     activeSummaryFilter: "all",
     activeProfileDeadlineFilter: "none",
-    draftCollateralItem: null
+    draftCollateralItem: null,
+    showArchived: false
   });
 
   assert.equal(
@@ -3380,6 +3492,49 @@ test("collateral instance list query stays scoped to the active event instance",
   );
   assert.equal(listView.groupedItems.length > 0, true);
   assert.equal(typeof listView.summary.active, "number");
+});
+
+test("collateral instance list hides completed and cut history by default", () => {
+  const state = createDefaultAppStateData();
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: "legislative-day-2026",
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+  const archivedComplete = localCollateralStore.normalizeLoaded(
+    [createCollateralItem({ id: "completed-collateral", status: "Complete" })],
+    {
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  )[0]!;
+
+  const hiddenByDefault = getCollateralInstanceListView({
+    collateralItems: [...state.collateralItems, archivedComplete],
+    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
+    instanceSubEvents: workspace.instanceSubEvents,
+    activeProfile: workspace.activeProfile,
+    activeSummaryFilter: "all",
+    activeProfileDeadlineFilter: "none",
+    draftCollateralItem: null,
+    showArchived: false
+  });
+  const shownWhenRequested = getCollateralInstanceListView({
+    collateralItems: [...state.collateralItems, archivedComplete],
+    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
+    instanceSubEvents: workspace.instanceSubEvents,
+    activeProfile: workspace.activeProfile,
+    activeSummaryFilter: "all",
+    activeProfileDeadlineFilter: "none",
+    draftCollateralItem: null,
+    showArchived: true
+  });
+
+  assert.equal(hiddenByDefault.visibleInstanceItems.some((item) => item.id === "completed-collateral"), false);
+  assert.equal(shownWhenRequested.visibleInstanceItems.some((item) => item.id === "completed-collateral"), true);
 });
 
 test("selected collateral workspace query returns selected item and sub-event options only for the active instance", () => {
@@ -3399,7 +3554,8 @@ test("selected collateral workspace query returns selected item and sub-event op
     activeProfile: workspace.activeProfile,
     activeSummaryFilter: "all",
     activeProfileDeadlineFilter: "none",
-    draftCollateralItem: null
+    draftCollateralItem: null,
+    showArchived: false
   });
   const selectedWorkspace = getSelectedCollateralItemWorkspace({
     selectedId: listView.visibleInstanceItems[0]?.id ?? null,

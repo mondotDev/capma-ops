@@ -55,6 +55,7 @@ export type CollateralItem = {
   notes?: string;
   fileLink?: string;
   lastUpdated: string;
+  archivedAt?: string;
 };
 
 export type LegDayCollateralProfile = {
@@ -153,6 +154,10 @@ export function isCollateralTerminalStatus(status: string) {
   return isNormalizedTerminalStatus(normalizeCollateralWorkflowStatus(status));
 }
 
+export function isCollateralArchived(item: Pick<CollateralItem, "archivedAt" | "status">) {
+  return Boolean(item.archivedAt) || isCollateralTerminalStatus(item.status);
+}
+
 export function isCollateralBlocked(item: Pick<CollateralItem, "status" | "blockedBy">) {
   return item.status === "Blocked" || item.blockedBy.trim().length > 0;
 }
@@ -233,7 +238,8 @@ export function normalizeCollateralItem(
     noteEntries: normalizeNoteEntries(item.noteEntries, typeof item.notes === "string" ? item.notes : "", item.lastUpdated),
     notes: undefined,
     fileLink: typeof item.fileLink === "string" ? item.fileLink : undefined,
-    lastUpdated: item.lastUpdated
+    lastUpdated: item.lastUpdated,
+    archivedAt: typeof item.archivedAt === "string" && item.archivedAt.length > 0 ? item.archivedAt : undefined
   };
 }
 
@@ -266,7 +272,8 @@ function createSeedItem(
     updateType: normalizeCollateralUpdateType(updateType),
     noteEntries: normalizeNoteEntries(undefined, notes, "2026-03-28"),
     notes: undefined,
-    lastUpdated: "2026-03-28"
+    lastUpdated: "2026-03-28",
+    archivedAt: undefined
   };
 }
 

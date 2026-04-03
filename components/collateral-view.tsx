@@ -20,6 +20,7 @@ import {
 import {
   COLLATERAL_STATUS_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
+  isCollateralArchived,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
@@ -104,6 +105,7 @@ export function CollateralView({
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<CollateralSummaryFilter>("all");
   const [activeProfileDeadlineFilter, setActiveProfileDeadlineFilter] =
     useState<CollateralProfileDeadlineFilter>("none");
+  const [showArchived, setShowArchived] = useState(false);
   const [pendingOpenIntent, setPendingOpenIntent] = useState<PendingCollateralOpenIntent>(() => ({
     collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
     eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
@@ -118,7 +120,8 @@ export function CollateralView({
     activeSummaryFilter,
     activeProfileDeadlineFilter,
     selectedId,
-    draftCollateralItem
+    draftCollateralItem,
+    showArchived
   });
   const resolvedActiveEventInstanceId = workspaceBundle.resolvedActiveEventInstanceId;
   const selectedEventInstance = workspaceBundle.selectedEventInstance;
@@ -264,7 +267,7 @@ export function CollateralView({
       : null;
   const hasAppliedTemplateItems = workspaceBundle.hasAppliedTemplateItems;
   const hasActiveCollateralFilters =
-    activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none";
+    activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none" || showArchived;
   const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
   const activeFilterLabel = getCollateralSummaryFilterLabel(activeSummaryFilter);
   const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
@@ -455,6 +458,7 @@ export function CollateralView({
   function clearCollateralFilters() {
     setActiveSummaryFilter("all");
     setActiveProfileDeadlineFilter("none");
+    setShowArchived(false);
   }
 
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
@@ -602,12 +606,23 @@ export function CollateralView({
               COLLATERAL ITEMS
               {currentEventProgram ? <span className="collateral-card-context"> - {currentEventProgram.name}</span> : null}
             </div>
+            <div className="collateral-group-toolbar">
+              <label className="toggle">
+                <input
+                  checked={showArchived}
+                  onChange={(event) => setShowArchived(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Show Completed/Cut</span>
+              </label>
+            </div>
             {hasActiveCollateralFilters ? (
               <div className="collateral-filter-context">
                 <span>
                   Showing:{" "}
                   {[
                     activeSummaryFilter !== "all" ? activeFilterLabel : null,
+                    showArchived ? "Including completed/cut history" : null,
                     activeProfileDeadlineFilter !== "none"
                       ? `Due by ${activeProfileFilterLabel}`
                       : null
@@ -636,7 +651,7 @@ export function CollateralView({
                       : defaultTemplatePack
                         ? `Apply the default template pack for ${currentEventProgram?.name ?? "this event"} or add your first collateral item manually.`
                         : "Add your first collateral item manually to start tracking production work for this event instance."
-                    : "Try a different summary view or clear the filter to return to the full collateral list."}
+                    : "Try a different summary view, show completed/cut items, or clear the filter to return to the active collateral list."}
                 </div>
                 <div className="empty-state__actions">
                   {!hasActiveCollateralFilters && defaultTemplatePack && isSelectedEventProgramSupported ? (
@@ -753,6 +768,9 @@ export function CollateralView({
                     {subEventNameById.get(selectedItem.subEventId) ?? "Unassigned sub-event"}
                   </span>
                   <span className={getCollateralStatusClassName(selectedItem)}>{selectedItem.status}</span>
+                  {isCollateralArchived(selectedItem) ? (
+                    <span className="drawer__status-chip">Hidden from active lane</span>
+                  ) : null}
                   {draftCollateralItem?.id === selectedItem.id ? (
                     <span className="drawer__status-chip drawer__status-chip--new">New item</span>
                   ) : null}

@@ -21,10 +21,10 @@ import {
 } from "@/lib/action-item-store";
 import {
   initialLegDayCollateralProfile,
-  normalizeCollateralUpdateType,
   type CollateralItem,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
+import { localCollateralStore } from "@/lib/collateral-store";
 import {
   getDefaultTemplatePackForEventType,
   getTemplateItemsForPack,
@@ -47,8 +47,7 @@ import {
   type IssueStatus,
   type WorkstreamSchedule,
   getDefaultWorkstreamSchedules,
-  getGeneratedIssues,
-  normalizeNoteEntries
+  getGeneratedIssues
 } from "@/lib/ops-utils";
 import {
   createDefaultActionItems,
@@ -103,7 +102,7 @@ type AppStateContextValue = {
   };
   workstreamSchedules: WorkstreamSchedule[];
   addItem: (item: NewActionItem) => void;
-  addCollateralItem: (item: Omit<CollateralItem, "id" | "lastUpdated">) => string;
+  addCollateralItem: (item: Omit<CollateralItem, "archivedAt" | "id" | "lastUpdated">) => string;
   applyDefaultTemplateToInstance: (instanceId: string) => boolean;
   archiveItem: (id: string) => void;
   bulkUpdateItems: (ids: string[], updates: Partial<ActionItem>) => void;
@@ -212,6 +211,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }),
     []
   );
+  const getCollateralContext = useCallback(
+    (
+      overrides?: Partial<Pick<AppStateData, "defaultOwnerForNewItems" | "eventInstances" | "eventSubEvents">>
+    ) => ({
+      defaultOwner: overrides?.defaultOwnerForNewItems ?? defaultOwnerForNewItemsRef.current,
+      eventInstances: overrides?.eventInstances ?? eventInstancesRef.current,
+      eventSubEvents: overrides?.eventSubEvents ?? eventSubEventsRef.current
+    }),
+    []
+  );
 
   const enqueueNativeActionItemStoreWrite = useCallback((task: () => Promise<void>) => {
     nativeActionItemWriteQueueRef.current = nativeActionItemWriteQueueRef.current
@@ -231,7 +240,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const hydrateAppState = useCallback((state: AppStateData) => {
     setItems(state.items);
     setIssueStatuses(state.issueStatuses);
-    setCollateralItems(state.collateralItems);
+    setCollateralItems(
+      localCollateralStore.normalizeLoaded(state.collateralItems, {
+        defaultOwner: state.defaultOwnerForNewItems,
+        eventInstances: state.eventInstances,
+        eventSubEvents: state.eventSubEvents
+      })
+    );
     setCollateralProfiles(state.collateralProfiles);
     setActiveEventInstanceIdState(state.activeEventInstanceId);
     setDefaultOwnerForNewItemsState(state.defaultOwnerForNewItems);
@@ -468,20 +483,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
   }, [enablePersistence, enqueueNativeActionItemStoreWrite, nativeActionItemStore]);
 
-  const addCollateralItem = useCallback((item: Omit<CollateralItem, "id" | "lastUpdated">) => {
+  const addCollateralItem = useCallback((item: Omit<CollateralItem, "archivedAt" | "id" | "lastUpdated">) => {
     enablePersistence();
-    const nextId = `collateral-${crypto.randomUUID()}`;
-    setCollateralItems((current) => [
-      {
-        ...item,
-        id: nextId,
-        lastUpdated: new Date().toISOString().slice(0, 10)
-      },
-      ...current
-    ]);
+    const nextItem = localCollateralStore.create([], item, getCollateralContext())[0];
+    setCollateralItems((current) => [nextItem, ...current]);
 
-    return nextId;
-  }, [enablePersistence]);
+    return nextItem.id;
+  }, [enablePersistence, getCollateralContext]);
 
   const ensureEventInstanceUnassignedSubEvent = useCallback((instanceId: string) => {
     enablePersistence();
@@ -499,22 +507,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const updateCollateralItem = useCallback((id: string, updates: Partial<CollateralItem>) => {
     enablePersistence();
-    setCollateralItems((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...updates,
-              lastUpdated: new Date().toISOString().slice(0, 10)
-            }
-          : item
-      )
-    );
-  }, [enablePersistence]);
+    setCollateralItems((current) => localCollateralStore.update(current, id, updates, getCollateralContext()));
+  }, [enablePersistence, getCollateralContext]);
 
   const deleteCollateralItem = useCallback((id: string) => {
     enablePersistence();
-    setCollateralItems((current) => current.filter((item) => item.id !== id));
+    setCollateralItems((current) => localCollateralStore.delete(current, id));
   }, [enablePersistence]);
 
   const createEventInstance = useCallback((input: CreateEventInstanceInput) => {
@@ -552,6 +550,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, [enablePersistence]);
 
   const applyDefaultTemplateToInstance = useCallback((instanceId: string) => {
+    enablePersistence();
     const instance = eventInstancesRef.current.find((entry) => entry.id === instanceId);
 
     if (!instance) {
@@ -566,66 +565,23 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     const templateSubEvents = getTemplateSubEventsForPack(pack.id);
     const templateItems = getTemplateItemsForPack(pack.id);
-    const existingItemOrigins = new Set(
-      collateralItemsRef.current
-        .filter((item) => item.eventInstanceId === instanceId && item.templateOriginId)
-        .map((item) => item.templateOriginId as string)
-    );
-    const existingByName = new Map(
-      eventSubEventsRef.current
-        .filter((subEvent) => subEvent.eventInstanceId === instanceId)
-        .map((subEvent) => [subEvent.name, subEvent.id])
-    );
-    const nextSubEventIdsByTemplateId = new Map<string, string>();
-    const subEventAdditions = templateSubEvents
-      .filter((templateSubEvent) => !existingByName.has(templateSubEvent.name))
-      .map((templateSubEvent) => {
-        const nextId = `${instanceId}-${slugify(templateSubEvent.name)}`;
-        nextSubEventIdsByTemplateId.set(templateSubEvent.id, nextId);
-        return {
-          id: nextId,
-          eventInstanceId: instanceId,
-          name: templateSubEvent.name,
-          sortOrder: templateSubEvent.sortOrder
-        };
-      });
-
-    for (const templateSubEvent of templateSubEvents) {
-      const existingId = existingByName.get(templateSubEvent.name);
-      if (existingId) {
-        nextSubEventIdsByTemplateId.set(templateSubEvent.id, existingId);
-      }
-    }
-
-    if (subEventAdditions.length > 0) {
-      setEventSubEvents((current) => [...current, ...subEventAdditions]);
-    }
-
-    setCollateralItems((current) => {
-      const additions = templateItems
-        .filter((templateItem) => !existingItemOrigins.has(templateItem.id))
-        .map((templateItem) => ({
-          id: `collateral-${crypto.randomUUID()}`,
-          eventInstanceId: instanceId,
-          subEventId: nextSubEventIdsByTemplateId.get(templateItem.templateSubEventId) ?? `${instanceId}-unassigned`,
-          templateOriginId: templateItem.id,
-          itemName: templateItem.name,
-          status: templateItem.defaultStatus as CollateralItem["status"],
-          owner: defaultOwnerForNewItemsRef.current,
-          blockedBy: "",
-          dueDate: "",
-          printer: templateItem.defaultPrinter,
-          quantity: templateItem.defaultQuantity,
-          updateType: normalizeCollateralUpdateType(templateItem.defaultUpdateType),
-          noteEntries: normalizeNoteEntries(undefined, templateItem.defaultNotes, new Date().toISOString()),
-          lastUpdated: new Date().toISOString().slice(0, 10)
-        }));
-
-      return [...additions, ...current];
+    const templateResult = localCollateralStore.applyTemplate({
+      currentItems: collateralItemsRef.current,
+      currentSubEvents: eventSubEventsRef.current,
+      defaultOwner: defaultOwnerForNewItemsRef.current,
+      eventInstanceId: instanceId,
+      templateItems,
+      templateSubEvents
     });
 
+    if (templateResult.subEventAdditions.length > 0) {
+      setEventSubEvents((current) => [...current, ...templateResult.subEventAdditions]);
+    }
+
+    setCollateralItems(templateResult.items);
+
     return true;
-  }, []);
+  }, [enablePersistence]);
 
   const generateIssueDeliverables = useCallback((issue: string): GenerateDeliverablesResult => {
     enablePersistence();
