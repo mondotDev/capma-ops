@@ -1,34 +1,14 @@
 import type { NewActionItemInput } from "@/lib/action-item-mutations";
 import { getUnassignedSubEventId, type EventInstance, type EventSubEvent } from "@/lib/event-instances";
+import {
+  getEventTypeDefinitions,
+  getSponsorModelDefinitionForEventType,
+  type SponsorDeliverableRule
+} from "@/lib/event-type-definitions";
 import { createActionNoteEntry, getIssueDueDate, LOCAL_FALLBACK_NOTE_AUTHOR } from "@/lib/ops-utils";
 import type { ActionItem } from "@/lib/sample-data";
 
-export const SPONSOR_SUPPORTED_EVENT_TYPE_ID = "legislative-day";
-
-export const SPONSOR_PLACEMENT_OPTIONS = [
-  { id: "Premier", label: "Premier" },
-  { id: "Thursday Briefing Breakfast", label: "Thursday Briefing Breakfast" },
-  { id: "Legislative Luncheon", label: "Legislative Luncheon" },
-  { id: "Wed Night Reception", label: "Wed Night Reception" },
-  { id: "Committee Breakfast", label: "Committee Breakfast" },
-  { id: "Board Meeting", label: "Board Meeting" },
-  { id: "Golf Bag", label: "Golf Bag" },
-  { id: "Golf Hole", label: "Golf Hole" }
-] as const;
-
-type SponsorTimingType = "Pre_Event" | "Event_Day" | "Post_Event" | "Fixed_Month";
-
-type SponsorDeliverableRule = {
-  deliverableName: string;
-  timingType: SponsorTimingType;
-  offsetDays?: number;
-  fixedMonth?: number;
-  requiresLogo: boolean;
-  requiresCopy: boolean;
-  issue?: string;
-};
-
-export type SponsorPlacementType = (typeof SPONSOR_PLACEMENT_OPTIONS)[number]["id"];
+export type SponsorPlacementType = string;
 
 export type SponsorPlacement = {
   id: string;
@@ -56,203 +36,33 @@ export type SponsorCollateralPromotionDefaults = {
   subEventName: string | null;
 };
 
+const DEFAULT_SPONSOR_EVENT_TYPE_ID = "legislative-day";
 const NEWS_BRIEF_MONTH_NAMES = {
   3: "March",
   4: "April"
 } as const;
 
-const SPONSOR_DELIVERABLE_RULES: Record<SponsorPlacementType, SponsorDeliverableRule[]> = {
-  Premier: [
-    createRule("Spotlight Post 1", "Pre_Event", { offsetDays: 45, requiresLogo: true, requiresCopy: true }),
-    createRule("Spotlight Post 2", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: true }),
-    createRule("CAPMA Event Post Mention 1", "Pre_Event", { offsetDays: 21, requiresLogo: true, requiresCopy: false }),
-    createRule("CAPMA Event Post Mention 2", "Pre_Event", { offsetDays: 10, requiresLogo: true, requiresCopy: false }),
-    createRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-    createRule("April NewsBrief Digital Advertorial", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: true }),
-    createRule("Logo on Registration Page", "Pre_Event", { offsetDays: 60, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Registration Confirmation Emails", "Pre_Event", { offsetDays: 45, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Registration Reminder Emails", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: false }),
-    createRule("Slide Deck Logo", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Event Badge + Lanyard Logo", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Verbal Recognition During Program", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Includes 10 Attendee Registrations", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
-  ],
-  "Thursday Briefing Breakfast": [
-    createRule("Spotlight Post", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: true }),
-    createRule("CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-    createRule("Acknowledgement in Outgoing Emails", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-    createRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false }),
-    createRule("Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("Speaking Opportunity", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Table Tents Displayed", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("On-Site Signage (Digital or Print)", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Branded To-Go Coffee Cups", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Includes 4 Attendee Registrations", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false })
-  ],
-  "Legislative Luncheon": [
-    createRule("Sponsor Spotlight Post", "Pre_Event", { offsetDays: 21, requiresLogo: true, requiresCopy: true }),
-    createRule("CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-    createRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-    createRule("Table Tents on Tables", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Exterior Signage", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Branded Napkins", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("On-Site Signage Recognition", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("2-Minute Speaking Opportunity", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: true }),
-    createRule("Includes 5 Attendee Registrations", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
-  ],
-  "Wed Night Reception": [
-    createRule("CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-    createRule("Exterior Signage", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Branded Napkins", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("On-Site Signage Recognition", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Table Tents on Tables", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("2-Minute Speaking Opportunity", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: true }),
-    createRule("Includes 2 Attendee Registrations", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false }),
-    createRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: false, requiresCopy: false })
-  ],
-  "Committee Breakfast": [
-    createRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-    createRule("Table Tents on or Near Buffet", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("On-Site Signage", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Includes 1 Attendee Registration", "Pre_Event", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: false, requiresCopy: false })
-  ],
-  "Board Meeting": [
-    createRule("Acknowledgement on Digital or Printed Signage", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Includes 1 Attendee Registration", "Event_Day", { offsetDays: 0, requiresLogo: false, requiresCopy: false }),
-    createRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
-  ],
-  "Golf Bag": [
-    createRule("Branded Water & Snacks", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false })
-  ],
-  "Golf Hole": [
-    createRule("Branded Signage at Hole", "Event_Day", { offsetDays: 0, requiresLogo: true, requiresCopy: false }),
-    createRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false })
-  ]
-};
+export const SPONSOR_PLACEMENT_OPTIONS = getSponsorPlacementOptions(DEFAULT_SPONSOR_EVENT_TYPE_ID);
 
-const SPONSOR_COLLATERAL_PROMOTION_RULES: Array<{
-  placement: SponsorPlacementType;
-  deliverableName: string;
-  collateralItemName: string;
-  preferredSubEventName?: string;
-}> = [
-  {
-    placement: "Premier",
-    deliverableName: "Slide Deck Logo",
-    collateralItemName: "Master Slide Deck",
-    preferredSubEventName: "Multi-Event/All Days"
-  },
-  {
-    placement: "Premier",
-    deliverableName: "Event Badge + Lanyard Logo",
-    collateralItemName: "Custom Lanyards w/ CAPMA + Premier logos",
-    preferredSubEventName: "Wednesday Registration"
-  },
-  {
-    placement: "Thursday Briefing Breakfast",
-    deliverableName: "Table Tents Displayed",
-    collateralItemName: "Briefing Breakfast Table Tents",
-    preferredSubEventName: "Thursday Breakfast"
-  },
-  {
-    placement: "Thursday Briefing Breakfast",
-    deliverableName: "On-Site Signage (Digital or Print)",
-    collateralItemName: "Welcome to the Briefing Breakfast (Sponsored By Sign)",
-    preferredSubEventName: "Thursday Breakfast"
-  },
-  {
-    placement: "Thursday Briefing Breakfast",
-    deliverableName: "Branded To-Go Coffee Cups",
-    collateralItemName: "Branded coffee cups with CAPMA and Sponsor",
-    preferredSubEventName: "Thursday Breakfast"
-  },
-  {
-    placement: "Legislative Luncheon",
-    deliverableName: "Table Tents on Tables",
-    collateralItemName: "Table tents",
-    preferredSubEventName: "Thursday Luncheon"
-  },
-  {
-    placement: "Legislative Luncheon",
-    deliverableName: "Exterior Signage",
-    collateralItemName: "Welcome to Legislative Luncheon - Sponsor thank you",
-    preferredSubEventName: "Thursday Luncheon"
-  },
-  {
-    placement: "Legislative Luncheon",
-    deliverableName: "Branded Napkins",
-    collateralItemName: "Branded napkins for Thurs afternoon, year specific",
-    preferredSubEventName: "Thursday Luncheon"
-  },
-  {
-    placement: "Wed Night Reception",
-    deliverableName: "Table Tents on Tables",
-    collateralItemName: "Table Tents for Wednesday Night Reception",
-    preferredSubEventName: "Wed Night Reception"
-  },
-  {
-    placement: "Wed Night Reception",
-    deliverableName: "Exterior Signage",
-    collateralItemName: "Wed Night Reception Sponsor Signage",
-    preferredSubEventName: "Wed Night Reception"
-  },
-  {
-    placement: "Wed Night Reception",
-    deliverableName: "Branded Napkins",
-    collateralItemName: "Branded napkins for Wednesday Night Reception",
-    preferredSubEventName: "Wed Night Reception"
-  },
-  {
-    placement: "Committee Breakfast",
-    deliverableName: "Table Tents on or Near Buffet",
-    collateralItemName: "Table Tents for Committee Breakfast",
-    preferredSubEventName: "Wednesday Breakfast"
-  },
-  {
-    placement: "Committee Breakfast",
-    deliverableName: "On-Site Signage",
-    collateralItemName: "Welcome and Thank You Sign for Committee Breakfast Sponsors (All on One)",
-    preferredSubEventName: "Wednesday Breakfast"
-  },
-  {
-    placement: "Board Meeting",
-    deliverableName: "Acknowledgement on Digital or Printed Signage",
-    collateralItemName: "Board Room Signage",
-    preferredSubEventName: "Wednesday Board Meeting"
-  },
-  {
-    placement: "Golf Hole",
-    deliverableName: "Branded Signage at Hole",
-    collateralItemName: "Golf Hole Signs",
-    preferredSubEventName: "Golf Tournament"
-  }
-];
-
-export function supportsSponsorSetupForEventType(eventTypeId: string) {
-  return eventTypeId === SPONSOR_SUPPORTED_EVENT_TYPE_ID;
+export function getSponsorPlacementOptions(eventTypeId: string) {
+  return (getSponsorModelDefinitionForEventType(eventTypeId)?.placements ?? []).map((placement) => ({
+    id: placement.id,
+    label: placement.label
+  }));
 }
 
-export function createSponsorPlacementDraft(eventInstanceId: string): SponsorPlacement {
+export function supportsSponsorSetupForEventType(eventTypeId: string) {
+  return getSponsorModelDefinitionForEventType(eventTypeId) !== null;
+}
+
+export function createSponsorPlacementDraft(eventInstanceId: string, eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID): SponsorPlacement {
+  const placementOptions = getSponsorPlacementOptions(eventTypeId);
+
   return {
     id: `sponsor-placement-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     eventInstanceId,
     sponsorName: "",
-    placement: SPONSOR_PLACEMENT_OPTIONS[0].id,
+    placement: placementOptions[0]?.id ?? "",
     logoReceived: false,
     notes: ""
   };
@@ -280,11 +90,9 @@ export function normalizeSponsorPlacement(
     return null;
   }
 
-  if (!input.eventInstances.some((instance) => instance.id === value.eventInstanceId)) {
-    return null;
-  }
+  const eventInstance = input.eventInstances.find((instance) => instance.id === value.eventInstanceId) ?? null;
 
-  if (!isSponsorPlacementType(placementValue)) {
+  if (!eventInstance || !isSponsorPlacementType(eventInstance.eventTypeId, placementValue)) {
     return null;
   }
 
@@ -326,12 +134,13 @@ export function normalizeSponsorPlacementsByInstance(
   );
 }
 
-export function getSponsorPlacementLabel(type: SponsorPlacementType) {
-  return SPONSOR_PLACEMENT_OPTIONS.find((option) => option.id === type)?.label ?? "Sponsor placement";
+export function getSponsorPlacementLabel(type: SponsorPlacementType, eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID) {
+  return getSponsorPlacementOptions(eventTypeId).find((option) => option.id === type)?.label ?? "Sponsor placement";
 }
 
-export function getSponsorPlacementDeliverables(placement: SponsorPlacementType) {
-  return SPONSOR_DELIVERABLE_RULES[placement] ?? [];
+export function getSponsorPlacementDeliverables(placement: SponsorPlacementType, eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID) {
+  const sponsorModel = getSponsorModelDefinitionForEventType(eventTypeId);
+  return sponsorModel?.deliverableRulesByPlacement[placement]?.map((rule) => ({ ...rule })) ?? [];
 }
 
 export function getSponsorFulfillmentTaskTitle(input: {
@@ -354,7 +163,7 @@ export function getSponsorCollateralPromotionDefaults(input: {
     return null;
   }
 
-  const rule = SPONSOR_COLLATERAL_PROMOTION_RULES.find(
+  const rule = getAllSponsorCollateralPromotionRules().find(
     (entry) => entry.placement === source.placement && entry.deliverableName === source.deliverableName
   );
 
@@ -387,7 +196,14 @@ export function buildSponsorFulfillmentGenerationResult(input: {
   eventInstance: EventInstance;
   existingItems: ActionItem[];
   defaultOwner: string;
+  eventSubEvents?: EventSubEvent[];
 }): SponsorFulfillmentGenerationResult {
+  const sponsorModel = getSponsorModelDefinitionForEventType(input.eventInstance.eventTypeId);
+
+  if (!sponsorModel) {
+    return { created: [], skipped: input.placements.length };
+  }
+
   const seenPlacementKeys = new Set<string>();
   const created: NewActionItemInput[] = [];
   let skipped = 0;
@@ -408,7 +224,7 @@ export function buildSponsorFulfillmentGenerationResult(input: {
 
     seenPlacementKeys.add(placementKey);
 
-    const deliverables = getSponsorPlacementDeliverables(placement.placement);
+    const deliverables = getSponsorPlacementDeliverables(placement.placement, input.eventInstance.eventTypeId);
     if (deliverables.length === 0) {
       skipped += 1;
       continue;
@@ -419,7 +235,8 @@ export function buildSponsorFulfillmentGenerationResult(input: {
         placement,
         deliverable,
         eventInstance: input.eventInstance,
-        defaultOwner: input.defaultOwner
+        defaultOwner: input.defaultOwner,
+        eventSubEvents: input.eventSubEvents ?? []
       });
 
       if (
@@ -443,6 +260,7 @@ function createSponsorFulfillmentTask(input: {
   deliverable: SponsorDeliverableRule;
   eventInstance: EventInstance;
   defaultOwner: string;
+  eventSubEvents: EventSubEvent[];
 }): NewActionItemInput {
   const title = getSponsorFulfillmentTaskTitle({
     sponsorName: input.placement.sponsorName.trim(),
@@ -452,7 +270,7 @@ function createSponsorFulfillmentTask(input: {
   const noteParts = [
     `Generated from sponsor setup for ${input.eventInstance.name}.`,
     `Sponsor radar source: ${sourceKey}.`,
-    `Placement: ${getSponsorPlacementLabel(input.placement.placement)}.`,
+    `Placement: ${getSponsorPlacementLabel(input.placement.placement, input.eventInstance.eventTypeId)}.`,
     !input.placement.logoReceived && input.deliverable.requiresLogo ? "Waiting on sponsor logo." : "",
     input.deliverable.requiresCopy ? "This deliverable also needs sponsor copy or approval." : "",
     input.placement.notes?.trim() ?? ""
@@ -460,13 +278,14 @@ function createSponsorFulfillmentTask(input: {
   const initialNote = createActionNoteEntry(noteParts.join(" "), {
     author: LOCAL_FALLBACK_NOTE_AUTHOR
   });
-  const dueDate = resolveSponsorDeliverableDueDate(input.deliverable, input.eventInstance);
+  const dueDate = resolveSponsorDeliverableDueDate(input.deliverable, input.eventInstance, input.eventSubEvents);
   const issue = input.deliverable.issue ?? getIssueForSponsorDeliverable(input.deliverable, input.eventInstance);
+  const eventTypeLabel = getEventTypeDefinitions().find((definition) => definition.key === input.eventInstance.eventTypeId)?.label ?? input.eventInstance.eventTypeId;
 
   return {
     type: "Deliverable",
     title,
-    workstream: "Legislative Day",
+    workstream: eventTypeLabel,
     eventInstanceId: input.eventInstance.id,
     operationalBucket: undefined,
     issue,
@@ -539,8 +358,7 @@ function parseSponsorFulfillmentSourceFromItem(item: ActionItem) {
       typeof parsed.eventInstanceId !== "string" ||
       typeof parsed.sponsorName !== "string" ||
       typeof parsed.placement !== "string" ||
-      typeof parsed.deliverableName !== "string" ||
-      !isSponsorPlacementType(parsed.placement)
+      typeof parsed.deliverableName !== "string"
     ) {
       return null;
     }
@@ -556,7 +374,11 @@ function parseSponsorFulfillmentSourceFromItem(item: ActionItem) {
   }
 }
 
-function resolveSponsorDeliverableDueDate(deliverable: SponsorDeliverableRule, eventInstance: EventInstance) {
+function resolveSponsorDeliverableDueDate(
+  deliverable: SponsorDeliverableRule,
+  eventInstance: EventInstance,
+  eventSubEvents: EventSubEvent[]
+) {
   if (deliverable.timingType === "Pre_Event") {
     return shiftIsoDate(eventInstance.startDate, -(deliverable.offsetDays ?? 0));
   }
@@ -567,6 +389,17 @@ function resolveSponsorDeliverableDueDate(deliverable: SponsorDeliverableRule, e
 
   if (deliverable.timingType === "Post_Event") {
     return shiftIsoDate(eventInstance.endDate || eventInstance.startDate, deliverable.offsetDays ?? 0);
+  }
+
+  if (deliverable.timingType === "Sub_Event") {
+    const subEventDate =
+      eventSubEvents.find(
+        (subEvent) =>
+          subEvent.eventInstanceId === eventInstance.id &&
+          subEvent.name === deliverable.subEventName &&
+          subEvent.date
+      )?.date ?? eventInstance.startDate;
+    return shiftIsoDate(subEventDate, deliverable.offsetDays ?? 0);
   }
 
   if (deliverable.timingType === "Fixed_Month" && deliverable.fixedMonth) {
@@ -590,6 +423,12 @@ function getIssueForSponsorDeliverable(deliverable: SponsorDeliverableRule, even
   }
 
   return deliverable.issue ?? undefined;
+}
+
+function getAllSponsorCollateralPromotionRules() {
+  return getEventTypeDefinitions()
+    .flatMap((definition) => definition.sponsorModel?.collateralPromotionRules ?? [])
+    .map((rule) => ({ ...rule }));
 }
 
 function shiftIsoDate(isoDate: string, days: number) {
@@ -623,28 +462,6 @@ function normalizeLogoReceivedValue(value: unknown) {
   return false;
 }
 
-function isSponsorPlacementType(value: string): value is SponsorPlacementType {
-  return SPONSOR_PLACEMENT_OPTIONS.some((option) => option.id === value);
-}
-
-function createRule(
-  deliverableName: string,
-  timingType: SponsorTimingType,
-  config: {
-    offsetDays?: number;
-    fixedMonth?: number;
-    requiresLogo: boolean;
-    requiresCopy: boolean;
-    issue?: string;
-  }
-): SponsorDeliverableRule {
-  return {
-    deliverableName,
-    timingType,
-    offsetDays: config.offsetDays,
-    fixedMonth: config.fixedMonth,
-    requiresLogo: config.requiresLogo,
-    requiresCopy: config.requiresCopy,
-    issue: config.issue
-  };
+function isSponsorPlacementType(eventTypeId: string, value: string): value is SponsorPlacementType {
+  return getSponsorPlacementOptions(eventTypeId).some((option) => option.id === value);
 }

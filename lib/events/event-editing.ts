@@ -115,7 +115,10 @@ export function upsertEventSubEventState(input: {
           ? {
               ...subEvent,
               name: nextName,
-              sortOrder: input.upsert.sortOrder ?? subEvent.sortOrder
+              sortOrder: input.upsert.sortOrder ?? subEvent.sortOrder,
+              date: input.upsert.date?.trim() || undefined,
+              startTime: input.upsert.startTime?.trim() || undefined,
+              endTime: input.upsert.endTime?.trim() || undefined
             }
           : subEvent
       )
@@ -144,7 +147,10 @@ export function upsertEventSubEventState(input: {
       id: nextId,
       eventInstanceId: input.instanceId,
       name: nextName,
-      sortOrder: nextSortOrder
+      sortOrder: nextSortOrder,
+      date: input.upsert.date?.trim() || undefined,
+      startTime: input.upsert.startTime?.trim() || undefined,
+      endTime: input.upsert.endTime?.trim() || undefined
     }
   ]).subEvents;
 

@@ -104,6 +104,7 @@ import {
   buildCreatedEventInstanceState,
   createDefaultSubEventsForEventInstance,
   getEventTypeDefinition,
+  getSponsorModelDefinitionForEventType,
   getEventTypeDefinitions,
   validateEventInstanceCreationInput
 } from "../lib/event-type-definitions";
@@ -2668,6 +2669,11 @@ test("local app state repository saves and reloads the same normalized state", (
   withMockedWindowStorage(() => {
     const state = createDefaultAppStateData();
     state.items = [createItem({ eventGroup: "Legislative Day" })];
+    state.eventSubEvents = state.eventSubEvents.map((subEvent) =>
+      subEvent.id === "leg-day-thursday-breakfast"
+        ? { ...subEvent, date: "2026-04-23", startTime: "07:30", endTime: "09:00" }
+        : subEvent
+    );
 
     localAppStateRepository.save(state);
     const loaded = localAppStateRepository.load();
@@ -2677,6 +2683,14 @@ test("local app state repository saves and reloads the same normalized state", (
     assert.equal(loaded.state?.items.length, 1);
     assert.equal(loaded.state?.items[0]?.eventInstanceId, "legislative-day-2026");
     assert.equal(loaded.state?.activeEventInstanceId, state.activeEventInstanceId);
+    assert.equal(
+      loaded.state?.eventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.date,
+      "2026-04-23"
+    );
+    assert.equal(
+      loaded.state?.eventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.startTime,
+      "07:30"
+    );
   });
 });
 
@@ -4025,6 +4039,13 @@ test("event type definition registry exposes the seeded onboarding scaffolding",
   assert.equal(getEventTypeDefinition("legislative-day")?.defaultSubEvents.length, 13);
   assert.equal(getEventTypeDefinition("first-friday")?.dateMode, "single");
   assert.equal(getEventTypeDefinition("legislative-day")?.sponsorModelReference, "Legislative Day sponsor radar");
+  assert.equal(getSponsorModelDefinitionForEventType("legislative-day")?.placements.length, 8);
+  assert.equal(
+    getSponsorModelDefinitionForEventType("legislative-day")?.deliverableRulesByPlacement["Thursday Briefing Breakfast"]?.some(
+      (rule) => rule.timingType === "Sub_Event" && rule.subEventName === "Thursday Breakfast"
+    ),
+    true
+  );
   assert.equal(getEventTypeDefinition("missing-type"), null);
 });
 
@@ -4194,7 +4215,10 @@ test("event sub-event editing adds manual rows, renames existing rows, and block
     currentEventSubEvents: initialEventSubEvents,
     instanceId: "legislative-day-2026",
     upsert: {
-      name: "Friday Breakfast"
+      name: "Friday Breakfast",
+      date: "2026-04-24",
+      startTime: "08:00",
+      endTime: "09:00"
     }
   });
 
@@ -4202,7 +4226,11 @@ test("event sub-event editing adds manual rows, renames existing rows, and block
   assert.equal(
     added?.nextEventSubEvents.some(
       (subEvent) =>
-        subEvent.eventInstanceId === "legislative-day-2026" && subEvent.name === "Friday Breakfast"
+        subEvent.eventInstanceId === "legislative-day-2026" &&
+        subEvent.name === "Friday Breakfast" &&
+        subEvent.date === "2026-04-24" &&
+        subEvent.startTime === "08:00" &&
+        subEvent.endTime === "09:00"
     ),
     true
   );
@@ -4212,7 +4240,10 @@ test("event sub-event editing adds manual rows, renames existing rows, and block
     instanceId: "legislative-day-2026",
     upsert: {
       id: "leg-day-thursday-breakfast",
-      name: "Thursday Briefing Breakfast"
+      name: "Thursday Briefing Breakfast",
+      date: "2026-04-23",
+      startTime: "07:30",
+      endTime: "09:00"
     }
   });
 
@@ -4220,6 +4251,10 @@ test("event sub-event editing adds manual rows, renames existing rows, and block
   assert.equal(
     renamed?.nextEventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.name,
     "Thursday Briefing Breakfast"
+  );
+  assert.equal(
+    renamed?.nextEventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.date,
+    "2026-04-23"
   );
 
   const duplicate = upsertEventSubEventState({
@@ -4298,7 +4333,9 @@ test("event onboarding view exposes selected instance detail and sub-event safet
         id: "legislative-day-2026-friday-breakfast",
         eventInstanceId: "legislative-day-2026",
         name: "Friday Breakfast",
-        sortOrder: 150
+        sortOrder: 150,
+        date: "2026-04-24",
+        startTime: "08:00"
       }
     ],
     items: [
@@ -4313,6 +4350,7 @@ test("event onboarding view exposes selected instance detail and sub-event safet
 
   assert.equal(view.selectedInstance?.instance.id, "legislative-day-2026");
   assert.equal(view.selectedInstance?.definition?.supportsSponsorSetup, true);
+  assert.equal(view.selectedInstance?.scheduleStatus, "partial");
   assert.equal(
     view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.canRemove,
     false
@@ -4320,6 +4358,10 @@ test("event onboarding view exposes selected instance detail and sub-event safet
   assert.equal(
     view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.canRemove,
     true
+  );
+  assert.equal(
+    view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.date,
+    "2026-04-24"
   );
 });
 
@@ -4483,6 +4525,35 @@ test("sponsor setup generation creates radar-style native action items and skips
   assert.equal(rerun.skipped, 1);
 });
 
+test("sponsor generation uses scheduled sub-event dates when the event type defines sub-event timing", () => {
+  const generation = buildSponsorFulfillmentGenerationResult({
+    placements: [
+      {
+        id: "placement-1",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "Acme Pest",
+        placement: "Thursday Briefing Breakfast",
+        logoReceived: true
+      }
+    ],
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents.map((subEvent) =>
+      subEvent.id === "leg-day-thursday-breakfast"
+        ? { ...subEvent, date: "2026-04-23", startTime: "07:30", endTime: "09:00" }
+        : subEvent
+    )
+  });
+
+  assert.equal(
+    generation.created.some(
+      (item) => item.title === "Acme Pest - Table Tents Displayed" && item.dueDate === "2026-04-23"
+    ),
+    true
+  );
+});
+
 test("sponsor collateral promotion defaults detect physical deliverables and map clear sub-events", () => {
   const defaults = getSponsorCollateralPromotionDefaults({
     item: createItem({
@@ -4524,7 +4595,7 @@ test("sponsor collateral promotion defaults ignore non-physical sponsor delivera
   assert.equal(defaults, null);
 });
 
-test("sponsor collateral promotion defaults fall back to the unassigned sub-event when no clear match exists", () => {
+test("sponsor collateral promotion defaults use the canonical mapped sub-event when one exists", () => {
   const defaults = getSponsorCollateralPromotionDefaults({
     item: createItem({
       title: "Acme Pest - Table Tents on Tables",
@@ -4541,8 +4612,8 @@ test("sponsor collateral promotion defaults fall back to the unassigned sub-even
   });
 
   assert.ok(defaults);
-  assert.equal(defaults?.subEventId, "legislative-day-2026-unassigned");
-  assert.equal(defaults?.subEventName, null);
+  assert.equal(defaults?.subEventId, "leg-day-wednesday-reception");
+  assert.equal(defaults?.subEventName, "Wednesday Reception");
 });
 
 test("firestore collateral state parser accepts legacy documents without sponsor placements", () => {

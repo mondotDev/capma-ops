@@ -36,15 +36,27 @@ export function EventInstanceDetailPanel({
 }: EventInstanceDetailPanelProps) {
   const [formState, setFormState] = useState<DetailFormState | null>(null);
   const [subEventDrafts, setSubEventDrafts] = useState<Record<string, string>>({});
+  const [subEventDateDrafts, setSubEventDateDrafts] = useState<Record<string, string>>({});
+  const [subEventStartTimeDrafts, setSubEventStartTimeDrafts] = useState<Record<string, string>>({});
+  const [subEventEndTimeDrafts, setSubEventEndTimeDrafts] = useState<Record<string, string>>({});
   const [newSubEventName, setNewSubEventName] = useState("");
+  const [newSubEventDate, setNewSubEventDate] = useState("");
+  const [newSubEventStartTime, setNewSubEventStartTime] = useState("");
+  const [newSubEventEndTime, setNewSubEventEndTime] = useState("");
   const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
     if (!selectedInstance) {
       setFormState(null);
       setSubEventDrafts({});
+      setSubEventDateDrafts({});
+      setSubEventStartTimeDrafts({});
+      setSubEventEndTimeDrafts({});
       setFeedback("");
       setNewSubEventName("");
+      setNewSubEventDate("");
+      setNewSubEventStartTime("");
+      setNewSubEventEndTime("");
       return;
     }
 
@@ -58,8 +70,20 @@ export function EventInstanceDetailPanel({
     setSubEventDrafts(
       Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.name]))
     );
+    setSubEventDateDrafts(
+      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.date]))
+    );
+    setSubEventStartTimeDrafts(
+      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.startTime]))
+    );
+    setSubEventEndTimeDrafts(
+      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.endTime]))
+    );
     setFeedback("");
     setNewSubEventName("");
+    setNewSubEventDate("");
+    setNewSubEventStartTime("");
+    setNewSubEventEndTime("");
   }, [selectedInstance]);
 
   const validation = useMemo(() => {
@@ -86,7 +110,7 @@ export function EventInstanceDetailPanel({
     );
   }
 
-  const { instance, definition, eventFamilyName, subEvents } = selectedInstance;
+  const { instance, definition, eventFamilyName, scheduleStatus, subEvents } = selectedInstance;
 
   function handleSaveDetails() {
     const didUpdate = onUpdateInstance(instance.id, {
@@ -106,7 +130,13 @@ export function EventInstanceDetailPanel({
 
   function handleSaveSubEventName(subEventId: string) {
     const nextName = subEventDrafts[subEventId] ?? "";
-    const didSave = onUpsertSubEvent(instance.id, { id: subEventId, name: nextName });
+    const didSave = onUpsertSubEvent(instance.id, {
+      id: subEventId,
+      name: nextName,
+      date: subEventDateDrafts[subEventId] ?? "",
+      startTime: subEventStartTimeDrafts[subEventId] ?? "",
+      endTime: subEventEndTimeDrafts[subEventId] ?? ""
+    });
     setFeedback(
       didSave
         ? "Sub-event updated."
@@ -115,7 +145,12 @@ export function EventInstanceDetailPanel({
   }
 
   function handleAddSubEvent() {
-    const addedId = onUpsertSubEvent(instance.id, { name: newSubEventName });
+    const addedId = onUpsertSubEvent(instance.id, {
+      name: newSubEventName,
+      date: newSubEventDate,
+      startTime: newSubEventStartTime,
+      endTime: newSubEventEndTime
+    });
     setFeedback(
       addedId
         ? `Added ${newSubEventName.trim()}.`
@@ -123,6 +158,9 @@ export function EventInstanceDetailPanel({
     );
     if (addedId) {
       setNewSubEventName("");
+      setNewSubEventDate("");
+      setNewSubEventStartTime("");
+      setNewSubEventEndTime("");
     }
   }
 
@@ -144,6 +182,7 @@ export function EventInstanceDetailPanel({
             <span>{definition?.label ?? instance.eventTypeId}</span>
             <span>{eventFamilyName}</span>
             <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
+            <span>{formatScheduleStatus(scheduleStatus)}</span>
           </div>
         </div>
         <div className="events-detail-card__actions">
@@ -368,6 +407,53 @@ export function EventInstanceDetailPanel({
                   }
                   value={subEventDrafts[subEvent.id] ?? subEvent.name}
                 />
+                <div className="events-sub-events__schedule">
+                  <div className="field">
+                    <label htmlFor={`sub-event-date-${subEvent.id}`}>Date</label>
+                    <input
+                      className="field-control"
+                      id={`sub-event-date-${subEvent.id}`}
+                      onChange={(event) =>
+                        setSubEventDateDrafts((current) => ({
+                          ...current,
+                          [subEvent.id]: event.target.value
+                        }))
+                      }
+                      type="date"
+                      value={subEventDateDrafts[subEvent.id] ?? subEvent.date}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`sub-event-start-${subEvent.id}`}>Start</label>
+                    <input
+                      className="field-control"
+                      id={`sub-event-start-${subEvent.id}`}
+                      onChange={(event) =>
+                        setSubEventStartTimeDrafts((current) => ({
+                          ...current,
+                          [subEvent.id]: event.target.value
+                        }))
+                      }
+                      type="time"
+                      value={subEventStartTimeDrafts[subEvent.id] ?? subEvent.startTime}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`sub-event-end-${subEvent.id}`}>End</label>
+                    <input
+                      className="field-control"
+                      id={`sub-event-end-${subEvent.id}`}
+                      onChange={(event) =>
+                        setSubEventEndTimeDrafts((current) => ({
+                          ...current,
+                          [subEvent.id]: event.target.value
+                        }))
+                      }
+                      type="time"
+                      value={subEventEndTimeDrafts[subEvent.id] ?? subEvent.endTime}
+                    />
+                  </div>
+                </div>
                 <div className="events-sub-events__meta">
                   {subEvent.isDefault ? <span className="events-chip">Template scaffold</span> : null}
                   {subEvent.isUnassigned ? <span className="events-chip">Fallback lane</span> : null}
@@ -419,6 +505,36 @@ export function EventInstanceDetailPanel({
               Manual sub-events are instance-specific. They can be removed later if no Action View or Collateral work uses them.
             </div>
           </div>
+          <div className="field">
+            <label htmlFor="events-new-sub-event-date">Date</label>
+            <input
+              className="field-control"
+              id="events-new-sub-event-date"
+              onChange={(event) => setNewSubEventDate(event.target.value)}
+              type="date"
+              value={newSubEventDate}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="events-new-sub-event-start">Start</label>
+            <input
+              className="field-control"
+              id="events-new-sub-event-start"
+              onChange={(event) => setNewSubEventStartTime(event.target.value)}
+              type="time"
+              value={newSubEventStartTime}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="events-new-sub-event-end">End</label>
+            <input
+              className="field-control"
+              id="events-new-sub-event-end"
+              onChange={(event) => setNewSubEventEndTime(event.target.value)}
+              type="time"
+              value={newSubEventEndTime}
+            />
+          </div>
           <button
             className="button-link button-link--inline-secondary"
             disabled={!newSubEventName.trim()}
@@ -459,4 +575,16 @@ function formatEventDateRange(startDate: string, endDate: string) {
   }
 
   return `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`;
+}
+
+function formatScheduleStatus(status: "none" | "partial" | "scheduled") {
+  if (status === "scheduled") {
+    return "Sub-events scheduled";
+  }
+
+  if (status === "partial") {
+    return "Sub-events partially scheduled";
+  }
+
+  return "Sub-event schedule still needed";
 }

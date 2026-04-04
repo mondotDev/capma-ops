@@ -18,6 +18,9 @@ export type EventOnboardingSubEventView = {
   id: string;
   name: string;
   sortOrder: number;
+  date: string;
+  startTime: string;
+  endTime: string;
   isDefault: boolean;
   isUnassigned: boolean;
   actionUsageCount: number;
@@ -26,10 +29,13 @@ export type EventOnboardingSubEventView = {
   removeBlockReason: string | null;
 };
 
+export type EventOnboardingScheduleStatus = "none" | "partial" | "scheduled";
+
 export type EventOnboardingSelectedInstance = {
   instance: EventInstance;
   definition: EventTypeDefinition | null;
   eventFamilyName: string;
+  scheduleStatus: EventOnboardingScheduleStatus;
   subEvents: EventOnboardingSubEventView[];
 };
 
@@ -93,6 +99,7 @@ export function getEventOnboardingView(input: {
   const selectedSubEvents = [...input.eventSubEvents]
     .filter((subEvent) => subEvent.eventInstanceId === selectedInstance.id)
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+  const scheduleStatus = getScheduleStatus(selectedSubEvents);
 
   return {
     groups,
@@ -103,6 +110,7 @@ export function getEventOnboardingView(input: {
         selectedGroup?.eventFamilyName ??
         familyNameById.get(definition?.eventFamilyId ?? "") ??
         selectedInstance.eventTypeId,
+      scheduleStatus,
       subEvents: selectedSubEvents.map((subEvent) => {
         const actionUsageCount = input.items.filter(
           (item) => item.eventInstanceId === selectedInstance.id && item.subEventId === subEvent.id
@@ -123,6 +131,9 @@ export function getEventOnboardingView(input: {
           id: subEvent.id,
           name: subEvent.name,
           sortOrder: subEvent.sortOrder,
+          date: subEvent.date ?? "",
+          startTime: subEvent.startTime ?? "",
+          endTime: subEvent.endTime ?? "",
           isDefault,
           isUnassigned,
           actionUsageCount,
@@ -154,4 +165,24 @@ function getSubEventRemoveBlockReason(input: {
   }
 
   return null;
+}
+
+function getScheduleStatus(subEvents: EventSubEvent[]): EventOnboardingScheduleStatus {
+  const schedulableSubEvents = subEvents.filter((subEvent) => !subEvent.id.endsWith("-unassigned"));
+
+  if (schedulableSubEvents.length === 0) {
+    return "none";
+  }
+
+  const scheduledCount = schedulableSubEvents.filter((subEvent) => Boolean(subEvent.date)).length;
+
+  if (scheduledCount === 0) {
+    return "none";
+  }
+
+  if (scheduledCount === schedulableSubEvents.length) {
+    return "scheduled";
+  }
+
+  return "partial";
 }

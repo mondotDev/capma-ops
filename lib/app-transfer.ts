@@ -376,7 +376,10 @@ function isEventSubEventRecord(value: unknown): value is EventSubEvent {
     typeof subEvent.id === "string" &&
     typeof subEvent.eventInstanceId === "string" &&
     typeof subEvent.name === "string" &&
-    typeof subEvent.sortOrder === "number"
+    typeof subEvent.sortOrder === "number" &&
+    (subEvent.date === undefined || typeof subEvent.date === "string") &&
+    (subEvent.startTime === undefined || typeof subEvent.startTime === "string") &&
+    (subEvent.endTime === undefined || typeof subEvent.endTime === "string")
   );
 }
 

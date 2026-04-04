@@ -30,6 +30,9 @@ export type EventSubEvent = {
   eventInstanceId: string;
   name: string;
   sortOrder: number;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 type NormalizedEventSubEventsResult = {
@@ -266,7 +269,16 @@ export function normalizeEventSubEvents(subEvents: EventSubEvent[]): NormalizedE
 
     grouped.get(groupKey)!.push({
       ...subEvent,
-      name: normalizedName
+      name: normalizedName,
+      date: typeof subEvent.date === "string" && subEvent.date.length > 0 ? subEvent.date : undefined,
+      startTime:
+        typeof subEvent.startTime === "string" && subEvent.startTime.length > 0
+          ? subEvent.startTime
+          : undefined,
+      endTime:
+        typeof subEvent.endTime === "string" && subEvent.endTime.length > 0
+          ? subEvent.endTime
+          : undefined
     });
   }
 
@@ -287,7 +299,10 @@ export function normalizeEventSubEvents(subEvents: EventSubEvent[]): NormalizedE
 
       return {
         ...canonicalRecord,
-        name: canonicalName
+        name: canonicalName,
+        date: canonicalRecord.date,
+        startTime: canonicalRecord.startTime,
+        endTime: canonicalRecord.endTime
       };
     })
     .sort((left, right) =>

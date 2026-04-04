@@ -1352,7 +1352,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       placements: sponsorPlacementsByInstanceRef.current[instanceId] ?? [],
       eventInstance,
       existingItems: itemsRef.current,
-      defaultOwner: defaultOwnerForNewItemsRef.current
+      defaultOwner: defaultOwnerForNewItemsRef.current,
+      eventSubEvents: eventSubEventsRef.current
     });
 
     if (result.created.length === 0) {

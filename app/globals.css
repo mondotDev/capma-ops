@@ -769,6 +769,12 @@ textarea {
   flex: 1;
 }
 
+.events-sub-events__schedule {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .events-sub-events__meta {
   display: flex;
   flex-wrap: wrap;
@@ -4246,6 +4252,10 @@ textarea,
   .events-instance-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .events-sub-events__schedule {
+    grid-template-columns: 1fr;
   }
 
   .collateral-instance-range,

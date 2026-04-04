@@ -106,7 +106,7 @@ export function EventsView() {
         <div>
           <h1 className="collateral-page__title">Events</h1>
           <p className="collateral-page__subtitle">
-            Create and maintain clean event-instance scaffolding here, then hand off into Collateral for production work and Action View for execution pressure.
+            Start new event setup here: create the instance, confirm sub-event schedule, then hand off into Collateral for production work and Action View for downstream execution pressure.
           </p>
         </div>
         <div className="events-page__actions">
@@ -161,6 +161,7 @@ export function EventsView() {
                   {group.instances.map((instance) => {
                     const isSelected = instance.id === onboardingView.selectedInstance?.instance.id;
                     const isActive = instance.id === activeEventInstanceId;
+                    const scheduleStatus = getInstanceScheduleStatus(instance.id, eventSubEvents);
                     return (
                       <article
                         className={`events-instance-card${isSelected ? " events-instance-card--selected" : ""}`}
@@ -184,6 +185,7 @@ export function EventsView() {
                             <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
                             {instance.location ? <span>{instance.location}</span> : null}
                             <span>{group.definition.collateralTemplatePackId ? "Pack available" : "Start empty"}</span>
+                            <span>{formatScheduleStatus(scheduleStatus)}</span>
                           </div>
                           {instance.notes ? <div className="events-instance-card__notes">{instance.notes}</div> : null}
                         </button>
@@ -283,4 +285,38 @@ function describeDateMode(dateMode: "single" | "range" | "multiple") {
   }
 
   return "Multiple dates";
+}
+
+function getInstanceScheduleStatus(instanceId: string, eventSubEvents: Array<{ eventInstanceId: string; id: string; date?: string }>) {
+  const schedulableSubEvents = eventSubEvents.filter(
+    (subEvent) => subEvent.eventInstanceId === instanceId && !subEvent.id.endsWith("-unassigned")
+  );
+
+  if (schedulableSubEvents.length === 0) {
+    return "none";
+  }
+
+  const scheduledCount = schedulableSubEvents.filter((subEvent) => Boolean(subEvent.date)).length;
+
+  if (scheduledCount === 0) {
+    return "none";
+  }
+
+  if (scheduledCount === schedulableSubEvents.length) {
+    return "scheduled";
+  }
+
+  return "partial";
+}
+
+function formatScheduleStatus(status: "none" | "partial" | "scheduled") {
+  if (status === "scheduled") {
+    return "Sub-events scheduled";
+  }
+
+  if (status === "partial") {
+    return "Sub-events partially scheduled";
+  }
+
+  return "Sub-event schedule still needed";
 }

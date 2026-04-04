@@ -58,4 +58,7 @@ export type UpsertEventSubEventInput = {
   id?: string;
   name: string;
   sortOrder?: number;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
 };

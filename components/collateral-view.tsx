@@ -50,11 +50,11 @@ import {
 import {
   buildSponsorFulfillmentGenerationResult,
   createSponsorPlacementDraft,
+  getSponsorPlacementOptions,
   getSponsorCollateralPromotionDefaults,
   getSponsorPlacementDeliverables,
   getSponsorPlacementLabel,
   getSponsorFulfillmentTaskTitle,
-  SPONSOR_PLACEMENT_OPTIONS,
   supportsSponsorSetupForEventType
 } from "@/lib/sponsor-fulfillment";
 
@@ -169,6 +169,10 @@ export function CollateralView({
   const supportsSponsorSetup = selectedEventInstance
     ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
     : false;
+  const sponsorPlacementOptions = useMemo(
+    () => (selectedEventInstance ? getSponsorPlacementOptions(selectedEventInstance.eventTypeId) : []),
+    [selectedEventInstance]
+  );
   const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
   const creatableEventTypeDefinitions = useMemo(() => getAvailableEventTypeDefinitions(eventPrograms), [eventPrograms]);
   const sponsorGenerationPreview = useMemo<SponsorGenerationPreview | null>(() => {
@@ -181,7 +185,8 @@ export function CollateralView({
       placements: sponsorPlacements,
       eventInstance: selectedEventInstance,
       existingItems: items,
-      defaultOwner: defaultOwnerForNewItems
+      defaultOwner: defaultOwnerForNewItems,
+      eventSubEvents: workspaceBundle.instanceSubEvents
     });
 
     return {
@@ -195,7 +200,8 @@ export function CollateralView({
     items,
     selectedEventInstance,
     sponsorPlacements,
-    supportsSponsorSetup
+    supportsSponsorSetup,
+    workspaceBundle.instanceSubEvents
   ]);
 
   useEffect(() => {
@@ -292,7 +298,8 @@ export function CollateralView({
 
     const promotionNoteEntry = createActionNoteEntry(
       `Created from sponsor action item "${sourceItem.title}". Placement: ${getSponsorPlacementLabel(
-        promotionDefaults.placement
+        promotionDefaults.placement,
+        selectedEventInstance?.eventTypeId ?? "legislative-day"
       )}.`,
       { author: LOCAL_FALLBACK_NOTE_AUTHOR }
     );
@@ -703,7 +710,10 @@ export function CollateralView({
   function handleAddSponsorPlacement() {
     upsertSponsorPlacement(
       resolvedActiveEventInstanceId,
-      createSponsorPlacementDraft(resolvedActiveEventInstanceId)
+      createSponsorPlacementDraft(
+        resolvedActiveEventInstanceId,
+        selectedEventInstance?.eventTypeId ?? "legislative-day"
+      )
     );
   }
 
@@ -1625,7 +1635,7 @@ export function CollateralView({
                               }
                               value={placement.placement}
                             >
-                              {SPONSOR_PLACEMENT_OPTIONS.map((option) => (
+                              {sponsorPlacementOptions.map((option) => (
                                 <option key={option.id} value={option.id}>
                                   {option.label}
                                 </option>
@@ -1654,14 +1664,14 @@ export function CollateralView({
                               onChange={(event) =>
                                 handleSponsorPlacementChange(placement.id, "notes", event.target.value)
                               }
-                              placeholder={`Optional context for ${getSponsorPlacementLabel(placement.placement).toLowerCase()}`}
+                              placeholder={`Optional context for ${getSponsorPlacementLabel(placement.placement, selectedEventInstance.eventTypeId).toLowerCase()}`}
                               rows={2}
                               value={placement.notes ?? ""}
                             />
                             {placement.sponsorName.trim() ? (
                               <div className="field__hint">
-                                Generates {getSponsorPlacementDeliverables(placement.placement).length} sponsor deadline item{getSponsorPlacementDeliverables(placement.placement).length === 1 ? "" : "s"}, including{" "}
-                                {getSponsorPlacementDeliverables(placement.placement)
+                                Generates {getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length} sponsor deadline item{getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length === 1 ? "" : "s"}, including{" "}
+                                {getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId)
                                   .slice(0, 2)
                                   .map((deliverable) =>
                                     getSponsorFulfillmentTaskTitle({
@@ -1670,8 +1680,8 @@ export function CollateralView({
                                     })
                                   )
                                   .join(" • ")}
-                                {getSponsorPlacementDeliverables(placement.placement).length > 2
-                                  ? ` + ${getSponsorPlacementDeliverables(placement.placement).length - 2} more`
+                                {getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length > 2
+                                  ? ` + ${getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length - 2} more`
                                   : ""}
                                 {!placement.logoReceived
                                   ? ". Logo-required deliverables will start in Waiting until the sponsor logo is received."
