@@ -14,7 +14,7 @@ import { normalizeActionItemFields } from "@/lib/ops-utils";
 import {
   createDefaultActionItems
 } from "@/lib/state/app-state-defaults";
-import type { AppStateRepository } from "@/lib/state/app-state-repository";
+import type { AppStateRepository, LoadAppStateResult } from "@/lib/state/app-state-repository";
 import type { AppStateData } from "@/lib/state/app-state-types";
 
 class LocalAppStateRepository implements AppStateRepository {
@@ -28,6 +28,7 @@ class LocalAppStateRepository implements AppStateRepository {
       state.issueStatuses,
       state.collateralItems,
       state.collateralProfiles,
+      state.sponsorPlacementsByInstance,
       state.activeEventInstanceId,
       state.defaultOwnerForNewItems,
       state.eventFamilies,
@@ -54,6 +55,7 @@ class LocalAppStateRepository implements AppStateRepository {
       issueStatuses: parsedState.issueStatuses,
       collateralItems: parsedState.collateralItems,
       collateralProfiles: parsedState.collateralProfiles,
+      sponsorPlacementsByInstance: parsedState.sponsorPlacementsByInstance,
       activeEventInstanceId: parsedState.activeEventInstanceId,
       defaultOwnerForNewItems: parsedState.defaultOwnerForNewItems,
       eventFamilies: parsedState.eventFamilies,
@@ -66,17 +68,21 @@ class LocalAppStateRepository implements AppStateRepository {
     };
   }
 
-  load() {
+  load(): LoadAppStateResult {
     const result = loadPersistedAppState(normalizeActionItemFields);
 
     if (!result.state) {
-      return result;
+      return {
+        ...result,
+        state: null
+      };
     }
 
     return {
       ...result,
       state: {
         ...result.state,
+        sponsorPlacementsByInstance: result.state.sponsorPlacementsByInstance ?? {},
         items: nativeActionItemMutator.normalizeLoaded(
           migratePersistedItems(result.state.items, {
             legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,

@@ -12,6 +12,11 @@ import {
   type PersistedCollateralState
 } from "@/lib/collateral-persisted-state";
 import type { ActionNoteEntry } from "@/lib/sample-data";
+import {
+  normalizeSponsorPlacement,
+  type SponsorPlacement,
+  type SponsorPlacementsByInstance
+} from "@/lib/sponsor-fulfillment";
 
 export const COLLATERAL_STATE_COLLECTION = "appStateSlices";
 export const COLLATERAL_STATE_DOCUMENT = "collateralState";
@@ -57,9 +62,12 @@ type FirestoreEventSubEventDocument = {
 
 type FirestoreLegDayCollateralProfileDocument = LegDayCollateralProfile;
 
+type FirestoreSponsorPlacementDocument = SponsorPlacement;
+
 type FirestoreCollateralStateDocument = {
   collateralItems: FirestoreCollateralItemDocument[];
   collateralProfiles: Record<string, FirestoreLegDayCollateralProfileDocument>;
+  sponsorPlacementsByInstance?: Record<string, FirestoreSponsorPlacementDocument[]>;
   eventInstances: FirestoreEventInstanceDocument[];
   eventSubEvents: FirestoreEventSubEventDocument[];
   updatedAt?: string;
@@ -150,6 +158,12 @@ export function mapPersistedCollateralStateToFirestoreDocument(
     collateralProfiles: Object.fromEntries(
       Object.entries(state.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
     ),
+    sponsorPlacementsByInstance: Object.fromEntries(
+      Object.entries(state.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+        instanceId,
+        placements.map((placement) => ({ ...placement }))
+      ])
+    ),
     eventInstances: state.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: state.eventSubEvents.map((subEvent) => ({ ...subEvent })),
     schemaVersion: 1,
@@ -171,7 +185,12 @@ export function parseFirestoreCollateralStateDocument(value: unknown): Firestore
     !document.eventInstances.every((instance) => normalizeEventInstance(instance) !== null) ||
     !Array.isArray(document.eventSubEvents) ||
     !document.eventSubEvents.every(isFirestoreEventSubEventDocument) ||
-    !isCollateralProfileMap(document.collateralProfiles)
+    !isCollateralProfileMap(document.collateralProfiles) ||
+    !isSponsorPlacementsMap(
+      document.sponsorPlacementsByInstance ?? {},
+      document.eventInstances,
+      document.eventSubEvents
+    )
   ) {
     return null;
   }
@@ -190,6 +209,12 @@ export function parseFirestoreCollateralStateDocument(value: unknown): Firestore
     collateralProfiles: Object.fromEntries(
       Object.entries(document.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
     ),
+    sponsorPlacementsByInstance: Object.fromEntries(
+      Object.entries(document.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+        instanceId,
+        placements.map((placement) => ({ ...placement }))
+      ])
+    ),
     eventInstances: document.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: document.eventSubEvents.map((subEvent) => ({ ...subEvent })),
     schemaVersion: document.schemaVersion,
@@ -204,6 +229,12 @@ function mapPersistedCollateralStateDocument(
     collateralItems: document.collateralItems.map(mapFirestoreDocumentToCollateralItem),
     collateralProfiles: Object.fromEntries(
       Object.entries(document.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+    ),
+    sponsorPlacementsByInstance: Object.fromEntries(
+      Object.entries(document.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+        instanceId,
+        placements.map((placement) => ({ ...placement }))
+      ])
     ),
     eventInstances: document.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: document.eventSubEvents.map((subEvent) => ({ ...subEvent }))
@@ -384,6 +415,29 @@ function isCollateralProfileMap(value: unknown): value is Record<string, Firesto
   }
 
   return Object.values(value).every(isLegDayCollateralProfileDocument);
+}
+
+function isSponsorPlacementsMap(
+  value: unknown,
+  eventInstances: FirestoreEventInstanceDocument[],
+  eventSubEvents: FirestoreEventSubEventDocument[]
+): value is Record<string, FirestoreSponsorPlacementDocument[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.entries(value).every(([instanceId, placements]) => {
+    if (!eventInstances.some((instance) => instance.id === instanceId) || !Array.isArray(placements)) {
+      return false;
+    }
+
+    return placements.every((placement) =>
+      normalizeSponsorPlacement(placement as Partial<SponsorPlacement>, {
+        eventInstances,
+        eventSubEvents
+      }) !== null
+    );
+  });
 }
 
 function isLegDayCollateralProfileDocument(value: unknown): value is FirestoreLegDayCollateralProfileDocument {

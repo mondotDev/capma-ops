@@ -50,6 +50,11 @@ import {
   type EventType
 } from "@/lib/event-instances";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
+import {
+  buildSponsorFulfillmentGenerationResult,
+  type SponsorPlacement,
+  type SponsorPlacementsByInstance
+} from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   type IssueRecord,
@@ -95,6 +100,7 @@ type AppStateContextValue = {
   issues: IssueRecord[];
   collateralItems: CollateralItem[];
   collateralProfiles: CollateralProfilesByInstance;
+  sponsorPlacementsByInstance: SponsorPlacementsByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -130,6 +136,9 @@ type AppStateContextValue = {
   restoreItem: (id: string) => void;
   setActiveEventInstanceId: (instanceId: string) => void;
   setCollateralProfile: (instanceId: string, profile: LegDayCollateralProfile) => void;
+  upsertSponsorPlacement: (instanceId: string, placement: SponsorPlacement) => void;
+  removeSponsorPlacement: (instanceId: string, placementId: string) => void;
+  generateSponsorFulfillmentItems: (instanceId: string) => { created: number; skipped: number };
   setDefaultOwnerForNewItems: (owner: string) => void;
   setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => void;
   setIssueStatus: (issue: string, status: IssueStatus) => CompletePublicationIssueResult;
@@ -142,6 +151,7 @@ type AppStateValuesContextValue = Pick<
   | "activeEventInstanceId"
   | "collateralItems"
   | "collateralProfiles"
+  | "sponsorPlacementsByInstance"
   | "defaultOwnerForNewItems"
   | "eventFamilies"
   | "eventInstances"
@@ -164,6 +174,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [issueStatuses, setIssueStatuses] = useState<Partial<Record<string, IssueStatus>>>({});
   const [collateralItems, setCollateralItems] = useState<CollateralItem[]>(createDefaultCollateralItems);
   const [collateralProfiles, setCollateralProfiles] = useState<CollateralProfilesByInstance>(createDefaultCollateralProfiles);
+  const [sponsorPlacementsByInstance, setSponsorPlacementsByInstance] = useState<SponsorPlacementsByInstance>({});
   const [activeEventInstanceId, setActiveEventInstanceIdState] = useState<string>(getDefaultActiveEventInstanceId);
   const [defaultOwnerForNewItems, setDefaultOwnerForNewItemsState] = useState<string>(getDefaultOwnerForNewItems);
   const [eventFamilies, setEventFamilies] = useState<EventFamily[]>(createDefaultEventFamilies);
@@ -197,6 +208,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const issueStatusesRef = useRef(issueStatuses);
   const collateralItemsRef = useRef(collateralItems);
   const collateralProfilesRef = useRef(collateralProfiles);
+  const sponsorPlacementsByInstanceRef = useRef(sponsorPlacementsByInstance);
   const activeEventInstanceIdRef = useRef(activeEventInstanceId);
   const defaultOwnerForNewItemsRef = useRef(defaultOwnerForNewItems);
   const eventFamiliesRef = useRef(eventFamilies);
@@ -209,6 +221,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   issueStatusesRef.current = issueStatuses;
   collateralItemsRef.current = collateralItems;
   collateralProfilesRef.current = collateralProfiles;
+  sponsorPlacementsByInstanceRef.current = sponsorPlacementsByInstance;
   activeEventInstanceIdRef.current = activeEventInstanceId;
   defaultOwnerForNewItemsRef.current = defaultOwnerForNewItems;
   eventFamiliesRef.current = eventFamilies;
@@ -246,10 +259,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   );
   const getPersistedCollateralState = useCallback(
     (
-      overrides?: Partial<Pick<AppStateData, "collateralItems" | "collateralProfiles" | "eventInstances" | "eventSubEvents">>
+      overrides?: Partial<
+        Pick<
+          AppStateData,
+          "collateralItems" | "collateralProfiles" | "sponsorPlacementsByInstance" | "eventInstances" | "eventSubEvents"
+        >
+      >
     ): PersistedCollateralState => ({
       collateralItems: overrides?.collateralItems ?? collateralItemsRef.current,
       collateralProfiles: overrides?.collateralProfiles ?? collateralProfilesRef.current,
+      sponsorPlacementsByInstance:
+        overrides?.sponsorPlacementsByInstance ?? sponsorPlacementsByInstanceRef.current,
       eventInstances: overrides?.eventInstances ?? eventInstancesRef.current,
       eventSubEvents: overrides?.eventSubEvents ?? eventSubEventsRef.current
     }),
@@ -294,6 +314,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       })
     );
     setCollateralProfiles(state.collateralProfiles);
+    setSponsorPlacementsByInstance(state.sponsorPlacementsByInstance);
     setActiveEventInstanceIdState(state.activeEventInstanceId);
     setDefaultOwnerForNewItemsState(state.defaultOwnerForNewItems);
     setEventFamilies(state.eventFamilies);
@@ -323,6 +344,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralBootstrapSourceRef.current = {
         collateralItems: baseState.collateralItems,
         collateralProfiles: baseState.collateralProfiles,
+        sponsorPlacementsByInstance: baseState.sponsorPlacementsByInstance,
         eventInstances: baseState.eventInstances,
         eventSubEvents: baseState.eventSubEvents
       };
@@ -333,6 +355,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           getPersistedCollateralState({
             collateralItems: baseState.collateralItems,
             collateralProfiles: baseState.collateralProfiles,
+            sponsorPlacementsByInstance: baseState.sponsorPlacementsByInstance,
             eventInstances: baseState.eventInstances,
             eventSubEvents: baseState.eventSubEvents
           }),
@@ -425,6 +448,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         currentState: {
           collateralItems,
           collateralProfiles,
+          sponsorPlacementsByInstance,
           eventInstances,
           eventSubEvents
         },
@@ -441,6 +465,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       issueStatuses,
       collateralItems: persistableCollateralState.collateralItems,
       collateralProfiles: persistableCollateralState.collateralProfiles,
+      sponsorPlacementsByInstance: persistableCollateralState.sponsorPlacementsByInstance ?? {},
       activeEventInstanceId,
       defaultOwnerForNewItems,
       eventFamilies,
@@ -454,6 +479,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       activeEventInstanceId,
       collateralItems,
       collateralProfiles,
+      sponsorPlacementsByInstance,
       collateralPersistenceStoreMode,
       defaultOwnerForNewItems,
       eventFamilies,
@@ -910,6 +936,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     collateralBootstrapSourceRef.current = {
       collateralItems: nextState.collateralItems,
       collateralProfiles: nextState.collateralProfiles,
+      sponsorPlacementsByInstance: nextState.sponsorPlacementsByInstance,
       eventInstances: nextState.eventInstances,
       eventSubEvents: nextState.eventSubEvents
     };
@@ -919,6 +946,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         .replaceAll(getPersistedCollateralState({
           collateralItems: nextState.collateralItems,
           collateralProfiles: nextState.collateralProfiles,
+          sponsorPlacementsByInstance: nextState.sponsorPlacementsByInstance,
           eventInstances: nextState.eventInstances,
           eventSubEvents: nextState.eventSubEvents
         }), getCollateralPersistenceContext({
@@ -982,6 +1010,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         issueStatuses: issueStatusesRef.current,
         collateralItems: collateralItemsRef.current,
         collateralProfiles: collateralProfilesRef.current,
+        sponsorPlacementsByInstance: sponsorPlacementsByInstanceRef.current,
         activeEventInstanceId: activeEventInstanceIdRef.current,
         defaultOwnerForNewItems: defaultOwnerForNewItemsRef.current,
         eventFamilies: eventFamiliesRef.current,
@@ -1000,6 +1029,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     collateralBootstrapSourceRef.current = {
       collateralItems: importedState.collateralItems,
       collateralProfiles: importedState.collateralProfiles,
+      sponsorPlacementsByInstance: importedState.sponsorPlacementsByInstance,
       eventInstances: importedState.eventInstances,
       eventSubEvents: importedState.eventSubEvents
     };
@@ -1010,6 +1040,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           getPersistedCollateralState({
             collateralItems: importedState.collateralItems,
             collateralProfiles: importedState.collateralProfiles,
+            sponsorPlacementsByInstance: importedState.sponsorPlacementsByInstance,
             eventInstances: importedState.eventInstances,
             eventSubEvents: importedState.eventSubEvents
           }),
@@ -1112,6 +1143,121 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     getPersistedCollateralState
   ]);
 
+  const upsertSponsorPlacement = useCallback((instanceId: string, placement: SponsorPlacement) => {
+    enablePersistence();
+    setSponsorPlacementsByInstance((current) => {
+      const nextForInstance = (current[instanceId] ?? []).some((entry) => entry.id === placement.id)
+        ? (current[instanceId] ?? []).map((entry) => (entry.id === placement.id ? { ...placement } : entry))
+        : [...(current[instanceId] ?? []), { ...placement }];
+      const nextState = {
+        ...current,
+        [instanceId]: nextForInstance
+      };
+
+      sponsorPlacementsByInstanceRef.current = nextState;
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(
+            getPersistedCollateralState({ sponsorPlacementsByInstance: nextState }),
+            getCollateralPersistenceContext()
+          )
+          .then(() => undefined)
+      );
+
+      return nextState;
+    });
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
+
+  const removeSponsorPlacement = useCallback((instanceId: string, placementId: string) => {
+    enablePersistence();
+    setSponsorPlacementsByInstance((current) => {
+      const nextForInstance = (current[instanceId] ?? []).filter((placement) => placement.id !== placementId);
+      const nextState =
+        nextForInstance.length > 0
+          ? {
+              ...current,
+              [instanceId]: nextForInstance
+            }
+          : Object.fromEntries(
+              Object.entries(current).filter(([currentInstanceId]) => currentInstanceId !== instanceId)
+            );
+
+      sponsorPlacementsByInstanceRef.current = nextState;
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(
+            getPersistedCollateralState({ sponsorPlacementsByInstance: nextState }),
+            getCollateralPersistenceContext()
+          )
+          .then(() => undefined)
+      );
+
+      return nextState;
+    });
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
+
+  const generateSponsorFulfillmentItems = useCallback((instanceId: string) => {
+    const eventInstance = eventInstancesRef.current.find((entry) => entry.id === instanceId) ?? null;
+
+    if (!eventInstance) {
+      return { created: 0, skipped: 0 };
+    }
+
+    const result = buildSponsorFulfillmentGenerationResult({
+      placements: sponsorPlacementsByInstanceRef.current[instanceId] ?? [],
+      eventInstance,
+      eventSubEvents: eventSubEventsRef.current.filter((subEvent) => subEvent.eventInstanceId === instanceId),
+      activeProfile: collateralProfilesRef.current[instanceId] ?? null,
+      existingItems: itemsRef.current,
+      defaultOwner: defaultOwnerForNewItemsRef.current
+    });
+
+    if (result.created.length === 0) {
+      return { created: 0, skipped: result.skipped };
+    }
+
+    enablePersistence();
+    if (nativeActionItemStoreMode === "firebase") {
+      clearNativeActionItemRecovery();
+    }
+
+    setItems((current) => {
+      const context = getNativeActionItemContext();
+      const nextItems = result.created.reduce(
+        (accumulator, item) => nativeActionItemMutator.create(accumulator, item, context),
+        current
+      );
+      enqueueNativeActionItemStoreWrite(() =>
+        nativeActionItemStore.replaceAll(nextItems, context).then(() => undefined)
+      );
+      return nextItems;
+    });
+
+    return {
+      created: result.created.length,
+      skipped: result.skipped
+    };
+  }, [
+    clearNativeActionItemRecovery,
+    enablePersistence,
+    enqueueNativeActionItemStoreWrite,
+    getNativeActionItemContext,
+    nativeActionItemStore,
+    nativeActionItemStoreMode
+  ]);
+
   const setWorkstreamSchedules = useCallback((schedules: WorkstreamSchedule[]) => {
     enablePersistence();
     setWorkstreamSchedulesState(schedules);
@@ -1135,6 +1281,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     issues,
     collateralItems,
     collateralProfiles,
+    sponsorPlacementsByInstance,
     activeEventInstanceId,
     defaultOwnerForNewItems,
     eventFamilies,
@@ -1149,6 +1296,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       activeEventInstanceId,
       collateralItems,
       collateralProfiles,
+      sponsorPlacementsByInstance,
       defaultOwnerForNewItems,
       eventFamilies,
       eventInstances,
@@ -1182,11 +1330,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     ensureEventInstanceUnassignedSubEvent,
     resetAppState,
     restoreItem,
+    generateSponsorFulfillmentItems,
+    removeSponsorPlacement,
     setActiveEventInstanceId,
     setCollateralProfile,
     setDefaultOwnerForNewItems,
     setWorkstreamSchedules,
     setIssueStatus,
+    upsertSponsorPlacement,
     updateCollateralItem,
     updateItem
     }),
@@ -1209,11 +1360,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       openIssue,
       resetAppState,
       restoreItem,
+      generateSponsorFulfillmentItems,
+      removeSponsorPlacement,
       setActiveEventInstanceId,
       setCollateralProfile,
       setDefaultOwnerForNewItems,
       setIssueStatus,
       setWorkstreamSchedules,
+      upsertSponsorPlacement,
       updateCollateralItem,
       updateItem
     ]

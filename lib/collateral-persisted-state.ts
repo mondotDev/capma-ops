@@ -8,10 +8,15 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
+import {
+  normalizeSponsorPlacementsByInstance,
+  type SponsorPlacementsByInstance
+} from "@/lib/sponsor-fulfillment";
 
 export type PersistedCollateralState = {
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
+  sponsorPlacementsByInstance?: SponsorPlacementsByInstance;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
 };
@@ -60,10 +65,18 @@ export function normalizePersistedCollateralState(
       .filter(([instanceId]) => validEventInstanceIds.has(instanceId))
       .map(([instanceId, profile]) => [instanceId, { ...profile }])
   );
+  const sponsorPlacementsByInstance = normalizeSponsorPlacementsByInstance(
+    state.sponsorPlacementsByInstance,
+    {
+      eventInstances: normalizedEventInstances,
+      eventSubEvents
+    }
+  );
 
   return {
     collateralItems,
     collateralProfiles,
+    sponsorPlacementsByInstance,
     eventInstances: normalizedEventInstances,
     eventSubEvents
   };

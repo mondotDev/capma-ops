@@ -20,6 +20,10 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
+import {
+  normalizeSponsorPlacementsByInstance,
+  type SponsorPlacementsByInstance
+} from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import {
   getDefaultWorkstreamSchedules,
@@ -35,6 +39,7 @@ export type AppStateSnapshot = {
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
+  sponsorPlacementsByInstance?: SponsorPlacementsByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -49,6 +54,7 @@ export function createAppStateSnapshot(
   issueStatuses: Partial<Record<string, IssueStatus>>,
   collateralItems: CollateralItem[],
   collateralProfiles: Record<string, LegDayCollateralProfile>,
+  sponsorPlacementsByInstance: SponsorPlacementsByInstance,
   activeEventInstanceId: string,
   defaultOwnerForNewItems: string,
   eventFamilies: EventFamily[],
@@ -65,6 +71,12 @@ export function createAppStateSnapshot(
     collateralItems: collateralItems.map((item) => ({ ...item })),
     collateralProfiles: Object.fromEntries(
       Object.entries(collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
+    ),
+    sponsorPlacementsByInstance: Object.fromEntries(
+      Object.entries(sponsorPlacementsByInstance).map(([instanceId, placements]) => [
+        instanceId,
+        placements.map((placement) => ({ ...placement }))
+      ])
     ),
     activeEventInstanceId,
     defaultOwnerForNewItems,
@@ -83,6 +95,7 @@ export function parseImportedAppState(
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
+  sponsorPlacementsByInstance: SponsorPlacementsByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -103,6 +116,7 @@ export function parseImportedAppState(
       issueStatuses: {},
       collateralItems: [],
       collateralProfiles: { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
+      sponsorPlacementsByInstance: {},
       activeEventInstanceId: initialEventInstances[0].id,
       defaultOwnerForNewItems: "Melissa",
       eventFamilies: initialEventFamilies.map((family) => ({ ...family })),
@@ -147,6 +161,10 @@ export function parseImportedAppState(
         )
       : snapshot.collateralProfile && isCollateralProfileRecord(snapshot.collateralProfile)
         ? { [initialEventInstances[0].id]: { ...snapshot.collateralProfile } }
+        : {},
+    sponsorPlacementsByInstance:
+      snapshot.sponsorPlacementsByInstance && typeof snapshot.sponsorPlacementsByInstance === "object"
+        ? snapshot.sponsorPlacementsByInstance
         : {},
     eventInstances: Array.isArray(snapshot.eventInstances)
       ? snapshot.eventInstances.reduce<EventInstance[]>((accumulator, instance) => {
@@ -193,6 +211,7 @@ function normalizeEventScopedState(input: {
   activeEventInstanceId: string;
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
+  sponsorPlacementsByInstance?: SponsorPlacementsByInstance;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
   eventTypes: EventType[];
@@ -227,6 +246,13 @@ function normalizeEventScopedState(input: {
   const collateralProfiles = Object.fromEntries(
     Object.entries(input.collateralProfiles).filter(([instanceId]) => validEventInstanceIds.has(instanceId))
   );
+  const sponsorPlacementsByInstance = normalizeSponsorPlacementsByInstance(
+    input.sponsorPlacementsByInstance,
+    {
+      eventInstances: normalizedEventInstances,
+      eventSubEvents: eventSubEvents
+    }
+  );
   const eventInstances =
     normalizedEventInstances.length > 0
       ? normalizedEventInstances
@@ -248,6 +274,7 @@ function normalizeEventScopedState(input: {
     activeEventInstanceId: resolveActiveEventInstanceId(input.activeEventInstanceId, eventInstances),
     collateralItems: resolvedCollateralItems,
     collateralProfiles: resolvedCollateralProfiles,
+    sponsorPlacementsByInstance,
     eventTypes: input.eventTypes,
     eventInstances,
     eventSubEvents: resolvedEventSubEvents

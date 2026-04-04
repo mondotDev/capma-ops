@@ -9,6 +9,7 @@ import type {
   EventSubEvent,
   EventType
 } from "@/lib/event-instances";
+import type { SponsorPlacementsByInstance } from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import type { IssueStatus, WorkstreamSchedule } from "@/lib/ops-utils";
 
@@ -19,6 +20,7 @@ export type AppStateData = {
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
   collateralProfiles: CollateralProfilesByInstance;
+  sponsorPlacementsByInstance: SponsorPlacementsByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];

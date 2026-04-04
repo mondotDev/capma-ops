@@ -72,6 +72,10 @@ import {
   mapBootstrapLinkedEvent,
   mapBootstrapStatus
 } from "../lib/native-action-item-bootstrap";
+import {
+  buildSponsorFulfillmentGenerationResult,
+  normalizeSponsorPlacement
+} from "../lib/sponsor-fulfillment";
 import { parseImportedAppState } from "../lib/app-transfer";
 import {
   APP_STATE_BACKUP_STORAGE_KEY,
@@ -3927,6 +3931,132 @@ test("collateral workspace readiness flags missing template, profile dates, bloc
       "1 blocked item"
     ]
   );
+});
+
+test("sponsor placements normalize only for valid instance and sub-event scope", () => {
+  const validPlacement = normalizeSponsorPlacement(
+    {
+      id: "placement-1",
+      eventInstanceId: "legislative-day-2026",
+      sponsorName: "Acme Pest",
+      placementType: "table-tents",
+      subEventId: "leg-day-thursday-breakfast",
+      notes: "Premier sponsor"
+    },
+    {
+      eventInstances: initialEventInstances,
+      eventSubEvents: initialEventSubEvents
+    }
+  );
+
+  assert.equal(validPlacement?.sponsorName, "Acme Pest");
+  assert.equal(validPlacement?.subEventId, "leg-day-thursday-breakfast");
+
+  const invalidPlacement = normalizeSponsorPlacement(
+    {
+      id: "placement-2",
+      eventInstanceId: "legislative-day-2026",
+      sponsorName: "Acme Pest",
+      placementType: "table-tents",
+      subEventId: "other-instance-sub-event"
+    },
+    {
+      eventInstances: initialEventInstances,
+      eventSubEvents: initialEventSubEvents
+    }
+  );
+
+  assert.equal(invalidPlacement?.subEventId, undefined);
+});
+
+test("sponsor setup generation creates native action items and skips matching reruns", () => {
+  const generation = buildSponsorFulfillmentGenerationResult({
+    placements: [
+      {
+        id: "placement-1",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "Acme Pest",
+        placementType: "table-tents",
+        subEventId: "leg-day-thursday-breakfast",
+        notes: "Breakfast sponsor"
+      },
+      {
+        id: "placement-2",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "",
+        placementType: "thank-you-sign"
+      }
+    ],
+    eventInstance: initialEventInstances[0]!,
+    eventSubEvents: initialEventSubEvents,
+    activeProfile: {
+      eventStartDate: "2026-04-21",
+      eventEndDate: "2026-04-23",
+      roomBlockDeadline: "",
+      roomBlockNote: "",
+      logoDeadline: "2026-03-23",
+      logoDeadlineNote: "",
+      externalPrintingDue: "2026-03-27",
+      internalPrintingStart: ""
+    },
+    existingItems: [],
+    defaultOwner: "Melissa"
+  });
+
+  assert.equal(generation.created.length, 1);
+  assert.equal(generation.created[0]?.title, "Acme Pest: Table tents for Thursday Breakfast");
+  assert.equal(generation.created[0]?.eventInstanceId, "legislative-day-2026");
+  assert.equal(generation.created[0]?.dueDate, "2026-03-23");
+  assert.equal(generation.skipped, 1);
+
+  const rerun = buildSponsorFulfillmentGenerationResult({
+    placements: [
+      {
+        id: "placement-1",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "Acme Pest",
+        placementType: "table-tents",
+        subEventId: "leg-day-thursday-breakfast"
+      }
+    ],
+    eventInstance: initialEventInstances[0]!,
+    eventSubEvents: initialEventSubEvents,
+    activeProfile: {
+      eventStartDate: "2026-04-21",
+      eventEndDate: "2026-04-23",
+      roomBlockDeadline: "",
+      roomBlockNote: "",
+      logoDeadline: "2026-03-23",
+      logoDeadlineNote: "",
+      externalPrintingDue: "2026-03-27",
+      internalPrintingStart: ""
+    },
+    existingItems: [
+      createItem({
+        title: "Acme Pest: Table tents for Thursday Breakfast",
+        workstream: "Legislative Day",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-thursday-breakfast"
+      })
+    ],
+    defaultOwner: "Melissa"
+  });
+
+  assert.equal(rerun.created.length, 0);
+  assert.equal(rerun.skipped, 1);
+});
+
+test("firestore collateral state parser accepts legacy documents without sponsor placements", () => {
+  const parsed = parseFirestoreCollateralStateDocument({
+    collateralItems: [],
+    collateralProfiles: {},
+    eventInstances: initialEventInstances,
+    eventSubEvents: initialEventSubEvents,
+    schemaVersion: 1
+  });
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed?.sponsorPlacementsByInstance ?? {}, {});
 });
 
 test("collateral instance list query stays scoped to the active event instance", () => {

@@ -671,6 +671,37 @@ textarea {
   line-height: 1.4;
 }
 
+.collateral-sponsor-setup {
+  display: grid;
+  gap: 12px;
+}
+
+.sponsor-setup__hint,
+.sponsor-setup__empty {
+  font-size: 13px;
+  color: #627283;
+}
+
+.sponsor-setup__rows {
+  display: grid;
+  gap: 12px;
+}
+
+.sponsor-setup__row {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: #fbfdff;
+}
+
+.sponsor-setup__actions,
+.sponsor-setup__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .field__hint {
   margin-top: 6px;
   font-size: 12px;

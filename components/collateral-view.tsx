@@ -47,6 +47,12 @@ import {
   getOwnerOptions,
   LOCAL_FALLBACK_NOTE_AUTHOR
 } from "@/lib/ops-utils";
+import {
+  createSponsorPlacementDraft,
+  getSponsorPlacementTypeLabel,
+  SPONSOR_PLACEMENT_OPTIONS,
+  supportsSponsorSetupForEventType
+} from "@/lib/sponsor-fulfillment";
 
 type CreateInstanceFormState = {
   eventTypeId: string;
@@ -85,7 +91,7 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
-  const { defaultOwnerForNewItems, workstreamSchedules } = useAppStateValues();
+  const { defaultOwnerForNewItems, sponsorPlacementsByInstance, workstreamSchedules } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -95,6 +101,9 @@ export function CollateralView({
     setActiveEventInstanceId,
     setCollateralProfile,
     setWorkstreamSchedules,
+    upsertSponsorPlacement,
+    removeSponsorPlacement,
+    generateSponsorFulfillmentItems,
     updateCollateralItem
   } = useAppActions();
   const searchParams = useSearchParams();
@@ -144,6 +153,10 @@ export function CollateralView({
   const currentProgramSchedule = scheduledWorkstream
     ? workstreamSchedules.find((entry) => entry.workstream === scheduledWorkstream) ?? null
     : null;
+  const sponsorPlacements = sponsorPlacementsByInstance[resolvedActiveEventInstanceId] ?? [];
+  const supportsSponsorSetup = selectedEventInstance
+    ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
+    : false;
 
   useEffect(() => {
     setIsActionsMenuOpen(false);
@@ -623,6 +636,55 @@ export function CollateralView({
     });
   }
 
+  function handleAddSponsorPlacement() {
+    upsertSponsorPlacement(
+      resolvedActiveEventInstanceId,
+      createSponsorPlacementDraft(resolvedActiveEventInstanceId)
+    );
+  }
+
+  function handleSponsorPlacementChange(
+    placementId: string,
+    field: "sponsorName" | "placementType" | "subEventId" | "notes",
+    value: string
+  ) {
+    const placement = sponsorPlacements.find((entry) => entry.id === placementId);
+
+    if (!placement) {
+      return;
+    }
+
+    upsertSponsorPlacement(resolvedActiveEventInstanceId, {
+      ...placement,
+      [field]:
+        field === "subEventId"
+          ? value || undefined
+          : field === "notes"
+            ? value
+            : value
+    });
+  }
+
+  function handleGenerateSponsorFulfillment() {
+    const result = generateSponsorFulfillmentItems(resolvedActiveEventInstanceId);
+
+    if (result.created === 0 && result.skipped === 0) {
+      setSetupFeedback("No sponsor fulfillment tasks were generated yet. Add at least one sponsor placement first.");
+      return;
+    }
+
+    if (result.created === 0) {
+      setSetupFeedback("Sponsor fulfillment tasks already exist for the current placements. Nothing new was generated.");
+      return;
+    }
+
+    setSetupFeedback(
+      result.skipped > 0
+        ? `${result.created} sponsor fulfillment task${result.created === 1 ? "" : "s"} created. ${result.skipped} placement${result.skipped === 1 ? "" : "s"} skipped because matching tasks already exist or setup is incomplete.`
+        : `${result.created} sponsor fulfillment task${result.created === 1 ? "" : "s"} created in Action View.`
+    );
+  }
+
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
     if (nextEventInstanceId === resolvedActiveEventInstanceId) {
       return;
@@ -912,6 +974,117 @@ export function CollateralView({
                 ) : null}
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedEventInstance && supportsSponsorSetup ? (
+        <div className="card card--secondary collateral-event-setup collateral-sponsor-setup">
+          <div className="collateral-event-setup__header">
+            <div>
+              <div className="card__title">SPONSOR PLACEMENTS</div>
+              <div className="collateral-event-setup__meta">
+                Track sponsor placement commitments for {selectedEventInstance.name}, then generate fulfillment work into Action View.
+              </div>
+            </div>
+            <button
+              className="button-link button-link--inline-secondary"
+              onClick={handleGenerateSponsorFulfillment}
+              type="button"
+            >
+              Generate Tasks
+            </button>
+          </div>
+          <div className="sponsor-setup__hint">
+            This first slice supports Legislative Day only and generates native action items without creating sponsor-specific collateral records.
+          </div>
+          <div className="sponsor-setup__rows">
+            {sponsorPlacements.length > 0 ? (
+              sponsorPlacements.map((placement) => (
+                <div className="sponsor-setup__row" key={placement.id}>
+                  <div className="field">
+                    <label htmlFor={`sponsor-name-${placement.id}`}>Sponsor</label>
+                    <input
+                      className="field-control"
+                      id={`sponsor-name-${placement.id}`}
+                      onChange={(event) =>
+                        handleSponsorPlacementChange(placement.id, "sponsorName", event.target.value)
+                      }
+                      placeholder="Sponsor name"
+                      value={placement.sponsorName}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`sponsor-placement-${placement.id}`}>Placement</label>
+                    <select
+                      className="field-control"
+                      id={`sponsor-placement-${placement.id}`}
+                      onChange={(event) =>
+                        handleSponsorPlacementChange(placement.id, "placementType", event.target.value)
+                      }
+                      value={placement.placementType}
+                    >
+                      {SPONSOR_PLACEMENT_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`sponsor-subevent-${placement.id}`}>Sub-Event</label>
+                    <select
+                      className="field-control"
+                      id={`sponsor-subevent-${placement.id}`}
+                      onChange={(event) =>
+                        handleSponsorPlacementChange(placement.id, "subEventId", event.target.value)
+                      }
+                      value={placement.subEventId ?? ""}
+                    >
+                      <option value="">All event / not specific</option>
+                      {instanceSubEvents
+                        .filter((subEvent) => subEvent.name !== "Unassigned")
+                        .map((subEvent) => (
+                          <option key={subEvent.id} value={subEvent.id}>
+                            {subEvent.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="field field--wide">
+                    <label htmlFor={`sponsor-notes-${placement.id}`}>Notes</label>
+                    <textarea
+                      className="field-control"
+                      id={`sponsor-notes-${placement.id}`}
+                      onChange={(event) =>
+                        handleSponsorPlacementChange(placement.id, "notes", event.target.value)
+                      }
+                      placeholder={`Optional context for ${getSponsorPlacementTypeLabel(placement.placementType).toLowerCase()}`}
+                      rows={2}
+                      value={placement.notes ?? ""}
+                    />
+                  </div>
+                  <div className="sponsor-setup__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => removeSponsorPlacement(resolvedActiveEventInstanceId, placement.id)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="sponsor-setup__empty">
+                No sponsor placements set up yet for this event instance.
+              </div>
+            )}
+          </div>
+          <div className="sponsor-setup__footer">
+            <button className="button-link button-link--inline-secondary" onClick={handleAddSponsorPlacement} type="button">
+              Add Placement
+            </button>
           </div>
         </div>
       ) : null}

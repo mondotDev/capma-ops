@@ -11,6 +11,7 @@ import {
   initialEventTypes
 } from "@/lib/event-instances";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
+import type { SponsorPlacementsByInstance } from "@/lib/sponsor-fulfillment";
 import { initialActionItems } from "@/lib/sample-data";
 import {
   DEFAULT_OWNER,
@@ -40,6 +41,10 @@ export function createDefaultCollateralProfiles(): CollateralProfilesByInstance 
   return {
     [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile }
   };
+}
+
+export function createDefaultSponsorPlacementsByInstance(): SponsorPlacementsByInstance {
+  return {};
 }
 
 export function createDefaultEventFamilies() {
@@ -72,6 +77,7 @@ export function createDefaultAppStateData(): AppStateData {
     issueStatuses: {},
     collateralItems: createDefaultCollateralItems(),
     collateralProfiles: createDefaultCollateralProfiles(),
+    sponsorPlacementsByInstance: createDefaultSponsorPlacementsByInstance(),
     activeEventInstanceId: getDefaultActiveEventInstanceId(),
     defaultOwnerForNewItems: getDefaultOwnerForNewItems(),
     eventFamilies: createDefaultEventFamilies(),
