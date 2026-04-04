@@ -831,8 +831,15 @@ export function CollateralView({
               ))}
             </select>
           </div>
+          <button
+            className="button-link button-link--inline-secondary"
+            onClick={() => router.push("/events")}
+            type="button"
+          >
+            Events Setup
+          </button>
           <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
-            New Event Instance
+            Quick Create Instance
           </button>
           <button
             className="topbar__button"
@@ -862,6 +869,9 @@ export function CollateralView({
             ) : (
               <span>Collateral workflow not configured for this event program yet</span>
             )}
+          </div>
+          <div className="collateral-context__hint">
+            Use Events to create and configure new event instances. Collateral stays focused on the production records for the active occurrence.
           </div>
         </div>
       ) : null}

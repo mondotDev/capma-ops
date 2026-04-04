@@ -11,12 +11,15 @@ export type EventTypeDefinition = {
   label: string;
   eventFamilyId: string;
   dateMode: EventDateMode;
+  description?: string;
   defaultSubEvents: Array<{
     name: string;
     sortOrder: number;
   }>;
   collateralTemplatePackId?: string;
   sponsorModelReference?: string;
+  supportsCollateral?: boolean;
+  supportsSponsorSetup?: boolean;
 };
 
 export type EventInstanceCreationInput = {
@@ -35,8 +38,11 @@ const EVENT_TYPE_DEFINITIONS: EventTypeDefinition[] = [
     label: "Legislative Day",
     eventFamilyId: "legislative-advocacy",
     dateMode: "range",
+    description: "Legislative advocacy event with recurring sub-events, sponsor fulfillment, and collateral production needs.",
     collateralTemplatePackId: "legislative-day-core",
     sponsorModelReference: "Legislative Day sponsor radar",
+    supportsCollateral: true,
+    supportsSponsorSetup: true,
     defaultSubEvents: [
       { name: "Golf Reception", sortOrder: 10 },
       { name: "Golf Registration", sortOrder: 20 },
@@ -58,6 +64,9 @@ const EVENT_TYPE_DEFINITIONS: EventTypeDefinition[] = [
     label: "First Friday",
     eventFamilyId: "recurring-monthly-program",
     dateMode: "single",
+    description: "Recurring monthly member program with a lighter event-production footprint.",
+    supportsCollateral: false,
+    supportsSponsorSetup: false,
     defaultSubEvents: [{ name: "Main Event", sortOrder: 10 }]
   }
 ];
@@ -85,6 +94,16 @@ export function getEventTypeDefinition(eventTypeId: string) {
     ...definition,
     defaultSubEvents: definition.defaultSubEvents.map((subEvent) => ({ ...subEvent }))
   } satisfies EventTypeDefinition;
+}
+
+export function getDefaultSubEventDefinitionsForEventType(eventTypeId: string) {
+  return getEventTypeDefinition(eventTypeId)?.defaultSubEvents ?? [];
+}
+
+export function isDefaultSubEventNameForEventType(eventTypeId: string, name: string) {
+  return getDefaultSubEventDefinitionsForEventType(eventTypeId).some(
+    (subEvent) => subEvent.name === name
+  );
 }
 
 export function getDefaultDatesForEventDateMode(dateMode: EventDateMode) {

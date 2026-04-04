@@ -108,11 +108,16 @@ import {
   validateEventInstanceCreationInput
 } from "../lib/event-type-definitions";
 import {
+  buildUpdatedEventInstanceState,
+  removeEventSubEventState,
+  upsertEventSubEventState
+} from "../lib/events/event-editing";
+import {
   getDashboardLiveSummary,
   getDashboardUrgentPreview,
   getPublicationIssueSummary
 } from "../lib/queries/dashboard/dashboard-queries";
-import { getEventOnboardingGroups } from "../lib/events/event-onboarding";
+import { getEventOnboardingGroups, getEventOnboardingView } from "../lib/events/event-onboarding";
 import {
   getDashboardSessionReadSelection,
   loadFirebaseDashboardSourceWithDependencies,
@@ -4138,6 +4143,182 @@ test("event instance creation state appends the instance, scaffolds sub-events, 
       (subEvent) =>
         subEvent.eventInstanceId === "first-friday-june-2026" && subEvent.name === "Main Event"
     ),
+    true
+  );
+});
+
+test("event instance editing updates instance-owned fields and syncs legislative-day collateral dates", () => {
+  const updated = buildUpdatedEventInstanceState({
+    currentEventInstances: initialEventInstances,
+    currentCollateralProfiles: {
+      "legislative-day-2026": {
+        ...createDefaultAppStateData().collateralProfiles["legislative-day-2026"],
+        eventStartDate: "2026-04-21",
+        eventEndDate: "2026-04-23"
+      }
+    },
+    instanceId: "legislative-day-2026",
+    updates: {
+      instanceName: "Legislative Day 2026 Updated",
+      dateMode: "range",
+      dates: ["2026-04-20", "2026-04-24"],
+      location: "Sacramento Convention Center",
+      notes: "Updated notes"
+    }
+  });
+
+  assert.ok(updated);
+  assert.equal(updated?.eventInstance.name, "Legislative Day 2026 Updated");
+  assert.equal(updated?.eventInstance.startDate, "2026-04-20");
+  assert.equal(updated?.eventInstance.endDate, "2026-04-24");
+  assert.equal(updated?.eventInstance.location, "Sacramento Convention Center");
+  assert.equal(updated?.nextCollateralProfiles["legislative-day-2026"]?.eventStartDate, "2026-04-20");
+  assert.equal(updated?.nextCollateralProfiles["legislative-day-2026"]?.eventEndDate, "2026-04-24");
+
+  const invalid = buildUpdatedEventInstanceState({
+    currentEventInstances: initialEventInstances,
+    currentCollateralProfiles: {},
+    instanceId: "legislative-day-2026",
+    updates: {
+      instanceName: "   ",
+      dateMode: "single",
+      dates: [""]
+    }
+  });
+
+  assert.equal(invalid, null);
+});
+
+test("event sub-event editing adds manual rows, renames existing rows, and blocks duplicates", () => {
+  const added = upsertEventSubEventState({
+    currentEventSubEvents: initialEventSubEvents,
+    instanceId: "legislative-day-2026",
+    upsert: {
+      name: "Friday Breakfast"
+    }
+  });
+
+  assert.ok(added);
+  assert.equal(
+    added?.nextEventSubEvents.some(
+      (subEvent) =>
+        subEvent.eventInstanceId === "legislative-day-2026" && subEvent.name === "Friday Breakfast"
+    ),
+    true
+  );
+
+  const renamed = upsertEventSubEventState({
+    currentEventSubEvents: initialEventSubEvents,
+    instanceId: "legislative-day-2026",
+    upsert: {
+      id: "leg-day-thursday-breakfast",
+      name: "Thursday Briefing Breakfast"
+    }
+  });
+
+  assert.ok(renamed);
+  assert.equal(
+    renamed?.nextEventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.name,
+    "Thursday Briefing Breakfast"
+  );
+
+  const duplicate = upsertEventSubEventState({
+    currentEventSubEvents: initialEventSubEvents,
+    instanceId: "legislative-day-2026",
+    upsert: {
+      name: "Thursday Breakfast"
+    }
+  });
+
+  assert.equal(duplicate, null);
+});
+
+test("event sub-event removal blocks scaffolded or in-use rows and allows safe manual cleanup", () => {
+  const manualSubEvents = normalizeEventSubEvents([
+    ...initialEventSubEvents,
+    {
+      id: "legislative-day-2026-friday-breakfast",
+      eventInstanceId: "legislative-day-2026",
+      name: "Friday Breakfast",
+      sortOrder: 150
+    }
+  ]).subEvents;
+
+  const blockedDefault = removeEventSubEventState({
+    currentEventSubEvents: manualSubEvents,
+    currentEventInstances: initialEventInstances,
+    currentItems: [],
+    currentCollateralItems: [],
+    instanceId: "legislative-day-2026",
+    subEventId: "leg-day-thursday-breakfast"
+  });
+
+  assert.equal(blockedDefault.removed, false);
+
+  const blockedUsage = removeEventSubEventState({
+    currentEventSubEvents: manualSubEvents,
+    currentEventInstances: initialEventInstances,
+    currentItems: [
+      createItem({
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "legislative-day-2026-friday-breakfast"
+      })
+    ],
+    currentCollateralItems: [],
+    instanceId: "legislative-day-2026",
+    subEventId: "legislative-day-2026-friday-breakfast"
+  });
+
+  assert.equal(blockedUsage.removed, false);
+
+  const removed = removeEventSubEventState({
+    currentEventSubEvents: manualSubEvents,
+    currentEventInstances: initialEventInstances,
+    currentItems: [],
+    currentCollateralItems: [],
+    instanceId: "legislative-day-2026",
+    subEventId: "legislative-day-2026-friday-breakfast"
+  });
+
+  assert.equal(removed.removed, true);
+  assert.equal(
+    removed.removed ? removed.nextEventSubEvents.some((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast") : true,
+    false
+  );
+});
+
+test("event onboarding view exposes selected instance detail and sub-event safety flags", () => {
+  const view = getEventOnboardingView({
+    eventFamilies: createDefaultAppStateData().eventFamilies,
+    eventTypes: createDefaultAppStateData().eventTypes,
+    eventInstances: initialEventInstances,
+    eventSubEvents: [
+      ...initialEventSubEvents,
+      {
+        id: "legislative-day-2026-friday-breakfast",
+        eventInstanceId: "legislative-day-2026",
+        name: "Friday Breakfast",
+        sortOrder: 150
+      }
+    ],
+    items: [
+      createItem({
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-thursday-breakfast"
+      })
+    ],
+    collateralItems: [],
+    selectedInstanceId: "legislative-day-2026"
+  });
+
+  assert.equal(view.selectedInstance?.instance.id, "legislative-day-2026");
+  assert.equal(view.selectedInstance?.definition?.supportsSponsorSetup, true);
+  assert.equal(
+    view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.canRemove,
+    false
+  );
+  assert.equal(
+    view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.canRemove,
     true
   );
 });

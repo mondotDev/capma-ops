@@ -48,6 +48,11 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
+import {
+  buildUpdatedEventInstanceState,
+  removeEventSubEventState,
+  upsertEventSubEventState
+} from "@/lib/events/event-editing";
 import { buildCreatedEventInstanceState } from "@/lib/event-type-definitions";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import {
@@ -80,7 +85,9 @@ import type {
   AppStateData,
   CollateralProfilesByInstance,
   CreateEventInstanceInput,
-  ImportAppStateResult
+  ImportAppStateResult,
+  UpdateEventInstanceInput,
+  UpsertEventSubEventInput
 } from "@/lib/state/app-state-types";
 
 const APP_STATE_PERSIST_DEBOUNCE_MS = 250;
@@ -89,7 +96,12 @@ export function clearPersistedAppState() {
   getAppStateRepository().clear();
 }
 export type { AppStateSnapshot };
-export type { CreateEventInstanceInput, ImportAppStateResult };
+export type {
+  CreateEventInstanceInput,
+  ImportAppStateResult,
+  UpdateEventInstanceInput,
+  UpsertEventSubEventInput
+};
 
 export type NewActionItem = NewActionItemInput;
 export type { GenerateDeliverablesResult };
@@ -136,6 +148,9 @@ type AppStateContextValue = {
   restoreItem: (id: string) => void;
   setActiveEventInstanceId: (instanceId: string) => void;
   setCollateralProfile: (instanceId: string, profile: LegDayCollateralProfile) => void;
+  updateEventInstance: (instanceId: string, updates: UpdateEventInstanceInput) => boolean;
+  upsertEventSubEvent: (instanceId: string, input: UpsertEventSubEventInput) => string | null;
+  removeEventSubEvent: (instanceId: string, subEventId: string) => boolean;
   upsertSponsorPlacement: (instanceId: string, placement: SponsorPlacement) => void;
   removeSponsorPlacement: (instanceId: string, placementId: string) => void;
   generateSponsorFulfillmentItems: (instanceId: string) => { created: number; skipped: number };
@@ -790,6 +805,114 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     getPersistedCollateralState
   ]);
 
+  const updateEventInstance = useCallback((instanceId: string, updates: UpdateEventInstanceInput) => {
+    const nextState = buildUpdatedEventInstanceState({
+      currentEventInstances: eventInstancesRef.current,
+      currentCollateralProfiles: collateralProfilesRef.current,
+      instanceId,
+      updates
+    });
+
+    if (!nextState) {
+      return false;
+    }
+
+    enablePersistence();
+    setEventInstances(nextState.nextEventInstances);
+    if (nextState.nextCollateralProfiles !== collateralProfilesRef.current) {
+      setCollateralProfiles(nextState.nextCollateralProfiles);
+    }
+
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            collateralProfiles: nextState.nextCollateralProfiles,
+            eventInstances: nextState.nextEventInstances
+          }),
+          getCollateralPersistenceContext()
+        )
+        .then(() => undefined)
+    );
+
+    return true;
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
+
+  const upsertEventSubEvent = useCallback((instanceId: string, input: UpsertEventSubEventInput) => {
+    const nextState = upsertEventSubEventState({
+      currentEventSubEvents: eventSubEventsRef.current,
+      instanceId,
+      upsert: input
+    });
+
+    if (!nextState) {
+      return null;
+    }
+
+    enablePersistence();
+    setEventSubEvents(nextState.nextEventSubEvents);
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            eventSubEvents: nextState.nextEventSubEvents
+          }),
+          getCollateralPersistenceContext()
+        )
+        .then(() => undefined)
+    );
+
+    return nextState.upsertedSubEventId;
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
+
+  const removeEventSubEvent = useCallback((instanceId: string, subEventId: string) => {
+    const nextState = removeEventSubEventState({
+      currentEventSubEvents: eventSubEventsRef.current,
+      currentEventInstances: eventInstancesRef.current,
+      currentItems: itemsRef.current,
+      currentCollateralItems: collateralItemsRef.current,
+      instanceId,
+      subEventId
+    });
+
+    if (!nextState.removed) {
+      return false;
+    }
+
+    enablePersistence();
+    setEventSubEvents(nextState.nextEventSubEvents);
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            eventSubEvents: nextState.nextEventSubEvents
+          }),
+          getCollateralPersistenceContext()
+        )
+        .then(() => undefined)
+    );
+
+    return true;
+  }, [
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    getCollateralPersistenceContext,
+    getPersistedCollateralState
+  ]);
+
   const applyDefaultTemplateToInstance = useCallback((instanceId: string) => {
     enablePersistence();
     const instance = eventInstancesRef.current.find((entry) => entry.id === instanceId);
@@ -1340,12 +1463,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     restoreItem,
     generateSponsorFulfillmentItems,
     removeSponsorPlacement,
+    removeEventSubEvent,
     setActiveEventInstanceId,
     setCollateralProfile,
     setDefaultOwnerForNewItems,
     setWorkstreamSchedules,
     setIssueStatus,
+    updateEventInstance,
     upsertSponsorPlacement,
+    upsertEventSubEvent,
     updateCollateralItem,
     updateItem
     }),
@@ -1369,13 +1495,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       resetAppState,
       restoreItem,
       generateSponsorFulfillmentItems,
+      removeEventSubEvent,
       removeSponsorPlacement,
       setActiveEventInstanceId,
       setCollateralProfile,
       setDefaultOwnerForNewItems,
       setIssueStatus,
       setWorkstreamSchedules,
+      updateEventInstance,
       upsertSponsorPlacement,
+      upsertEventSubEvent,
       updateCollateralItem,
       updateItem
     ]

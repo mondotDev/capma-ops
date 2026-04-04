@@ -45,3 +45,17 @@ export type CreateEventInstanceInput = {
   location?: string;
   notes?: string;
 };
+
+export type UpdateEventInstanceInput = {
+  instanceName?: string;
+  dateMode?: EventDateMode;
+  dates?: string[];
+  location?: string;
+  notes?: string;
+};
+
+export type UpsertEventSubEventInput = {
+  id?: string;
+  name: string;
+  sortOrder?: number;
+};
