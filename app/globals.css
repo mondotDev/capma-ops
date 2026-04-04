@@ -611,6 +611,7 @@ textarea {
 .collateral-readiness {
   display: grid;
   gap: 10px;
+  padding: 14px 16px;
 }
 
 .collateral-readiness__header {
@@ -674,6 +675,37 @@ textarea {
 .collateral-sponsor-setup {
   display: grid;
   gap: 12px;
+}
+
+.collateral-secondary-setup {
+  display: grid;
+  gap: 12px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f9fbfd 100%);
+}
+
+.collateral-secondary-setup__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.collateral-secondary-setup__meta,
+.collateral-secondary-setup__summary {
+  font-size: 13px;
+  color: #627283;
+}
+
+.collateral-secondary-setup__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.collateral-secondary-setup__body {
+  display: grid;
+  gap: 16px;
 }
 
 .sponsor-setup__hint,
@@ -795,6 +827,8 @@ textarea {
 
 .collateral-layout {
   display: grid;
+  gap: 16px;
+  align-items: start;
 }
 
 .collateral-main {
