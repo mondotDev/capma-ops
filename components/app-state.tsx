@@ -40,7 +40,6 @@ import {
 } from "@/lib/collateral-templates";
 import {
   createUnassignedSubEvent,
-  deriveEventDateRange,
   getUnassignedSubEventId,
   normalizeEventSubEvents,
   resolveActiveEventInstanceId,
@@ -49,6 +48,7 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
+import { buildCreatedEventInstanceState } from "@/lib/event-type-definitions";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import {
   buildSponsorFulfillmentGenerationResult,
@@ -727,32 +727,41 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const createEventInstance = useCallback((input: CreateEventInstanceInput) => {
     enablePersistence();
-    const { dates, startDate, endDate } = deriveEventDateRange(input.dateMode, input.dates);
     const nextId = `${slugify(input.instanceName)}-${crypto.randomUUID().slice(0, 8)}`;
-    const nextEventInstances = [...eventInstancesRef.current, {
-      id: nextId,
-      eventTypeId: input.eventTypeId,
-      name: input.instanceName,
-      dateMode: input.dateMode,
-      dates,
-      startDate,
-      endDate,
-      location: input.location?.trim() ? input.location.trim() : undefined,
-      notes: input.notes?.trim() ? input.notes.trim() : undefined
-    }].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const nextEventState = buildCreatedEventInstanceState({
+      currentEventInstances: eventInstancesRef.current,
+      currentEventSubEvents: eventSubEventsRef.current,
+      creation: {
+        instanceId: nextId,
+        eventTypeId: input.eventTypeId,
+        instanceName: input.instanceName,
+        dateMode: input.dateMode,
+        dates: input.dates,
+        location: input.location,
+        notes: input.notes
+      }
+    });
     const nextCollateralProfiles =
       input.eventTypeId === "legislative-day"
         ? {
             ...collateralProfilesRef.current,
             [nextId]: {
               ...initialLegDayCollateralProfile,
-              eventStartDate: startDate,
-              eventEndDate: endDate
+              eventStartDate: nextEventState.eventInstance.startDate,
+              eventEndDate: nextEventState.eventInstance.endDate
             }
           }
         : collateralProfilesRef.current;
 
-    setEventInstances(nextEventInstances);
+    setEventInstances(nextEventState.nextEventInstances);
+    setEventSubEvents((current) =>
+      normalizeEventSubEvents([
+        ...current,
+        ...nextEventState.nextEventSubEvents.filter(
+          (subEvent) => !current.some((existing) => existing.id === subEvent.id)
+        )
+      ]).subEvents
+    );
 
     if (input.eventTypeId === "legislative-day") {
       setCollateralProfiles(nextCollateralProfiles);
@@ -763,14 +772,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         .replaceAll(
           getPersistedCollateralState({
             collateralProfiles: nextCollateralProfiles,
-            eventInstances: nextEventInstances
+            eventInstances: nextEventState.nextEventInstances,
+            eventSubEvents: normalizeEventSubEvents(nextEventState.nextEventSubEvents).subEvents
           }),
           getCollateralPersistenceContext()
         )
         .then(() => undefined)
     );
 
-    setActiveEventInstanceIdState(nextId);
+    setActiveEventInstanceIdState(nextEventState.activeEventInstanceId);
     return nextId;
   }, [
     collateralPersistenceStore,
@@ -1218,8 +1228,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const result = buildSponsorFulfillmentGenerationResult({
       placements: sponsorPlacementsByInstanceRef.current[instanceId] ?? [],
       eventInstance,
-      eventSubEvents: eventSubEventsRef.current.filter((subEvent) => subEvent.eventInstanceId === instanceId),
-      activeProfile: collateralProfilesRef.current[instanceId] ?? null,
       existingItems: itemsRef.current,
       defaultOwner: defaultOwnerForNewItemsRef.current
     });

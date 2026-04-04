@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useCollateralWorkspaceReadModel } from "@/components/app-read-models";
 import {
@@ -17,6 +17,8 @@ import {
   useAppStateValues,
   type CreateEventInstanceInput
 } from "@/components/app-state";
+import { EventInstanceCreateModal } from "@/components/event-instance-create-modal";
+import { EventInstanceTemplatePrompt } from "@/components/event-instance-template-prompt";
 import {
   COLLATERAL_STATUS_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
@@ -34,10 +36,8 @@ import {
 } from "@/lib/collateral-create-trace";
 import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
 import {
-  createSuggestedEventInstanceName,
-  deriveEventDateRange,
-  type EventDateMode
-} from "@/lib/event-instances";
+  getAvailableEventTypeDefinitions
+} from "@/lib/event-type-definitions";
 import {
   SCHEDULED_WORKSTREAM_OPTIONS,
   type WorkstreamSchedule,
@@ -48,24 +48,20 @@ import {
   LOCAL_FALLBACK_NOTE_AUTHOR
 } from "@/lib/ops-utils";
 import {
+  buildSponsorFulfillmentGenerationResult,
   createSponsorPlacementDraft,
-  getSponsorPlacementTypeLabel,
+  getSponsorCollateralPromotionDefaults,
+  getSponsorPlacementDeliverables,
+  getSponsorPlacementLabel,
+  getSponsorFulfillmentTaskTitle,
   SPONSOR_PLACEMENT_OPTIONS,
   supportsSponsorSetupForEventType
 } from "@/lib/sponsor-fulfillment";
 
-type CreateInstanceFormState = {
-  eventTypeId: string;
-  instanceName: string;
-  dateMode: EventDateMode;
-  dates: string[];
-  location: string;
-  notes: string;
-};
-
 type PendingDraftDiscardIntent =
   | { type: "switch"; nextEventInstanceId: string }
   | { type: "createInstance" }
+  | { type: "sponsorPromotion"; actionItemId: string; eventInstanceId: string }
   | null;
 
 type PendingCollateralOpenIntent = {
@@ -73,16 +69,19 @@ type PendingCollateralOpenIntent = {
   eventInstanceId: string;
 };
 
-const INITIAL_INSTANCE_FORM: CreateInstanceFormState = {
-  eventTypeId: "legislative-day",
-  instanceName: "Legislative Day 2027",
-  dateMode: "range",
-  dates: ["", ""],
-  location: "",
-  notes: ""
+type PendingSponsorPromotionIntent = {
+  actionItemId: string;
+  eventInstanceId: string;
 };
 
 const DRAFT_COLLATERAL_ID = "__draft-collateral__";
+
+type SponsorGenerationPreview = {
+  readyCount: number;
+  skippedCount: number;
+  actionItemsToCreate: number;
+  previewTitles: string[];
+};
 
 export function CollateralView({
   initialEventInstanceId,
@@ -91,7 +90,7 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
-  const { defaultOwnerForNewItems, sponsorPlacementsByInstance, workstreamSchedules } = useAppStateValues();
+  const { defaultOwnerForNewItems, items, sponsorPlacementsByInstance, workstreamSchedules } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -107,11 +106,11 @@ export function CollateralView({
     updateCollateralItem
   } = useAppActions();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreateInstanceOpen, setIsCreateInstanceOpen] = useState(false);
   const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
-  const [instanceFormState, setInstanceFormState] = useState<CreateInstanceFormState>(INITIAL_INSTANCE_FORM);
-  const [hasEditedInstanceName, setHasEditedInstanceName] = useState(false);
+  const [pendingCreateInstanceInput, setPendingCreateInstanceInput] = useState<CreateEventInstanceInput | null>(null);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [draftCollateralItem, setDraftCollateralItem] = useState<CollateralItem | null>(null);
@@ -129,12 +128,26 @@ export function CollateralView({
     collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
     eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
   }));
+  const [pendingSponsorPromotionIntent, setPendingSponsorPromotionIntent] =
+    useState<PendingSponsorPromotionIntent | null>(() => {
+      const actionItemId = searchParams.get("promoteActionItemId") ?? "";
+      const eventInstanceId = initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? "";
+
+      if (!actionItemId || !eventInstanceId) {
+        return null;
+      }
+
+      return {
+        actionItemId,
+        eventInstanceId
+      };
+    });
+
   const {
     workspaceBundle,
     collateralListView,
     selectedWorkspace,
-    eventPrograms,
-    eventInstances
+    eventPrograms
   } = useCollateralWorkspaceReadModel({
     activeSummaryFilter,
     activeProfileDeadlineFilter,
@@ -146,8 +159,6 @@ export function CollateralView({
   const selectedEventInstance = workspaceBundle.selectedEventInstance;
   const currentEventProgram = workspaceBundle.currentEventProgram;
   const defaultTemplatePack = workspaceBundle.defaultTemplatePack;
-  const supportedCreateEventPrograms = workspaceBundle.supportedCreateEventPrograms;
-  const isSelectedCreateEventProgramSupported = supportsCollateralEventType(instanceFormState.eventTypeId);
   const isSelectedEventProgramSupported = workspaceBundle.isSelectedEventProgramSupported;
   const activeProfile = workspaceBundle.activeProfile;
   const scheduledWorkstream = getScheduledWorkstreamForEventProgram(currentEventProgram?.name ?? "");
@@ -158,6 +169,34 @@ export function CollateralView({
   const supportsSponsorSetup = selectedEventInstance
     ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
     : false;
+  const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
+  const creatableEventTypeDefinitions = useMemo(() => getAvailableEventTypeDefinitions(eventPrograms), [eventPrograms]);
+  const sponsorGenerationPreview = useMemo<SponsorGenerationPreview | null>(() => {
+    if (!selectedEventInstance || !supportsSponsorSetup) {
+      return null;
+    }
+
+    const readyCount = sponsorPlacements.filter((placement) => placement.sponsorName.trim().length > 0).length;
+    const generationResult = buildSponsorFulfillmentGenerationResult({
+      placements: sponsorPlacements,
+      eventInstance: selectedEventInstance,
+      existingItems: items,
+      defaultOwner: defaultOwnerForNewItems
+    });
+
+    return {
+      readyCount,
+      skippedCount: generationResult.skipped,
+      actionItemsToCreate: generationResult.created.length,
+      previewTitles: generationResult.created.slice(0, 3).map((item) => item.title)
+    };
+  }, [
+    defaultOwnerForNewItems,
+    items,
+    selectedEventInstance,
+    sponsorPlacements,
+    supportsSponsorSetup
+  ]);
 
   useEffect(() => {
     setIsActionsMenuOpen(false);
@@ -178,6 +217,17 @@ export function CollateralView({
       current && current.eventInstanceId !== resolvedActiveEventInstanceId ? null : current
     );
   }, [resolvedActiveEventInstanceId]);
+
+  useEffect(() => {
+    if (!searchParams.get("promoteActionItemId")) {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("promoteActionItemId");
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/collateral?${nextQuery}` : "/collateral");
+  }, [router, searchParams]);
 
   useEffect(() => {
     if (!pendingOpenIntent.eventInstanceId) {
@@ -202,56 +252,85 @@ export function CollateralView({
   ]);
 
   useEffect(() => {
-    if (hasEditedInstanceName) {
+    if (!pendingSponsorPromotionIntent) {
       return;
     }
 
-    const selectedEventProgram =
-      eventPrograms.find((eventProgram) => eventProgram.id === instanceFormState.eventTypeId) ??
-      supportedCreateEventPrograms[0] ??
-      eventPrograms[0] ??
-      null;
-
-    if (!selectedEventProgram) {
+    if (draftCollateralItem) {
+      setPendingDraftDiscardIntent((current) =>
+        current ?? {
+          type: "sponsorPromotion",
+          actionItemId: pendingSponsorPromotionIntent.actionItemId,
+          eventInstanceId: pendingSponsorPromotionIntent.eventInstanceId
+        }
+      );
       return;
     }
 
-    setInstanceFormState((current) => ({
-        ...current,
-        instanceName: createSuggestedEventInstanceName(
-          selectedEventProgram.name,
-          current.dateMode,
-          current.dates,
-          current.location
-        )
-      }));
+    if (pendingSponsorPromotionIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
+      setActiveEventInstanceId(pendingSponsorPromotionIntent.eventInstanceId);
+      return;
+    }
+
+    const sourceItem = items.find((item) => item.id === pendingSponsorPromotionIntent.actionItemId);
+    if (!sourceItem) {
+      setSetupFeedback("The sponsor action item could not be found, so no collateral draft was created.");
+      setPendingSponsorPromotionIntent(null);
+      return;
+    }
+
+    const promotionDefaults = getSponsorCollateralPromotionDefaults({
+      item: sourceItem,
+      eventSubEvents: workspaceBundle.instanceSubEvents
+    });
+
+    if (!promotionDefaults) {
+      setSetupFeedback("This sponsor action item does not map to a collateral draft yet.");
+      setPendingSponsorPromotionIntent(null);
+      return;
+    }
+
+    const promotionNoteEntry = createActionNoteEntry(
+      `Created from sponsor action item "${sourceItem.title}". Placement: ${getSponsorPlacementLabel(
+        promotionDefaults.placement
+      )}.`,
+      { author: LOCAL_FALLBACK_NOTE_AUTHOR }
+    );
+
+    const nextDraft = {
+      id: DRAFT_COLLATERAL_ID,
+      eventInstanceId: promotionDefaults.eventInstanceId,
+      subEventId: promotionDefaults.subEventId,
+      itemName: promotionDefaults.collateralItemName,
+      status: "Backlog",
+      owner: defaultOwnerForNewItems,
+      blockedBy: "",
+      dueDate: "",
+      printer: "",
+      quantity: "",
+      updateType: "",
+      noteEntries: promotionNoteEntry ? [promotionNoteEntry] : [],
+      lastUpdated: new Date().toISOString().slice(0, 10)
+    } satisfies CollateralItem;
+
+    setDraftCollateralItem(nextDraft);
+    setSelectedId(DRAFT_COLLATERAL_ID);
+    setActiveSummaryFilter("all");
+    setActiveProfileDeadlineFilter("none");
+    setSetupFeedback(
+      `Opened a prefilled collateral draft for ${promotionDefaults.collateralItemName}. Review and save it when you're ready.`
+    );
+    setPendingSponsorPromotionIntent(null);
   }, [
-    eventPrograms,
-    hasEditedInstanceName,
-    instanceFormState.dateMode,
-    instanceFormState.dates,
-    instanceFormState.eventTypeId,
-    instanceFormState.location,
-    supportedCreateEventPrograms
+    defaultOwnerForNewItems,
+    draftCollateralItem,
+    items,
+    pendingSponsorPromotionIntent,
+    resolvedActiveEventInstanceId,
+    setActiveEventInstanceId,
+    workspaceBundle.instanceSubEvents
   ]);
 
-  useEffect(() => {
-    if (instanceFormState.eventTypeId && supportsCollateralEventType(instanceFormState.eventTypeId)) {
-      return;
-    }
-
-    const fallbackEventProgram = supportedCreateEventPrograms[0];
-    if (!fallbackEventProgram || fallbackEventProgram.id === instanceFormState.eventTypeId) {
-      return;
-    }
-
-    setInstanceFormState((current) => ({
-      ...current,
-      eventTypeId: fallbackEventProgram.id
-    }));
-  }, [instanceFormState.eventTypeId, supportedCreateEventPrograms]);
-
-  const instanceSubEvents = workspaceBundle.instanceSubEvents;
   const instanceItems = collateralListView.instanceItems;
   const visibleInstanceItems = collateralListView.visibleInstanceItems;
   const groupedItems = collateralListView.groupedItems;
@@ -331,10 +410,11 @@ export function CollateralView({
     visibleInstanceItems
   ]);
 
-  const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
   const pendingTemplateInstance =
     pendingTemplateInstanceId
-      ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
+      ? workspaceBundle.eventInstancesByProgram
+          .flatMap((group) => group.instances)
+          .find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
   const hasAppliedTemplateItems = workspaceBundle.hasAppliedTemplateItems;
   const readiness = workspaceBundle.readiness;
@@ -402,56 +482,36 @@ export function CollateralView({
   }
 
   function openCreateInstanceModal() {
-    setHasEditedInstanceName(false);
-    setInstanceFormState(INITIAL_INSTANCE_FORM);
     setSetupFeedback("");
     setIsCreateInstanceOpen(true);
   }
 
   function closeCreateInstanceModal() {
     setIsCreateInstanceOpen(false);
-    setHasEditedInstanceName(false);
+    setPendingCreateInstanceInput(null);
   }
 
-  function completeCreateInstance() {
-    const normalizedDates = instanceFormState.dates.filter((date) => date.length > 0);
-
-    if (
-      !instanceFormState.eventTypeId ||
-      !isSelectedCreateEventProgramSupported ||
-      !instanceFormState.instanceName.trim() ||
-      normalizedDates.length === 0
-    ) {
-      return;
-    }
-
-    const nextId = createEventInstance({
-      eventTypeId: instanceFormState.eventTypeId,
-      instanceName: instanceFormState.instanceName.trim(),
-      dateMode: instanceFormState.dateMode,
-      dates: normalizedDates,
-      location: instanceFormState.location.trim(),
-      notes: instanceFormState.notes.trim()
-    } satisfies CreateEventInstanceInput);
-
+  function finishCreateInstance(input: CreateEventInstanceInput) {
+    const nextId = createEventInstance(input);
     setSelectedId(null);
     closeCreateInstanceModal();
-    setSetupFeedback(`${instanceFormState.instanceName.trim()} created. Choose whether to start with the default template or an empty instance.`);
+    setSetupFeedback(`${input.instanceName.trim()} created. Choose whether to start with the default template or an empty instance.`);
 
-    if (getDefaultTemplatePackForEventType(instanceFormState.eventTypeId)) {
+    if (getDefaultTemplatePackForEventType(input.eventTypeId)) {
       setPendingTemplateInstanceId(nextId);
     } else {
-      setSetupFeedback(`${instanceFormState.instanceName.trim()} created and set as the active event instance.`);
+      setSetupFeedback(`${input.instanceName.trim()} created and set as the active event instance.`);
     }
   }
 
-  function handleCreateInstance() {
+  function handleCreateInstance(input: CreateEventInstanceInput) {
     if (hasUnsavedDraftCollateral) {
       setPendingDraftDiscardIntent({ type: "createInstance" });
+      setPendingCreateInstanceInput(input);
       return;
     }
 
-    completeCreateInstance();
+    finishCreateInstance(input);
   }
 
   function handleConfirmTemplateApply() {
@@ -649,8 +709,8 @@ export function CollateralView({
 
   function handleSponsorPlacementChange(
     placementId: string,
-    field: "sponsorName" | "placementType" | "subEventId" | "notes",
-    value: string
+    field: "sponsorName" | "placement" | "logoReceived" | "notes",
+    value: string | boolean
   ) {
     const placement = sponsorPlacements.find((entry) => entry.id === placementId);
 
@@ -660,12 +720,7 @@ export function CollateralView({
 
     upsertSponsorPlacement(resolvedActiveEventInstanceId, {
       ...placement,
-      [field]:
-        field === "subEventId"
-          ? value || undefined
-          : field === "notes"
-            ? value
-            : value
+      [field]: value
     });
   }
 
@@ -673,19 +728,19 @@ export function CollateralView({
     const result = generateSponsorFulfillmentItems(resolvedActiveEventInstanceId);
 
     if (result.created === 0 && result.skipped === 0) {
-      setSetupFeedback("No sponsor fulfillment tasks were generated yet. Add at least one sponsor placement first.");
+      setSetupFeedback("No sponsor deadline action items were generated yet. Add at least one sponsor placement first.");
       return;
     }
 
     if (result.created === 0) {
-      setSetupFeedback("Sponsor fulfillment tasks already exist for the current placements. Nothing new was generated.");
+      setSetupFeedback("Matching sponsor deadline action items already exist in Action View, or the current sponsor setup is still incomplete. Nothing new was generated.");
       return;
     }
 
     setSetupFeedback(
       result.skipped > 0
-        ? `${result.created} sponsor fulfillment task${result.created === 1 ? "" : "s"} created. ${result.skipped} placement${result.skipped === 1 ? "" : "s"} skipped because matching tasks already exist or setup is incomplete.`
-        : `${result.created} sponsor fulfillment task${result.created === 1 ? "" : "s"} created in Action View.`
+        ? `${result.created} sponsor deadline action item${result.created === 1 ? "" : "s"} created in Action View. ${result.skipped} deliverable${result.skipped === 1 ? "" : "s"} skipped because matching action items already exist or setup is incomplete.`
+        : `${result.created} sponsor deadline action item${result.created === 1 ? "" : "s"} created in Action View.`
     );
   }
 
@@ -704,6 +759,12 @@ export function CollateralView({
   }
 
   function handleCancelDraftDiscardIntent() {
+    if (pendingDraftDiscardIntent?.type === "createInstance") {
+      setPendingCreateInstanceInput(null);
+    }
+    if (pendingDraftDiscardIntent?.type === "sponsorPromotion") {
+      setPendingSponsorPromotionIntent(null);
+    }
     setPendingDraftDiscardIntent(null);
   }
 
@@ -721,7 +782,22 @@ export function CollateralView({
       return;
     }
 
-    completeCreateInstance();
+    if (intent.type === "sponsorPromotion") {
+      setPendingSponsorPromotionIntent({
+        actionItemId: intent.actionItemId,
+        eventInstanceId: intent.eventInstanceId
+      });
+
+      if (intent.eventInstanceId !== resolvedActiveEventInstanceId) {
+        setActiveEventInstanceId(intent.eventInstanceId);
+      }
+      return;
+    }
+
+    if (pendingCreateInstanceInput) {
+      finishCreateInstance(pendingCreateInstanceInput);
+      setPendingCreateInstanceInput(null);
+    }
   }
 
   return (
@@ -1486,12 +1562,33 @@ export function CollateralView({
                       onClick={handleGenerateSponsorFulfillment}
                       type="button"
                     >
-                      Generate Tasks
+                      Generate Action Items
                     </button>
                   </div>
                   <div className="sponsor-setup__hint">
-                    This first slice supports Legislative Day only and generates native action items without creating sponsor-specific collateral records.
+                    This first slice supports Legislative Day only. Each sponsor placement expands into sponsor deadline work, and generation creates native action items in Action View. Reruns skip matching sponsor-generated work that already exists.
                   </div>
+                  {sponsorGenerationPreview ? (
+                    <div className="sponsor-setup__summary" role="status">
+                      <span>
+                        {sponsorGenerationPreview.actionItemsToCreate > 0
+                          ? `${sponsorGenerationPreview.actionItemsToCreate} sponsor deadline action item${sponsorGenerationPreview.actionItemsToCreate === 1 ? "" : "s"} ready to generate`
+                          : sponsorGenerationPreview.readyCount > 0
+                            ? "No new sponsor deadline action items ready right now"
+                            : "Add a sponsor name to make a placement generation-ready"}
+                      </span>
+                      {sponsorGenerationPreview.skippedCount > 0 ? (
+                        <span>
+                          {sponsorGenerationPreview.skippedCount} deliverable{sponsorGenerationPreview.skippedCount === 1 ? "" : "s"} will be skipped because matching work already exists or setup is incomplete
+                        </span>
+                      ) : null}
+                      {sponsorGenerationPreview.previewTitles.length > 0 ? (
+                        <span>
+                          Next up: {sponsorGenerationPreview.previewTitles.join(" • ")}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="sponsor-setup__rows">
                     {sponsorPlacements.length > 0 ? (
                       sponsorPlacements.map((placement) => (
@@ -1514,9 +1611,9 @@ export function CollateralView({
                               className="field-control"
                               id={`sponsor-placement-${placement.id}`}
                               onChange={(event) =>
-                                handleSponsorPlacementChange(placement.id, "placementType", event.target.value)
+                                handleSponsorPlacementChange(placement.id, "placement", event.target.value)
                               }
-                              value={placement.placementType}
+                              value={placement.placement}
                             >
                               {SPONSOR_PLACEMENT_OPTIONS.map((option) => (
                                 <option key={option.id} value={option.id}>
@@ -1526,24 +1623,18 @@ export function CollateralView({
                             </select>
                           </div>
                           <div className="field">
-                            <label htmlFor={`sponsor-subevent-${placement.id}`}>Sub-Event</label>
-                            <select
-                              className="field-control"
-                              id={`sponsor-subevent-${placement.id}`}
-                              onChange={(event) =>
-                                handleSponsorPlacementChange(placement.id, "subEventId", event.target.value)
-                              }
-                              value={placement.subEventId ?? ""}
-                            >
-                              <option value="">All event / not specific</option>
-                              {instanceSubEvents
-                                .filter((subEvent) => subEvent.name !== "Unassigned")
-                                .map((subEvent) => (
-                                  <option key={subEvent.id} value={subEvent.id}>
-                                    {subEvent.name}
-                                  </option>
-                                ))}
-                            </select>
+                            <label htmlFor={`sponsor-logo-${placement.id}`}>Logo Received</label>
+                            <label className="checkbox-field" htmlFor={`sponsor-logo-${placement.id}`}>
+                              <input
+                                checked={placement.logoReceived}
+                                id={`sponsor-logo-${placement.id}`}
+                                onChange={(event) =>
+                                  handleSponsorPlacementChange(placement.id, "logoReceived", event.target.checked)
+                                }
+                                type="checkbox"
+                              />
+                              <span>{placement.logoReceived ? "Yes, logo is already in hand" : "No, still waiting on sponsor logo"}</span>
+                            </label>
                           </div>
                           <div className="field field--wide">
                             <label htmlFor={`sponsor-notes-${placement.id}`}>Notes</label>
@@ -1553,10 +1644,30 @@ export function CollateralView({
                               onChange={(event) =>
                                 handleSponsorPlacementChange(placement.id, "notes", event.target.value)
                               }
-                              placeholder={`Optional context for ${getSponsorPlacementTypeLabel(placement.placementType).toLowerCase()}`}
+                              placeholder={`Optional context for ${getSponsorPlacementLabel(placement.placement).toLowerCase()}`}
                               rows={2}
                               value={placement.notes ?? ""}
                             />
+                            {placement.sponsorName.trim() ? (
+                              <div className="field__hint">
+                                Generates {getSponsorPlacementDeliverables(placement.placement).length} sponsor deadline item{getSponsorPlacementDeliverables(placement.placement).length === 1 ? "" : "s"}, including{" "}
+                                {getSponsorPlacementDeliverables(placement.placement)
+                                  .slice(0, 2)
+                                  .map((deliverable) =>
+                                    getSponsorFulfillmentTaskTitle({
+                                      sponsorName: placement.sponsorName.trim(),
+                                      deliverableName: deliverable.deliverableName
+                                    })
+                                  )
+                                  .join(" • ")}
+                                {getSponsorPlacementDeliverables(placement.placement).length > 2
+                                  ? ` + ${getSponsorPlacementDeliverables(placement.placement).length - 2} more`
+                                  : ""}
+                                {!placement.logoReceived
+                                  ? ". Logo-required deliverables will start in Waiting until the sponsor logo is received."
+                                  : ""}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="sponsor-setup__actions">
                             <button
@@ -1587,260 +1698,18 @@ export function CollateralView({
         </div>
       ) : null}
 
-      {isCreateInstanceOpen ? (
-        <div className="modal-layer" role="presentation">
-          <button aria-label="Close create event instance" className="modal-backdrop" onClick={closeCreateInstanceModal} type="button" />
-          <section aria-labelledby="create-instance-title" aria-modal="true" className="quick-add-modal" role="dialog">
-            <div className="quick-add-modal__header">
-              <div>
-                <h2 className="quick-add-modal__title" id="create-instance-title">
-                  New Event Instance
-                </h2>
-                <p className="quick-add-modal__subtitle">Step 1 of setup: create the event instance. If a default template exists, you can apply it immediately after this step.</p>
-              </div>
-              <button className="button-link" onClick={closeCreateInstanceModal} type="button">
-                Close
-              </button>
-            </div>
-
-            <div className="quick-add-form">
-              <div className="quick-add-grid">
-                <div className="field">
-                  <label htmlFor="instance-event-type">Event Program</label>
-                    <select
-                      className="field-control"
-                      id="instance-event-type"
-                    onChange={(event) =>
-                      setInstanceFormState((current) => ({
-                        ...current,
-                        eventTypeId: event.target.value
-                      }))
-                      }
-                      value={instanceFormState.eventTypeId}
-                    >
-                      {eventPrograms.map((eventProgram) => (
-                        <option
-                          disabled={!supportsCollateralEventType(eventProgram.id)}
-                          key={eventProgram.id}
-                          value={eventProgram.id}
-                        >
-                          {supportsCollateralEventType(eventProgram.id) ? eventProgram.name : `${eventProgram.name} (Coming Soon)`}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="field__hint">
-                      Only event programs with a default collateral template can be created here right now.
-                    </div>
-                  </div>
-                <div className="field">
-                  <label htmlFor="instance-name">Instance Name</label>
-                  <input
-                    className="field-control"
-                    id="instance-name"
-                    onChange={(event) => {
-                      setHasEditedInstanceName(true);
-                      setInstanceFormState((current) => ({ ...current, instanceName: event.target.value }));
-                    }}
-                    value={instanceFormState.instanceName}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="instance-date-mode">Date Mode</label>
-                  <select
-                    className="field-control"
-                    id="instance-date-mode"
-                    onChange={(event) =>
-                      setInstanceFormState((current) => ({
-                        ...current,
-                        dateMode: event.target.value as EventDateMode,
-                        dates:
-                          event.target.value === "multiple"
-                            ? current.dates.length > 0
-                              ? current.dates
-                              : [""]
-                            : current.dates.length >= 2
-                              ? [current.dates[0] ?? "", current.dates[1] ?? ""]
-                              : current.dates.length === 1
-                                ? [current.dates[0], current.dates[0]]
-                                : ["", ""]
-                      }))
-                    }
-                    value={instanceFormState.dateMode}
-                  >
-                    <option value="single">Single day</option>
-                    <option value="range">Date range</option>
-                    <option value="multiple">Multiple dates</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="instance-location">Location</label>
-                  <input
-                    className="field-control"
-                    id="instance-location"
-                    onChange={(event) =>
-                      setInstanceFormState((current) => ({ ...current, location: event.target.value }))
-                    }
-                    placeholder="Optional"
-                    value={instanceFormState.location}
-                  />
-                </div>
-                {instanceFormState.dateMode === "single" ? (
-                  <div className="field">
-                    <label htmlFor="instance-single-date">Date</label>
-                    <input
-                      className="field-control"
-                      id="instance-single-date"
-                      onChange={(event) =>
-                        setInstanceFormState((current) => ({ ...current, dates: [event.target.value] }))
-                      }
-                      type="date"
-                      value={instanceFormState.dates[0] ?? ""}
-                    />
-                  </div>
-                ) : null}
-                {instanceFormState.dateMode === "range" ? (
-                  <div className="field field--wide collateral-instance-range">
-                    <div className="field">
-                      <label htmlFor="instance-range-start">Start Date</label>
-                      <input
-                        className="field-control"
-                        id="instance-range-start"
-                        onChange={(event) =>
-                          setInstanceFormState((current) => ({
-                            ...current,
-                            dates: [event.target.value, current.dates[1] ?? ""]
-                          }))
-                        }
-                        type="date"
-                        value={instanceFormState.dates[0] ?? ""}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="instance-range-end">End Date</label>
-                      <input
-                        className="field-control"
-                        id="instance-range-end"
-                        onChange={(event) =>
-                          setInstanceFormState((current) => ({
-                            ...current,
-                            dates: [current.dates[0] ?? "", event.target.value]
-                          }))
-                        }
-                        type="date"
-                        value={instanceFormState.dates[1] ?? ""}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-                {instanceFormState.dateMode === "multiple" ? (
-                  <div className="field field--wide">
-                    <label>Dates</label>
-                    <div className="collateral-instance-multiple">
-                      {instanceFormState.dates.map((date, index) => (
-                        <div className="collateral-instance-multiple__row" key={`instance-date-${index}`}>
-                          <input
-                            className="field-control"
-                            onChange={(event) =>
-                              setInstanceFormState((current) => ({
-                                ...current,
-                                dates: current.dates.map((entry, entryIndex) =>
-                                  entryIndex === index ? event.target.value : entry
-                                )
-                              }))
-                            }
-                            type="date"
-                            value={date}
-                          />
-                          <button
-                            className="button-link button-link--inline-secondary"
-                            onClick={() =>
-                              setInstanceFormState((current) => ({
-                                ...current,
-                                dates:
-                                  current.dates.length > 1
-                                    ? current.dates.filter((_, entryIndex) => entryIndex !== index)
-                                    : [""]
-                              }))
-                            }
-                            type="button"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        className="button-link button-link--inline-secondary"
-                        onClick={() =>
-                          setInstanceFormState((current) => ({
-                            ...current,
-                            dates: [...current.dates, ""]
-                          }))
-                        }
-                        type="button"
-                      >
-                        Add Date
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="field field--wide">
-                  <label htmlFor="instance-notes">Notes</label>
-                  <textarea
-                    className="field-control"
-                    id="instance-notes"
-                    onChange={(event) =>
-                      setInstanceFormState((current) => ({ ...current, notes: event.target.value }))
-                    }
-                    rows={3}
-                    value={instanceFormState.notes}
-                  />
-                </div>
-              </div>
-              <div className="quick-add-actions">
-                <button className="button-link button-link--inline-secondary" onClick={closeCreateInstanceModal} type="button">
-                  Cancel
-                </button>
-                  <button
-                    className="topbar__button"
-                    disabled={!isInstanceFormValid(instanceFormState) || !isSelectedCreateEventProgramSupported}
-                    onClick={handleCreateInstance}
-                    type="button"
-                  >
-                  Create and Continue
-                </button>
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-        {pendingTemplateInstance ? (
-          <div className="modal-layer" role="presentation">
-          <button aria-label="Close template prompt" className="modal-backdrop" onClick={handleSkipTemplateApply} type="button" />
-          <section aria-labelledby="apply-template-title" aria-modal="true" className="quick-add-modal" role="dialog">
-            <div className="quick-add-modal__header">
-              <div>
-                <h2 className="quick-add-modal__title" id="apply-template-title">
-                  Apply template?
-                </h2>
-                <p className="quick-add-modal__subtitle">
-                  Step 2 of setup: {pendingTemplateInstance.name} is ready. Apply its default collateral template now, or start from an empty instance.
-                </p>
-              </div>
-            </div>
-            <div className="confirm-delete">
-              <div className="confirm-delete__actions">
-                <button className="button-link button-link--inline-secondary" onClick={handleSkipTemplateApply} type="button">
-                  Start Empty
-                </button>
-                <button className="topbar__button" onClick={handleConfirmTemplateApply} type="button">
-                  Apply Default Template
-                </button>
-              </div>
-            </div>
-          </section>
-          </div>
-        ) : null}
+      <EventInstanceCreateModal
+        availableEventTypeDefinitions={creatableEventTypeDefinitions}
+        isOpen={isCreateInstanceOpen}
+        onClose={closeCreateInstanceModal}
+        onCreate={handleCreateInstance}
+      />
+      <EventInstanceTemplatePrompt
+        instanceName={pendingTemplateInstance?.name ?? "New event instance"}
+        isOpen={Boolean(pendingTemplateInstance)}
+        onApply={handleConfirmTemplateApply}
+        onSkip={handleSkipTemplateApply}
+      />
 
         {pendingDraftDiscardIntent ? (
           <div className="modal-layer" role="presentation">
@@ -1859,7 +1728,9 @@ export function CollateralView({
                   <p className="quick-add-modal__subtitle">
                     {pendingDraftDiscardIntent.type === "switch"
                       ? "Switching event context will discard the new collateral item you have not saved yet."
-                      : "Creating a new event instance will switch context and discard the new collateral item you have not saved yet."}
+                      : pendingDraftDiscardIntent.type === "sponsorPromotion"
+                        ? "Creating a collateral draft from sponsor work will discard the new collateral item you have not saved yet."
+                        : "Creating a new event instance will switch context and discard the new collateral item you have not saved yet."}
                   </p>
                 </div>
               </div>
@@ -1885,17 +1756,6 @@ export function CollateralView({
         ) : null}
       </section>
     );
-  }
-
-function isInstanceFormValid(formState: CreateInstanceFormState) {
-  const { startDate, endDate } = deriveEventDateRange(formState.dateMode, formState.dates);
-
-  return (
-    formState.eventTypeId.length > 0 &&
-    formState.instanceName.trim().length > 0 &&
-    startDate.length > 0 &&
-    endDate.length > 0
-  );
 }
 
 function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {

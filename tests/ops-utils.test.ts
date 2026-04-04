@@ -41,6 +41,10 @@ import {
   mapPersistedCollateralStateToFirestoreDocument,
   parseFirestoreCollateralStateDocument
 } from "../lib/firestore-collateral-persistence-store";
+import {
+  findObviousCollateralDuplicateGroups,
+  removeObviousCollateralDuplicates
+} from "../lib/collateral-dedupe";
 import { localCollateralStore } from "../lib/collateral-store";
 import { buildDashboardExecutionItems } from "../lib/dashboard-execution-items";
 import {
@@ -74,6 +78,10 @@ import {
 } from "../lib/native-action-item-bootstrap";
 import {
   buildSponsorFulfillmentGenerationResult,
+  getSponsorCollateralPromotionDefaults,
+  getSponsorPlacementDeliverables,
+  getSponsorPlacementLabel,
+  getSponsorFulfillmentTaskTitle,
   normalizeSponsorPlacement
 } from "../lib/sponsor-fulfillment";
 import { parseImportedAppState } from "../lib/app-transfer";
@@ -93,10 +101,18 @@ import {
   normalizeEventSubEvents
 } from "../lib/event-instances";
 import {
+  buildCreatedEventInstanceState,
+  createDefaultSubEventsForEventInstance,
+  getEventTypeDefinition,
+  getEventTypeDefinitions,
+  validateEventInstanceCreationInput
+} from "../lib/event-type-definitions";
+import {
   getDashboardLiveSummary,
   getDashboardUrgentPreview,
   getPublicationIssueSummary
 } from "../lib/queries/dashboard/dashboard-queries";
+import { getEventOnboardingGroups } from "../lib/events/event-onboarding";
 import {
   getDashboardSessionReadSelection,
   loadFirebaseDashboardSourceWithDependencies,
@@ -570,6 +586,69 @@ test("collateral store normalizes invalid sub-events and gives template-applied 
   assert.equal(
     templateResult.items[0]?.id,
     "collateral-legislative-day-2026-golf-reception-thank-you-sign"
+  );
+});
+
+test("collateral duplicate helper removes obvious template-origin and exact manual duplicates", () => {
+  const items = [
+    createCollateralItem({
+      id: "keep-template",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits",
+      itemName: "Legislative leave-behind",
+      templateOriginId: "leave-behind-template",
+      lastUpdated: "2026-03-29"
+    }),
+    createCollateralItem({
+      id: "remove-template",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-legislative-visits",
+      itemName: "Legislative leave-behind",
+      templateOriginId: "leave-behind-template",
+      lastUpdated: "2026-03-28"
+    }),
+    createCollateralItem({
+      id: "keep-manual",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-thursday-breakfast",
+      itemName: "Breakfast signage",
+      printer: "Clark",
+      quantity: "1",
+      updateType: "Minor Update",
+      noteEntries: [createActionNoteEntry("Has proof")!],
+      lastUpdated: "2026-03-29"
+    }),
+    createCollateralItem({
+      id: "remove-manual",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-thursday-breakfast",
+      itemName: "Breakfast signage",
+      printer: "Clark",
+      quantity: "1",
+      updateType: "Minor Update",
+      noteEntries: [],
+      lastUpdated: "2026-03-28"
+    }),
+    createCollateralItem({
+      id: "distinct",
+      eventInstanceId: "legislative-day-2026",
+      subEventId: "leg-day-thursday-breakfast",
+      itemName: "Breakfast signage",
+      printer: "CAPMA",
+      quantity: "2",
+      updateType: "Full Redesign"
+    })
+  ];
+
+  const groups = findObviousCollateralDuplicateGroups(items);
+  assert.equal(groups.length, 2);
+  assert.equal(groups.some((group) => group.keepId === "keep-template" && group.removeIds.includes("remove-template")), true);
+  assert.equal(groups.some((group) => group.keepId === "keep-manual" && group.removeIds.includes("remove-manual")), true);
+
+  const result = removeObviousCollateralDuplicates(items);
+  assert.deepEqual(
+    result.items.map((item) => item.id).sort(),
+    ["distinct", "keep-manual", "keep-template"]
   );
 });
 
@@ -3933,80 +4012,263 @@ test("collateral workspace readiness flags missing template, profile dates, bloc
   );
 });
 
-test("sponsor placements normalize only for valid instance and sub-event scope", () => {
+test("event type definition registry exposes the seeded onboarding scaffolding", () => {
+  const definitions = getEventTypeDefinitions();
+
+  assert.equal(definitions.some((definition) => definition.key === "legislative-day"), true);
+  assert.equal(definitions.some((definition) => definition.key === "first-friday"), true);
+  assert.equal(getEventTypeDefinition("legislative-day")?.defaultSubEvents.length, 13);
+  assert.equal(getEventTypeDefinition("first-friday")?.dateMode, "single");
+  assert.equal(getEventTypeDefinition("legislative-day")?.sponsorModelReference, "Legislative Day sponsor radar");
+  assert.equal(getEventTypeDefinition("missing-type"), null);
+});
+
+test("event onboarding groups expose template-owned structure alongside created instances", () => {
+  const groups = getEventOnboardingGroups({
+    eventFamilies: createDefaultAppStateData().eventFamilies,
+    eventTypes: createDefaultAppStateData().eventTypes,
+    eventInstances: [
+      ...initialEventInstances,
+      {
+        id: "first-friday-june-2026",
+        eventTypeId: "first-friday",
+        name: "First Friday June 2026",
+        dateMode: "single",
+        dates: ["2026-06-05"],
+        startDate: "2026-06-05",
+        endDate: "2026-06-05",
+        location: "Sacramento"
+      }
+    ]
+  });
+
+  const legislativeDayGroup = groups.find((group) => group.definition.key === "legislative-day");
+  const firstFridayGroup = groups.find((group) => group.definition.key === "first-friday");
+
+  assert.equal(legislativeDayGroup?.eventFamilyName, "Legislative Day / Advocacy Event");
+  assert.equal(legislativeDayGroup?.definition.collateralTemplatePackId, "legislative-day-core");
+  assert.equal(legislativeDayGroup?.instances[0]?.name, "Legislative Day 2026");
+  assert.equal(firstFridayGroup?.instances[0]?.name, "First Friday June 2026");
+  assert.equal(firstFridayGroup?.definition.defaultSubEvents.length, 1);
+});
+
+test("event instance creation validation accepts supported types and rejects incomplete dates", () => {
+  assert.equal(
+    validateEventInstanceCreationInput({
+      eventTypeId: "legislative-day",
+      instanceName: "Legislative Day 2027",
+      dateMode: "range",
+      dates: ["2027-04-20", "2027-04-22"]
+    }),
+    true
+  );
+  assert.equal(
+    validateEventInstanceCreationInput({
+      eventTypeId: "first-friday",
+      instanceName: "First Friday June 2026",
+      dateMode: "single",
+      dates: ["2026-06-05"]
+    }),
+    true
+  );
+  assert.equal(
+    validateEventInstanceCreationInput({
+      eventTypeId: "legislative-day",
+      instanceName: "   ",
+      dateMode: "range",
+      dates: ["2027-04-20", ""]
+    }),
+    false
+  );
+  assert.equal(
+    validateEventInstanceCreationInput({
+      eventTypeId: "missing-type",
+      instanceName: "Unknown Event",
+      dateMode: "single",
+      dates: ["2026-06-05"]
+    }),
+    false
+  );
+});
+
+test("event instance creation generates default sub-events from the selected definition", () => {
+  const legislativeDaySubEvents = createDefaultSubEventsForEventInstance({
+    eventTypeId: "legislative-day",
+    eventInstanceId: "legislative-day-2027"
+  });
+  const firstFridaySubEvents = createDefaultSubEventsForEventInstance({
+    eventTypeId: "first-friday",
+    eventInstanceId: "first-friday-june-2026"
+  });
+
+  assert.equal(legislativeDaySubEvents[0]?.id, "legislative-day-2027-golf-reception");
+  assert.equal(legislativeDaySubEvents.some((subEvent) => subEvent.name === "Thursday Breakfast"), true);
+  assert.deepEqual(firstFridaySubEvents, [
+    {
+      id: "first-friday-june-2026-main-event",
+      eventInstanceId: "first-friday-june-2026",
+      name: "Main Event",
+      sortOrder: 10
+    }
+  ]);
+});
+
+test("event instance creation state appends the instance, scaffolds sub-events, and updates active context", () => {
+  const state = buildCreatedEventInstanceState({
+    currentEventInstances: initialEventInstances,
+    currentEventSubEvents: initialEventSubEvents,
+    creation: {
+      instanceId: "first-friday-june-2026",
+      eventTypeId: "first-friday",
+      instanceName: "First Friday June 2026",
+      dateMode: "single",
+      dates: ["2026-06-05"],
+      location: "Sacramento",
+      notes: "June program"
+    }
+  });
+
+  assert.equal(state.eventInstance.id, "first-friday-june-2026");
+  assert.equal(state.eventInstance.startDate, "2026-06-05");
+  assert.equal(state.eventInstance.endDate, "2026-06-05");
+  assert.equal(state.activeEventInstanceId, "first-friday-june-2026");
+  assert.equal(state.nextEventInstances.some((instance) => instance.id === "first-friday-june-2026"), true);
+  assert.equal(
+    state.nextEventSubEvents.some(
+      (subEvent) =>
+        subEvent.eventInstanceId === "first-friday-june-2026" && subEvent.name === "Main Event"
+    ),
+    true
+  );
+});
+
+test("collateral workspace bundle can resolve a newly created unsupported instance with generated sub-events", () => {
+  const createdState = buildCreatedEventInstanceState({
+    currentEventInstances: initialEventInstances,
+    currentEventSubEvents: initialEventSubEvents,
+    creation: {
+      instanceId: "first-friday-june-2026",
+      eventTypeId: "first-friday",
+      instanceName: "First Friday June 2026",
+      dateMode: "single",
+      dates: ["2026-06-05"]
+    }
+  });
+  const defaultState = createDefaultAppStateData();
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: createdState.activeEventInstanceId,
+    collateralItems: defaultState.collateralItems,
+    collateralProfiles: defaultState.collateralProfiles,
+    eventInstances: createdState.nextEventInstances,
+    eventSubEvents: createdState.nextEventSubEvents,
+    eventTypes: defaultState.eventTypes
+  });
+
+  assert.equal(workspace.resolvedActiveEventInstanceId, "first-friday-june-2026");
+  assert.equal(workspace.selectedEventInstance?.name, "First Friday June 2026");
+  assert.equal(workspace.currentEventType?.name, "First Friday");
+  assert.equal(workspace.isSelectedEventTypeSupported, false);
+  assert.deepEqual(
+    workspace.instanceSubEvents.map((subEvent) => subEvent.name),
+    ["Main Event"]
+  );
+});
+
+test("sponsor placements normalize only for valid instance scope and supported placement values", () => {
   const validPlacement = normalizeSponsorPlacement(
     {
       id: "placement-1",
       eventInstanceId: "legislative-day-2026",
       sponsorName: "Acme Pest",
-      placementType: "table-tents",
-      subEventId: "leg-day-thursday-breakfast",
+      placement: "Premier",
+      logoReceived: "1" as unknown as boolean,
       notes: "Premier sponsor"
     },
     {
-      eventInstances: initialEventInstances,
-      eventSubEvents: initialEventSubEvents
+      eventInstances: initialEventInstances
     }
   );
 
   assert.equal(validPlacement?.sponsorName, "Acme Pest");
-  assert.equal(validPlacement?.subEventId, "leg-day-thursday-breakfast");
+  assert.equal(validPlacement?.placement, "Premier");
+  assert.equal(validPlacement?.logoReceived, true);
 
   const invalidPlacement = normalizeSponsorPlacement(
     {
       id: "placement-2",
       eventInstanceId: "legislative-day-2026",
       sponsorName: "Acme Pest",
-      placementType: "table-tents",
-      subEventId: "other-instance-sub-event"
+      placementType: "table-tents"
     },
     {
-      eventInstances: initialEventInstances,
-      eventSubEvents: initialEventSubEvents
+      eventInstances: initialEventInstances
     }
   );
 
-  assert.equal(invalidPlacement?.subEventId, undefined);
+  assert.equal(invalidPlacement, null);
 });
 
-test("sponsor setup generation creates native action items and skips matching reruns", () => {
+test("sponsor fulfillment title preview matches radar-style action item naming", () => {
+  assert.equal(getSponsorPlacementLabel("Thursday Briefing Breakfast"), "Thursday Briefing Breakfast");
+  assert.equal(getSponsorPlacementDeliverables("Thursday Briefing Breakfast").length > 0, true);
+
+  assert.equal(
+    getSponsorFulfillmentTaskTitle({
+      sponsorName: "Acme Pest",
+      deliverableName: "CAPMA Event Post Mention"
+    }),
+    "Acme Pest - CAPMA Event Post Mention"
+  );
+
+  assert.equal(
+    getSponsorFulfillmentTaskTitle({
+      sponsorName: "Acme Pest",
+      deliverableName: "March NewsBrief Recognition"
+    }),
+    "Acme Pest - March NewsBrief Recognition"
+  );
+});
+
+test("sponsor setup generation creates radar-style native action items and skips matching reruns", () => {
   const generation = buildSponsorFulfillmentGenerationResult({
     placements: [
       {
         id: "placement-1",
         eventInstanceId: "legislative-day-2026",
         sponsorName: "Acme Pest",
-        placementType: "table-tents",
-        subEventId: "leg-day-thursday-breakfast",
+        placement: "Thursday Briefing Breakfast",
+        logoReceived: false,
         notes: "Breakfast sponsor"
       },
       {
         id: "placement-2",
         eventInstanceId: "legislative-day-2026",
         sponsorName: "",
-        placementType: "thank-you-sign"
+        placement: "Premier",
+        logoReceived: true
       }
     ],
     eventInstance: initialEventInstances[0]!,
-    eventSubEvents: initialEventSubEvents,
-    activeProfile: {
-      eventStartDate: "2026-04-21",
-      eventEndDate: "2026-04-23",
-      roomBlockDeadline: "",
-      roomBlockNote: "",
-      logoDeadline: "2026-03-23",
-      logoDeadlineNote: "",
-      externalPrintingDue: "2026-03-27",
-      internalPrintingStart: ""
-    },
     existingItems: [],
     defaultOwner: "Melissa"
   });
 
-  assert.equal(generation.created.length, 1);
-  assert.equal(generation.created[0]?.title, "Acme Pest: Table tents for Thursday Breakfast");
+  assert.equal(generation.created.length, 12);
+  assert.equal(generation.created[0]?.title, "Acme Pest - Spotlight Post");
   assert.equal(generation.created[0]?.eventInstanceId, "legislative-day-2026");
-  assert.equal(generation.created[0]?.dueDate, "2026-03-23");
+  assert.equal(generation.created[0]?.type, "Deliverable");
+  assert.equal(generation.created[0]?.status, "Waiting");
+  assert.equal(generation.created[0]?.waitingOn, "Sponsor logo");
+  assert.equal(generation.created[0]?.dueDate, "2026-03-22");
+  assert.equal(
+    generation.created.some(
+      (item) =>
+        item.title === "Acme Pest - March NewsBrief Recognition" &&
+        item.issue === "March 2026 News Brief" &&
+        item.dueDate.length > 0
+    ),
+    true
+  );
   assert.equal(generation.skipped, 1);
 
   const rerun = buildSponsorFulfillmentGenerationResult({
@@ -4015,35 +4277,91 @@ test("sponsor setup generation creates native action items and skips matching re
         id: "placement-1",
         eventInstanceId: "legislative-day-2026",
         sponsorName: "Acme Pest",
-        placementType: "table-tents",
-        subEventId: "leg-day-thursday-breakfast"
+        placement: "Thursday Briefing Breakfast",
+        logoReceived: true
       }
     ],
     eventInstance: initialEventInstances[0]!,
-    eventSubEvents: initialEventSubEvents,
-    activeProfile: {
-      eventStartDate: "2026-04-21",
-      eventEndDate: "2026-04-23",
-      roomBlockDeadline: "",
-      roomBlockNote: "",
-      logoDeadline: "2026-03-23",
-      logoDeadlineNote: "",
-      externalPrintingDue: "2026-03-27",
-      internalPrintingStart: ""
-    },
     existingItems: [
       createItem({
-        title: "Acme Pest: Table tents for Thursday Breakfast",
+        title: "Acme Pest - Spotlight Post",
+        type: "Deliverable",
         workstream: "Legislative Day",
         eventInstanceId: "legislative-day-2026",
-        subEventId: "leg-day-thursday-breakfast"
+        noteEntries: [
+          createActionNoteEntry(
+            'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","placement":"Thursday Briefing Breakfast","deliverableName":"Spotlight Post"}. Placement: Thursday Briefing Breakfast.'
+          )!
+        ]
       })
     ],
     defaultOwner: "Melissa"
   });
 
-  assert.equal(rerun.created.length, 0);
+  assert.equal(rerun.created.length, 11);
   assert.equal(rerun.skipped, 1);
+});
+
+test("sponsor collateral promotion defaults detect physical deliverables and map clear sub-events", () => {
+  const defaults = getSponsorCollateralPromotionDefaults({
+    item: createItem({
+      title: "Acme Pest - Table Tents Displayed",
+      type: "Deliverable",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      noteEntries: [
+        createActionNoteEntry(
+          'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","placement":"Thursday Briefing Breakfast","deliverableName":"Table Tents Displayed"}. Placement: Thursday Briefing Breakfast.'
+        )!
+      ]
+    }),
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.ok(defaults);
+  assert.equal(defaults?.collateralItemName, "Briefing Breakfast Table Tents");
+  assert.equal(defaults?.subEventId, "leg-day-thursday-breakfast");
+  assert.equal(defaults?.subEventName, "Thursday Breakfast");
+});
+
+test("sponsor collateral promotion defaults ignore non-physical sponsor deliverables", () => {
+  const defaults = getSponsorCollateralPromotionDefaults({
+    item: createItem({
+      title: "Acme Pest - Spotlight Post",
+      type: "Deliverable",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      noteEntries: [
+        createActionNoteEntry(
+          'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","placement":"Thursday Briefing Breakfast","deliverableName":"Spotlight Post"}. Placement: Thursday Briefing Breakfast.'
+        )!
+      ]
+    }),
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.equal(defaults, null);
+});
+
+test("sponsor collateral promotion defaults fall back to the unassigned sub-event when no clear match exists", () => {
+  const defaults = getSponsorCollateralPromotionDefaults({
+    item: createItem({
+      title: "Acme Pest - Table Tents on Tables",
+      type: "Deliverable",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      noteEntries: [
+        createActionNoteEntry(
+          'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","placement":"Wed Night Reception","deliverableName":"Table Tents on Tables"}. Placement: Wed Night Reception.'
+        )!
+      ]
+    }),
+    eventSubEvents: initialEventSubEvents.filter((subEvent) => subEvent.name !== "Wed Night Reception")
+  });
+
+  assert.ok(defaults);
+  assert.equal(defaults?.subEventId, "legislative-day-2026-unassigned");
+  assert.equal(defaults?.subEventName, null);
 });
 
 test("firestore collateral state parser accepts legacy documents without sponsor placements", () => {

@@ -55,6 +55,7 @@ import {
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
+import { getSponsorCollateralPromotionDefaults } from "@/lib/sponsor-fulfillment";
 
 const FILTER_OPTIONS: { label: string; value: ActionFilter }[] = [
   { label: "All", value: "all" },
@@ -215,6 +216,16 @@ export function ActionView({
         ? selectedItemSubEvents.find((subEvent) => subEvent.id === selectedItem.subEventId)?.name ?? null
         : null,
     [selectedItem?.subEventId, selectedItemSubEvents]
+  );
+  const selectedSponsorCollateralPromotion = useMemo(
+    () =>
+      selectedItem
+        ? getSponsorCollateralPromotionDefaults({
+            item: selectedItem,
+            eventSubEvents: selectedItemSubEvents
+          })
+        : null,
+    [selectedItem, selectedItemSubEvents]
   );
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
@@ -555,6 +566,33 @@ export function ActionView({
     const params = new URLSearchParams();
     params.set("eventInstanceId", eventInstanceId);
     params.set("collateralId", collateralId);
+    router.push(`/collateral?${params.toString()}`);
+  }
+
+  function handleCreateCollateralFromSponsor(item: ActionItem) {
+    const promotionDefaults = getSponsorCollateralPromotionDefaults({
+      item,
+      eventSubEvents: selectedItemSubEvents
+    });
+
+    if (!promotionDefaults) {
+      return;
+    }
+
+    const nextEntry = createActionNoteEntry(
+      `Opened a collateral draft for "${promotionDefaults.collateralItemName}" from this sponsor deliverable. The sponsor action item stays open until the related work is actually complete.`,
+      { author: LOCAL_FALLBACK_NOTE_AUTHOR }
+    );
+
+    if (nextEntry) {
+      updateItem(item.id, {
+        noteEntries: [nextEntry, ...item.noteEntries]
+      });
+    }
+
+    const params = new URLSearchParams();
+    params.set("eventInstanceId", promotionDefaults.eventInstanceId);
+    params.set("promoteActionItemId", item.id);
     router.push(`/collateral?${params.toString()}`);
   }
 
@@ -1644,6 +1682,33 @@ export function ActionView({
                       <div className="field-hint action-drawer__aging-hint">{selectedItemAgingHint}</div>
                     ) : null}
                   </div>
+                  {selectedSponsorCollateralPromotion ? (
+                    <div className="field field--wide action-drawer__sponsor-bridge">
+                      <label>Sponsor Collateral</label>
+                      <div className="field-static action-drawer__sponsor-bridge-copy">
+                        This sponsor deliverable may need a collateral item:
+                        {" "}
+                        <strong>{selectedSponsorCollateralPromotion.collateralItemName}</strong>
+                      </div>
+                      <div className="field-hint">
+                        Create a prefilled collateral draft in Collateral.
+                        {selectedSponsorCollateralPromotion.subEventName
+                          ? ` It will open in ${selectedSponsorCollateralPromotion.subEventName}.`
+                          : " It will open as Unassigned so you can route it manually."}
+                        {" "}
+                        The sponsor action item stays open.
+                      </div>
+                      <div className="action-drawer__sponsor-bridge-actions">
+                        <button
+                          className="button-link button-link--inline-secondary"
+                          onClick={() => handleCreateCollateralFromSponsor(selectedItem)}
+                          type="button"
+                        >
+                          Create in Collateral
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div
                     className={`field action-drawer__blocked-control action-drawer__blocked-toggle-field${selectedItem.isBlocked ? " action-drawer__blocked-toggle-field--active" : ""}`}
                   >

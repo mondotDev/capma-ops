@@ -464,8 +464,7 @@ function normalizeEventScopedState(input: {
   const sponsorPlacementsByInstance = normalizeSponsorPlacementsByInstance(
     input.sponsorPlacementsByInstance,
     {
-      eventInstances: normalizedEventInstances,
-      eventSubEvents: eventSubEvents
+      eventInstances: normalizedEventInstances
     }
   );
   const eventInstances =

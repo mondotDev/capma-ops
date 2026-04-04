@@ -290,6 +290,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             Dashboard
           </Link>
           <Link
+            className={pathname === "/events" ? "sidebar__link active" : "sidebar__link"}
+            href="/events"
+          >
+            Events
+          </Link>
+          <Link
             className={pathname === "/action" ? "sidebar__link active" : "sidebar__link"}
             href="/action"
           >
