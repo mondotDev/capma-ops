@@ -30,13 +30,33 @@ export type EventOnboardingSubEventView = {
 };
 
 export type EventOnboardingScheduleStatus = "none" | "partial" | "scheduled";
+export type EventOnboardingSetupStepStatus = "needs_attention" | "ready_next" | "done";
+
+export type EventOnboardingSetupStep = {
+  key: "details" | "schedule" | "collateral";
+  label: string;
+  status: EventOnboardingSetupStepStatus;
+  guidance: string;
+};
+
+export type EventOnboardingFallbackLane = {
+  id: string;
+  name: string;
+  actionUsageCount: number;
+  collateralUsageCount: number;
+  removeBlockReason: string | null;
+};
 
 export type EventOnboardingSelectedInstance = {
   instance: EventInstance;
   definition: EventTypeDefinition | null;
   eventFamilyName: string;
   scheduleStatus: EventOnboardingScheduleStatus;
-  subEvents: EventOnboardingSubEventView[];
+  setupSteps: EventOnboardingSetupStep[];
+  nextStepGuidance: string;
+  isCollateralReady: boolean;
+  scheduledSubEvents: EventOnboardingSubEventView[];
+  fallbackLane: EventOnboardingFallbackLane | null;
 };
 
 export type EventOnboardingView = {
@@ -100,6 +120,48 @@ export function getEventOnboardingView(input: {
     .filter((subEvent) => subEvent.eventInstanceId === selectedInstance.id)
     .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
   const scheduleStatus = getScheduleStatus(selectedSubEvents);
+  const subEventViews = selectedSubEvents.map((subEvent) => {
+    const actionUsageCount = input.items.filter(
+      (item) => item.eventInstanceId === selectedInstance.id && item.subEventId === subEvent.id
+    ).length;
+    const collateralUsageCount = input.collateralItems.filter(
+      (item) => item.eventInstanceId === selectedInstance.id && item.subEventId === subEvent.id
+    ).length;
+    const isUnassigned = subEvent.id === `${selectedInstance.id}-unassigned`;
+    const isDefault = isDefaultSubEventNameForEventType(selectedInstance.eventTypeId, subEvent.name);
+    const removeBlockReason = getSubEventRemoveBlockReason({
+      isDefault,
+      isUnassigned,
+      actionUsageCount,
+      collateralUsageCount
+    });
+
+    return {
+      id: subEvent.id,
+      name: subEvent.name,
+      sortOrder: subEvent.sortOrder,
+      date: subEvent.date ?? "",
+      startTime: subEvent.startTime ?? "",
+      endTime: subEvent.endTime ?? "",
+      isDefault,
+      isUnassigned,
+      actionUsageCount,
+      collateralUsageCount,
+      canRemove: removeBlockReason === null,
+      removeBlockReason
+    } satisfies EventOnboardingSubEventView;
+  });
+  const scheduledSubEvents = subEventViews.filter((subEvent) => !subEvent.isUnassigned);
+  const fallbackLane = subEventViews.find((subEvent) => subEvent.isUnassigned) ?? null;
+  const setupSteps = getSetupSteps({
+    instance: selectedInstance,
+    scheduleStatus
+  });
+  const nextStepGuidance =
+    setupSteps.find((step) => step.status === "ready_next")?.guidance ??
+    setupSteps.find((step) => step.status === "needs_attention")?.guidance ??
+    "Open Collateral to start production work for this event instance.";
+  const isCollateralReady = scheduleStatus === "scheduled";
 
   return {
     groups,
@@ -111,37 +173,20 @@ export function getEventOnboardingView(input: {
         familyNameById.get(definition?.eventFamilyId ?? "") ??
         selectedInstance.eventTypeId,
       scheduleStatus,
-      subEvents: selectedSubEvents.map((subEvent) => {
-        const actionUsageCount = input.items.filter(
-          (item) => item.eventInstanceId === selectedInstance.id && item.subEventId === subEvent.id
-        ).length;
-        const collateralUsageCount = input.collateralItems.filter(
-          (item) => item.eventInstanceId === selectedInstance.id && item.subEventId === subEvent.id
-        ).length;
-        const isUnassigned = subEvent.id === `${selectedInstance.id}-unassigned`;
-        const isDefault = isDefaultSubEventNameForEventType(selectedInstance.eventTypeId, subEvent.name);
-        const removeBlockReason = getSubEventRemoveBlockReason({
-          isDefault,
-          isUnassigned,
-          actionUsageCount,
-          collateralUsageCount
-        });
-
-        return {
-          id: subEvent.id,
-          name: subEvent.name,
-          sortOrder: subEvent.sortOrder,
-          date: subEvent.date ?? "",
-          startTime: subEvent.startTime ?? "",
-          endTime: subEvent.endTime ?? "",
-          isDefault,
-          isUnassigned,
-          actionUsageCount,
-          collateralUsageCount,
-          canRemove: removeBlockReason === null,
-          removeBlockReason
-        } satisfies EventOnboardingSubEventView;
-      })
+      setupSteps,
+      nextStepGuidance,
+      isCollateralReady,
+      scheduledSubEvents,
+      fallbackLane:
+        fallbackLane
+          ? {
+              id: fallbackLane.id,
+              name: fallbackLane.name,
+              actionUsageCount: fallbackLane.actionUsageCount,
+              collateralUsageCount: fallbackLane.collateralUsageCount,
+              removeBlockReason: fallbackLane.removeBlockReason
+            }
+          : null
     }
   };
 }
@@ -185,4 +230,51 @@ function getScheduleStatus(subEvents: EventSubEvent[]): EventOnboardingScheduleS
   }
 
   return "partial";
+}
+
+function getSetupSteps(input: {
+  instance: EventInstance;
+  scheduleStatus: EventOnboardingScheduleStatus;
+}): EventOnboardingSetupStep[] {
+  const hasEventDetails = Boolean(input.instance.name.trim() && input.instance.startDate);
+  const detailsStatus: EventOnboardingSetupStepStatus = hasEventDetails ? "done" : "needs_attention";
+  const scheduleStatus: EventOnboardingSetupStepStatus =
+    input.scheduleStatus === "scheduled"
+      ? "done"
+      : detailsStatus === "done"
+        ? "ready_next"
+        : "needs_attention";
+  const collateralStatus: EventOnboardingSetupStepStatus =
+    input.scheduleStatus === "scheduled" ? "ready_next" : "needs_attention";
+
+  return [
+    {
+      key: "details",
+      label: "Event details",
+      status: detailsStatus,
+      guidance: hasEventDetails
+        ? "Core event details are in place."
+        : "Add the event name and dates before moving downstream."
+    },
+    {
+      key: "schedule",
+      label: "Sub-event schedule",
+      status: scheduleStatus,
+      guidance:
+        input.scheduleStatus === "scheduled"
+          ? "Sub-event dates are confirmed."
+          : input.scheduleStatus === "partial"
+            ? "Next step: finish adding dates and times for the remaining sub-events."
+            : "Next step: add dates and times for this event's sub-events."
+    },
+    {
+      key: "collateral",
+      label: "Open in Collateral",
+      status: collateralStatus,
+      guidance:
+        input.scheduleStatus === "scheduled"
+          ? "Next step: open Collateral to start production work."
+          : "You can open Collateral now, but this setup still needs schedule confirmation."
+    }
+  ];
 }

@@ -4352,16 +4352,22 @@ test("event onboarding view exposes selected instance detail and sub-event safet
   assert.equal(view.selectedInstance?.definition?.supportsSponsorSetup, true);
   assert.equal(view.selectedInstance?.scheduleStatus, "partial");
   assert.equal(
-    view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.canRemove,
+    view.selectedInstance?.scheduledSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.canRemove,
     false
   );
   assert.equal(
-    view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.canRemove,
+    view.selectedInstance?.scheduledSubEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.canRemove,
     true
   );
   assert.equal(
-    view.selectedInstance?.subEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.date,
+    view.selectedInstance?.scheduledSubEvents.find((subEvent) => subEvent.id === "legislative-day-2026-friday-breakfast")?.date,
     "2026-04-24"
+  );
+  assert.equal(view.selectedInstance?.fallbackLane?.id ?? null, null);
+  assert.equal(view.selectedInstance?.setupSteps[1]?.status, "ready_next");
+  assert.equal(
+    view.selectedInstance?.nextStepGuidance,
+    "Next step: finish adding dates and times for the remaining sub-events."
   );
 });
 

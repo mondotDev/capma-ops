@@ -37,14 +37,25 @@ export function EventsView() {
   const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(activeEventInstanceId);
+  const [hasDismissedDrawer, setHasDismissedDrawer] = useState(false);
 
   useEffect(() => {
     if (selectedInstanceId && eventInstances.some((instance) => instance.id === selectedInstanceId)) {
       return;
     }
 
-    setSelectedInstanceId(activeEventInstanceId);
-  }, [activeEventInstanceId, eventInstances, selectedInstanceId]);
+    if (selectedInstanceId === null && hasDismissedDrawer) {
+      return;
+    }
+
+    if (activeEventInstanceId && eventInstances.some((instance) => instance.id === activeEventInstanceId)) {
+      setSelectedInstanceId(activeEventInstanceId);
+      return;
+    }
+
+    const firstInstance = [...eventInstances].sort((left, right) => left.startDate.localeCompare(right.startDate))[0];
+    setSelectedInstanceId(firstInstance?.id ?? null);
+  }, [activeEventInstanceId, eventInstances, hasDismissedDrawer, selectedInstanceId]);
 
   const onboardingView = useMemo(
     () =>
@@ -67,6 +78,7 @@ export function EventsView() {
   function handleCreateEventInstance(input: CreateEventInstanceInput) {
     const nextId = createEventInstance(input);
     setIsCreateOpen(false);
+    setHasDismissedDrawer(false);
     setSelectedInstanceId(nextId);
     setFeedback(`${input.instanceName} created and set as the active event instance.`);
 
@@ -100,13 +112,23 @@ export function EventsView() {
     router.push(`/collateral?eventInstanceId=${encodeURIComponent(instanceId)}`);
   }
 
+  function handleSelectInstance(instanceId: string) {
+    setHasDismissedDrawer(false);
+    setSelectedInstanceId(instanceId);
+  }
+
+  function handleCloseDrawer() {
+    setHasDismissedDrawer(true);
+    setSelectedInstanceId(null);
+  }
+
   return (
     <section className="events-page page">
       <div className="events-page__header">
         <div>
           <h1 className="collateral-page__title">Events</h1>
           <p className="collateral-page__subtitle">
-            Start new event setup here: create the instance, confirm sub-event schedule, then hand off into Collateral for production work and Action View for downstream execution pressure.
+            Start event setup here: create or select an instance, confirm its sub-event schedule, then hand off into Collateral when production work is ready to begin.
           </p>
         </div>
         <div className="events-page__actions">
@@ -127,40 +149,45 @@ export function EventsView() {
 
       <div className="events-page__grid">
         <div className="events-page__main">
+          <section className="card card--secondary events-selector-card">
+            <div className="events-selector-card__header">
+              <div className="card__title">Choose an Event Instance</div>
+              <div className="events-selector-card__copy">
+                Pick an instance to review its setup and confirm sub-event scheduling before moving into Collateral.
+              </div>
+            </div>
           {onboardingView.groups.map((group) => (
-            <section className="card card--secondary events-group" key={group.definition.key}>
+            <section className="events-group" key={group.definition.key}>
               <div className="events-group__header">
                 <div>
-                  <div className="card__title">{group.definition.label}</div>
+                  <div className="events-group__title-row">
+                    <div className="card__title">{group.definition.label}</div>
+                    <div className="events-group__tags">
+                      <span className="events-chip">
+                        {group.definition.supportsCollateral === false
+                          ? "No collateral pack yet"
+                          : group.definition.collateralTemplatePackId
+                            ? "Collateral pack ready"
+                            : "Can start empty"}
+                      </span>
+                      {group.definition.supportsSponsorSetup ? (
+                        <span className="events-chip events-chip--accent">
+                          {group.definition.sponsorModelReference ?? "Sponsor setup supported"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
                   <div className="events-group__meta">
                     <span>{group.eventFamilyName}</span>
                     <span>{describeDateMode(group.definition.dateMode)}</span>
                     <span>{group.definition.defaultSubEvents.length} default sub-events</span>
                   </div>
-                  {group.definition.description ? (
-                    <div className="events-group__description">{group.definition.description}</div>
-                  ) : null}
-                </div>
-                <div className="events-group__tags">
-                  <span className="events-chip">
-                    {group.definition.supportsCollateral === false
-                      ? "No collateral pack yet"
-                      : group.definition.collateralTemplatePackId
-                        ? "Collateral pack ready"
-                        : "Collateral-ready scaffold"}
-                  </span>
-                  {group.definition.supportsSponsorSetup ? (
-                    <span className="events-chip events-chip--accent">
-                      {group.definition.sponsorModelReference ?? "Sponsor setup supported"}
-                    </span>
-                  ) : null}
                 </div>
               </div>
               {group.instances.length > 0 ? (
                 <div className="events-instance-list">
                   {group.instances.map((instance) => {
                     const isSelected = instance.id === onboardingView.selectedInstance?.instance.id;
-                    const isActive = instance.id === activeEventInstanceId;
                     const scheduleStatus = getInstanceScheduleStatus(instance.id, eventSubEvents);
                     return (
                       <article
@@ -169,14 +196,11 @@ export function EventsView() {
                       >
                         <button
                           className="events-instance-card__body events-instance-card__body--button"
-                          onClick={() => setSelectedInstanceId(instance.id)}
+                          onClick={() => handleSelectInstance(instance.id)}
                           type="button"
                         >
                           <div className="events-instance-card__title-row">
                             <strong>{instance.name}</strong>
-                            {isActive ? (
-                              <span className="events-chip events-chip--active">Active</span>
-                            ) : null}
                             {isSelected ? (
                               <span className="events-chip">Selected</span>
                             ) : null}
@@ -184,20 +208,11 @@ export function EventsView() {
                           <div className="events-instance-card__meta">
                             <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
                             {instance.location ? <span>{instance.location}</span> : null}
-                            <span>{group.definition.collateralTemplatePackId ? "Pack available" : "Start empty"}</span>
+                            <span>{group.definition.collateralTemplatePackId ? "Collateral pack available" : "Can start empty"}</span>
                             <span>{formatScheduleStatus(scheduleStatus)}</span>
                           </div>
                           {instance.notes ? <div className="events-instance-card__notes">{instance.notes}</div> : null}
                         </button>
-                        <div className="events-instance-card__actions">
-                          <button
-                            className="button-link button-link--inline-secondary"
-                            onClick={() => handleOpenInCollateral(instance.id)}
-                            type="button"
-                          >
-                            Open in Collateral
-                          </button>
-                        </div>
                       </article>
                     );
                   })}
@@ -209,14 +224,26 @@ export function EventsView() {
               )}
             </section>
           ))}
+          </section>
         </div>
-        <aside className="events-page__aside">
+      </div>
+
+      {onboardingView.selectedInstance ? (
+        <>
+          <button
+            aria-label="Close event setup drawer"
+            className="drawer-backdrop"
+            onClick={handleCloseDrawer}
+            type="button"
+          />
           <EventInstanceDetailPanel
-            isActive={onboardingView.selectedInstance?.instance.id === activeEventInstanceId}
+            isActive={onboardingView.selectedInstance.instance.id === activeEventInstanceId}
+            onClose={handleCloseDrawer}
             onOpenInCollateral={handleOpenInCollateral}
             onRemoveSubEvent={removeEventSubEvent}
             onSetActive={(instanceId) => {
               setActiveEventInstanceId(instanceId);
+              setHasDismissedDrawer(false);
               setFeedback("Active event context updated.");
             }}
             onUpdateInstance={(instanceId, updates) => {
@@ -235,17 +262,8 @@ export function EventsView() {
             }}
             selectedInstance={onboardingView.selectedInstance}
           />
-
-          <section className="card card--secondary events-reference-card">
-            <div className="card__title">How This Surface Works</div>
-            <div className="events-reference-card__body">
-              <p>Events owns the recurring structure: event type, default sub-events, date mode, and whether a collateral or sponsor model is ready.</p>
-              <p>Collateral owns the production records for a specific event instance once the scaffold is in place.</p>
-              <p>Action View owns the execution work generated downstream from those event and sponsor decisions.</p>
-            </div>
-          </section>
-        </aside>
-      </div>
+        </>
+      ) : null}
 
       <EventInstanceCreateModal
         availableEventTypeDefinitions={onboardingView.groups.map((group) => group.definition)}

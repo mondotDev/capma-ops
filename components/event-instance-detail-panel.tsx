@@ -10,6 +10,7 @@ import type { EventDateMode } from "@/lib/event-instances";
 type EventInstanceDetailPanelProps = {
   selectedInstance: EventOnboardingSelectedInstance | null;
   isActive: boolean;
+  onClose: () => void;
   onOpenInCollateral: (instanceId: string) => void;
   onSetActive: (instanceId: string) => void;
   onUpdateInstance: (instanceId: string, updates: UpdateEventInstanceInput) => boolean;
@@ -28,6 +29,7 @@ type DetailFormState = {
 export function EventInstanceDetailPanel({
   selectedInstance,
   isActive,
+  onClose,
   onOpenInCollateral,
   onSetActive,
   onUpdateInstance,
@@ -67,17 +69,26 @@ export function EventInstanceDetailPanel({
       location: selectedInstance.instance.location ?? "",
       notes: selectedInstance.instance.notes ?? ""
     });
+    const editableSubEvents = selectedInstance.fallbackLane
+      ? [...selectedInstance.scheduledSubEvents, selectedInstance.fallbackLane]
+      : selectedInstance.scheduledSubEvents;
     setSubEventDrafts(
-      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.name]))
+      Object.fromEntries(editableSubEvents.map((subEvent) => [subEvent.id, subEvent.name]))
     );
     setSubEventDateDrafts(
-      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.date]))
+      Object.fromEntries(
+        editableSubEvents.map((subEvent) => [subEvent.id, "date" in subEvent ? subEvent.date : ""])
+      )
     );
     setSubEventStartTimeDrafts(
-      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.startTime]))
+      Object.fromEntries(
+        editableSubEvents.map((subEvent) => [subEvent.id, "startTime" in subEvent ? subEvent.startTime : ""])
+      )
     );
     setSubEventEndTimeDrafts(
-      Object.fromEntries(selectedInstance.subEvents.map((subEvent) => [subEvent.id, subEvent.endTime]))
+      Object.fromEntries(
+        editableSubEvents.map((subEvent) => [subEvent.id, "endTime" in subEvent ? subEvent.endTime : ""])
+      )
     );
     setFeedback("");
     setNewSubEventName("");
@@ -100,17 +111,17 @@ export function EventInstanceDetailPanel({
   }, [formState, selectedInstance]);
 
   if (!selectedInstance || !formState) {
-    return (
-      <section className="card card--secondary events-detail-card">
-        <div className="card__title">Instance Details</div>
-        <div className="events-detail-card__empty">
-          Select an event instance to edit its setup details and sub-events.
-        </div>
-      </section>
-    );
+    return null;
   }
 
-  const { instance, definition, eventFamilyName, scheduleStatus, subEvents } = selectedInstance;
+  const { instance, definition, eventFamilyName, scheduleStatus } = selectedInstance;
+  const {
+    fallbackLane,
+    isCollateralReady,
+    nextStepGuidance,
+    scheduledSubEvents,
+    setupSteps
+  } = selectedInstance;
 
   function handleSaveDetails() {
     const didUpdate = onUpdateInstance(instance.id, {
@@ -174,38 +185,62 @@ export function EventInstanceDetailPanel({
   }
 
   return (
-    <section className="card card--secondary events-detail-card">
-      <div className="events-detail-card__header">
-        <div>
-          <div className="card__title">Instance Details</div>
-          <div className="events-detail-card__meta">
-            <span>{definition?.label ?? instance.eventTypeId}</span>
-            <span>{eventFamilyName}</span>
-            <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
-            <span>{formatScheduleStatus(scheduleStatus)}</span>
+    <aside aria-label="Event setup details" className="drawer drawer--events">
+      <div className="drawer__sticky events-drawer__sticky">
+        <div className="events-drawer__eyebrow">Event Setup</div>
+        <div className="events-drawer__header">
+          <div className="events-drawer__header-text">
+            <div className="events-drawer__title-row">
+              <h2 className="drawer__title events-drawer__title">{instance.name}</h2>
+              <button
+                aria-label="Close event setup"
+                className="drawer-close"
+                onClick={onClose}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <div className="events-detail-card__meta">
+              <span>{definition?.label ?? instance.eventTypeId}</span>
+              <span>{eventFamilyName}</span>
+              <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
+              <span>{formatScheduleStatus(scheduleStatus)}</span>
+            </div>
           </div>
-        </div>
-        <div className="events-detail-card__actions">
-          {!isActive ? (
+          <div className="events-detail-card__actions">
+            {!isActive ? (
+              <button
+                className="button-link button-link--inline-secondary"
+                onClick={() => onSetActive(instance.id)}
+                type="button"
+              >
+                Make Active
+              </button>
+            ) : (
+              <span className="events-chip events-chip--active">Active Instance</span>
+            )}
             <button
-              className="button-link button-link--inline-secondary"
-              onClick={() => onSetActive(instance.id)}
+              className="topbar__button"
+              onClick={() => onOpenInCollateral(instance.id)}
               type="button"
             >
-              Make Active
+              {isCollateralReady ? "Open in Collateral" : "Open in Collateral Anyway"}
             </button>
-          ) : (
-            <span className="events-chip events-chip--active">Active Instance</span>
-          )}
-          <button
-            className="topbar__button"
-            onClick={() => onOpenInCollateral(instance.id)}
-            type="button"
-          >
-            Open in Collateral
-          </button>
+          </div>
+        </div>
+        <div className="events-drawer__subtitle">
+          {nextStepGuidance}
         </div>
       </div>
+
+      <div className="events-drawer__body">
+        <section className="card card--secondary events-detail-card events-detail-card--drawer">
+          <div className="events-detail-card__header">
+            <div>
+              <div className="card__title">Instance Details</div>
+            </div>
+          </div>
 
       {definition?.description ? (
         <div className="events-detail-card__description">{definition.description}</div>
@@ -219,6 +254,26 @@ export function EventInstanceDetailPanel({
           </button>
         </div>
       ) : null}
+
+      <div className="events-detail-card__section events-detail-card__section--progress">
+        <div className="events-detail-card__section-title">Setup Progress</div>
+        <div className="events-setup-progress">
+          {setupSteps.map((step) => (
+            <div className={`events-setup-progress__step events-setup-progress__step--${step.status}`} key={step.key}>
+              <div className="events-setup-progress__step-top">
+                <span className="events-setup-progress__label">{step.label}</span>
+                <span className={`events-setup-progress__status events-setup-progress__status--${step.status}`}>
+                  {formatSetupStepStatus(step.status)}
+                </span>
+              </div>
+              <div className="field__hint">{step.guidance}</div>
+            </div>
+          ))}
+        </div>
+        <div className="collateral-setup-banner" role="status">
+          <span>{nextStepGuidance}</span>
+        </div>
+      </div>
 
       <div className="events-detail-card__section">
         <div className="events-detail-card__section-title">Instance Setup</div>
@@ -393,21 +448,42 @@ export function EventInstanceDetailPanel({
       <div className="events-detail-card__section">
         <div className="events-detail-card__section-title">Sub-Events</div>
         <div className="events-sub-events">
-          {subEvents.map((subEvent) => (
+          {scheduledSubEvents.map((subEvent) => (
             <div className="events-sub-events__row" key={subEvent.id}>
               <div className="events-sub-events__main">
-                <input
-                  className="field-control"
-                  disabled={subEvent.isUnassigned}
-                  onChange={(event) =>
-                    setSubEventDrafts((current) => ({
-                      ...current,
-                      [subEvent.id]: event.target.value
-                    }))
-                  }
-                  value={subEventDrafts[subEvent.id] ?? subEvent.name}
-                />
-                <div className="events-sub-events__schedule">
+                <div className="events-sub-events__top">
+                  <input
+                    className="field-control"
+                    disabled={subEvent.isUnassigned}
+                    onChange={(event) =>
+                      setSubEventDrafts((current) => ({
+                        ...current,
+                        [subEvent.id]: event.target.value
+                      }))
+                    }
+                    value={subEventDrafts[subEvent.id] ?? subEvent.name}
+                  />
+                  <div className="events-sub-events__actions">
+                    {!subEvent.isUnassigned ? (
+                      <button
+                        className="button-link button-link--inline-secondary"
+                        onClick={() => handleSaveSubEventName(subEvent.id)}
+                        type="button"
+                      >
+                        Save
+                      </button>
+                    ) : null}
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      disabled={!subEvent.canRemove}
+                      onClick={() => handleRemoveSubEvent(subEvent.id)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                <div className="events-sub-events__schedule events-sub-events__schedule--compact">
                   <div className="field">
                     <label htmlFor={`sub-event-date-${subEvent.id}`}>Date</label>
                     <input
@@ -455,8 +531,7 @@ export function EventInstanceDetailPanel({
                   </div>
                 </div>
                 <div className="events-sub-events__meta">
-                  {subEvent.isDefault ? <span className="events-chip">Template scaffold</span> : null}
-                  {subEvent.isUnassigned ? <span className="events-chip">Fallback lane</span> : null}
+                  {subEvent.isDefault ? <span className="events-chip">Included by event type</span> : null}
                   {subEvent.actionUsageCount > 0 ? (
                     <span className="events-chip">{subEvent.actionUsageCount} action item{subEvent.actionUsageCount === 1 ? "" : "s"}</span>
                   ) : null}
@@ -468,28 +543,35 @@ export function EventInstanceDetailPanel({
                   <div className="field__hint">{subEvent.removeBlockReason}</div>
                 ) : null}
               </div>
-              <div className="events-sub-events__actions">
-                {!subEvent.isUnassigned ? (
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    onClick={() => handleSaveSubEventName(subEvent.id)}
-                    type="button"
-                  >
-                    Save
-                  </button>
-                ) : null}
-                <button
-                  className="button-link button-link--inline-secondary"
-                  disabled={!subEvent.canRemove}
-                  onClick={() => handleRemoveSubEvent(subEvent.id)}
-                  type="button"
-                >
-                  Remove
-                </button>
-              </div>
             </div>
           ))}
         </div>
+
+        {fallbackLane ? (
+          <div className="events-fallback-lane">
+            <div className="events-fallback-lane__header">
+              <div>
+                <div className="events-detail-card__section-title">Catch-All Lane</div>
+                <div className="field__hint">
+                  Keep this fallback lane in place so new work always has a safe place to land before it is assigned to a sub-event.
+                </div>
+              </div>
+              <span className="events-chip">Fallback lane</span>
+            </div>
+            <div className="events-sub-events__meta">
+              <span className="events-chip">{fallbackLane.name}</span>
+              {fallbackLane.actionUsageCount > 0 ? (
+                <span className="events-chip">{fallbackLane.actionUsageCount} action item{fallbackLane.actionUsageCount === 1 ? "" : "s"}</span>
+              ) : null}
+              {fallbackLane.collateralUsageCount > 0 ? (
+                <span className="events-chip">{fallbackLane.collateralUsageCount} collateral item{fallbackLane.collateralUsageCount === 1 ? "" : "s"}</span>
+              ) : null}
+            </div>
+            {fallbackLane.removeBlockReason ? (
+              <div className="field__hint">{fallbackLane.removeBlockReason}</div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="events-sub-events__create">
           <div className="field field--wide">
@@ -545,7 +627,9 @@ export function EventInstanceDetailPanel({
           </button>
         </div>
       </div>
-    </section>
+        </section>
+      </div>
+    </aside>
   );
 }
 
@@ -587,4 +671,16 @@ function formatScheduleStatus(status: "none" | "partial" | "scheduled") {
   }
 
   return "Sub-event schedule still needed";
+}
+
+function formatSetupStepStatus(status: "needs_attention" | "ready_next" | "done") {
+  if (status === "done") {
+    return "Done";
+  }
+
+  if (status === "ready_next") {
+    return "Ready next";
+  }
+
+  return "Needs attention";
 }
