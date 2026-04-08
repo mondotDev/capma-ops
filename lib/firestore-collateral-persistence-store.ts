@@ -433,7 +433,8 @@ function isSponsorPlacementsMap(
 
     return placements.every((placement) =>
       normalizeSponsorPlacement(placement as Partial<SponsorPlacement>, {
-        eventInstances
+        eventInstances,
+        eventSubEvents
       }) !== null
     );
   });

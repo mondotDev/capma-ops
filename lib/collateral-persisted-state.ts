@@ -68,7 +68,8 @@ export function normalizePersistedCollateralState(
   const sponsorPlacementsByInstance = normalizeSponsorPlacementsByInstance(
     state.sponsorPlacementsByInstance,
     {
-      eventInstances: normalizedEventInstances
+      eventInstances: normalizedEventInstances,
+      eventSubEvents
     }
   );
 

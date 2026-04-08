@@ -737,21 +737,50 @@ export function CollateralView({
   function handleGenerateSponsorFulfillment() {
     const result = generateSponsorFulfillmentItems(resolvedActiveEventInstanceId);
 
-    if (result.created === 0 && result.skipped === 0) {
-      setSetupFeedback("No sponsor deadline action items were generated yet. Add at least one sponsor placement first.");
+    if (
+      result.createdActions === 0 &&
+      result.updatedActions === 0 &&
+      result.createdCollateral === 0 &&
+      result.matchedCollateral === 0 &&
+      result.skipped === 0
+    ) {
+      setSetupFeedback("No sponsor work was generated yet. Add at least one sponsor placement first.");
       return;
     }
 
-    if (result.created === 0) {
-      setSetupFeedback("Matching sponsor deadline action items already exist in Action View, or the current sponsor setup is still incomplete. Nothing new was generated.");
-      return;
+    const messageParts = [];
+
+    if (result.createdActions > 0) {
+      messageParts.push(
+        `${result.createdActions} sponsor deadline action item${result.createdActions === 1 ? "" : "s"} created in Action View`
+      );
     }
 
-    setSetupFeedback(
-      result.skipped > 0
-        ? `${result.created} sponsor deadline action item${result.created === 1 ? "" : "s"} created in Action View. ${result.skipped} deliverable${result.skipped === 1 ? "" : "s"} skipped because matching action items already exist or setup is incomplete.`
-        : `${result.created} sponsor deadline action item${result.created === 1 ? "" : "s"} created in Action View.`
-    );
+    if (result.updatedActions > 0) {
+      messageParts.push(
+        `${result.updatedActions} existing sponsor action item${result.updatedActions === 1 ? "" : "s"} linked to collateral`
+      );
+    }
+
+    if (result.matchedCollateral > 0) {
+      messageParts.push(
+        `${result.matchedCollateral} deliverable${result.matchedCollateral === 1 ? "" : "s"} matched existing collateral`
+      );
+    }
+
+    if (result.createdCollateral > 0) {
+      messageParts.push(
+        `${result.createdCollateral} fallback collateral item${result.createdCollateral === 1 ? "" : "s"} created`
+      );
+    }
+
+    if (result.skipped > 0) {
+      messageParts.push(
+        `${result.skipped} deliverable${result.skipped === 1 ? "" : "s"} skipped because matching action items already exist or setup is incomplete`
+      );
+    }
+
+    setSetupFeedback(messageParts.join(". ") + ".");
   }
 
   function requestEventInstanceSwitch(nextEventInstanceId: string) {

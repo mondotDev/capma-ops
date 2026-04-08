@@ -5,6 +5,14 @@ import type { UpdateEventInstanceInput, UpsertEventSubEventInput } from "@/compo
 import { type EventOnboardingSelectedInstance } from "@/lib/events/event-onboarding";
 import { getDefaultDatesForEventDateMode, validateEventInstanceCreationInput } from "@/lib/event-type-definitions";
 import { formatShortDate } from "@/lib/ops-utils";
+import {
+  createSponsorPlacementDraft,
+  getSponsorFulfillmentTaskTitle,
+  getSponsorPlacementDeliverables,
+  getSponsorPlacementLabel,
+  getSponsorPlacementOptions,
+  type SponsorPlacement
+} from "@/lib/sponsor-fulfillment";
 import type { EventDateMode } from "@/lib/event-instances";
 
 type EventInstanceDetailPanelProps = {
@@ -16,6 +24,16 @@ type EventInstanceDetailPanelProps = {
   onUpdateInstance: (instanceId: string, updates: UpdateEventInstanceInput) => boolean;
   onUpsertSubEvent: (instanceId: string, input: UpsertEventSubEventInput) => string | null;
   onRemoveSubEvent: (instanceId: string, subEventId: string) => boolean;
+  sponsorPlacements: SponsorPlacement[];
+  onUpsertSponsorPlacement: (instanceId: string, placement: SponsorPlacement) => void;
+  onRemoveSponsorPlacement: (instanceId: string, placementId: string) => void;
+  onGenerateSponsorFulfillment: (instanceId: string) => {
+    createdActions: number;
+    updatedActions: number;
+    matchedCollateral: number;
+    createdCollateral: number;
+    skipped: number;
+  };
 };
 
 type DetailFormState = {
@@ -34,7 +52,11 @@ export function EventInstanceDetailPanel({
   onSetActive,
   onUpdateInstance,
   onUpsertSubEvent,
-  onRemoveSubEvent
+  onRemoveSubEvent,
+  sponsorPlacements,
+  onUpsertSponsorPlacement,
+  onRemoveSponsorPlacement,
+  onGenerateSponsorFulfillment
 }: EventInstanceDetailPanelProps) {
   const [formState, setFormState] = useState<DetailFormState | null>(null);
   const [subEventDrafts, setSubEventDrafts] = useState<Record<string, string>>({});
@@ -116,6 +138,10 @@ export function EventInstanceDetailPanel({
   }
 
   const { instance, definition, eventFamilyName, scheduleStatus } = selectedInstance;
+  const supportsSponsorSetup = definition?.supportsSponsorSetup ?? false;
+  const sponsorPlacementOptions = supportsSponsorSetup
+    ? getSponsorPlacementOptions(instance.eventTypeId)
+    : [];
   const {
     fallbackLane,
     isCollateralReady,
@@ -184,6 +210,77 @@ export function EventInstanceDetailPanel({
         ? "Sub-event removed."
         : "This sub-event could not be removed because it is scaffolded or already in use."
     );
+  }
+
+  function handleAddSponsorPlacement() {
+    onUpsertSponsorPlacement(instance.id, createSponsorPlacementDraft(instance.id, instance.eventTypeId));
+    setFeedback("Sponsor placement added.");
+  }
+
+  function handleSponsorPlacementChange(
+    placementId: string,
+    field: keyof Pick<SponsorPlacement, "sponsorName" | "placement" | "linkedSubEventId" | "logoReceived" | "notes" | "isActive">,
+    value: string | boolean | undefined
+  ) {
+    const placement = sponsorPlacements.find((entry) => entry.id === placementId);
+
+    if (!placement) {
+      return;
+    }
+
+    onUpsertSponsorPlacement(instance.id, {
+      ...placement,
+      [field]: value
+    });
+  }
+
+  function handleGenerateSponsorWork() {
+    const result = onGenerateSponsorFulfillment(instance.id);
+
+    if (
+      result.createdActions === 0 &&
+      result.updatedActions === 0 &&
+      result.createdCollateral === 0 &&
+      result.matchedCollateral === 0 &&
+      result.skipped === 0
+    ) {
+      setFeedback("No sponsor work was generated yet. Add at least one active sponsor placement first.");
+      return;
+    }
+
+    const parts = [];
+
+    if (result.createdActions > 0) {
+      parts.push(
+        `${result.createdActions} sponsor action item${result.createdActions === 1 ? "" : "s"} created in Action View`
+      );
+    }
+
+    if (result.updatedActions > 0) {
+      parts.push(
+        `${result.updatedActions} existing sponsor action item${result.updatedActions === 1 ? "" : "s"} linked to collateral`
+      );
+    }
+
+    if (result.matchedCollateral > 0) {
+      parts.push(
+        `${result.matchedCollateral} deliverable${result.matchedCollateral === 1 ? "" : "s"} matched existing collateral`
+      );
+    }
+
+    if (result.createdCollateral > 0) {
+      parts.push(
+        `${result.createdCollateral} fallback collateral item${result.createdCollateral === 1 ? "" : "s"} created`
+      );
+    }
+
+    if (result.skipped > 0) {
+      parts.push(
+        `${result.skipped} deliverable${result.skipped === 1 ? "" : "s"} skipped because matching action work already exists or setup is incomplete`
+      );
+    }
+
+    setFeedback(parts.join(". ") + ".");
   }
 
   return (
@@ -659,6 +756,138 @@ export function EventInstanceDetailPanel({
           </div>
         ) : null}
       </div>
+
+      {supportsSponsorSetup ? (
+        <div className="events-detail-card__section">
+          <div className="events-detail-card__section-title">Sponsor Placements</div>
+          <div className="field__hint">
+            Add sponsor placements for this event instance, then generate sponsor execution work into Action View. Physical deliverables will reuse matching collateral when it already exists.
+          </div>
+          <div className="sponsor-setup__rows sponsor-setup__rows--events">
+            {sponsorPlacements.length > 0 ? (
+              sponsorPlacements.map((placement) => {
+                const deliverables = getSponsorPlacementDeliverables(placement.placement, instance.eventTypeId);
+                return (
+                  <div className="sponsor-setup__row sponsor-setup__row--events" key={placement.id}>
+                    <div className="field">
+                      <label htmlFor={`events-sponsor-name-${placement.id}`}>Sponsor</label>
+                      <input
+                        className="field-control"
+                        id={`events-sponsor-name-${placement.id}`}
+                        onChange={(event) => handleSponsorPlacementChange(placement.id, "sponsorName", event.target.value)}
+                        placeholder="Sponsor name"
+                        value={placement.sponsorName}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`events-sponsor-placement-${placement.id}`}>Placement</label>
+                      <select
+                        className="field-control"
+                        id={`events-sponsor-placement-${placement.id}`}
+                        onChange={(event) => handleSponsorPlacementChange(placement.id, "placement", event.target.value)}
+                        value={placement.placement}
+                      >
+                        {sponsorPlacementOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`events-sponsor-linked-sub-event-${placement.id}`}>Linked Sub-Event</label>
+                      <select
+                        className="field-control"
+                        id={`events-sponsor-linked-sub-event-${placement.id}`}
+                        onChange={(event) =>
+                          handleSponsorPlacementChange(
+                            placement.id,
+                            "linkedSubEventId",
+                            event.target.value || undefined
+                          )
+                        }
+                        value={placement.linkedSubEventId ?? ""}
+                      >
+                        <option value="">Event-wide / no linked sub-event</option>
+                        {scheduledSubEvents.map((subEvent) => (
+                          <option key={subEvent.id} value={subEvent.id}>
+                            {subEvent.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field field--wide">
+                      <label className="checkbox-field" htmlFor={`events-sponsor-logo-${placement.id}`}>
+                        <input
+                          checked={placement.logoReceived}
+                          id={`events-sponsor-logo-${placement.id}`}
+                          onChange={(event) => handleSponsorPlacementChange(placement.id, "logoReceived", event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>{placement.logoReceived ? "Logo received" : "Still waiting on sponsor logo"}</span>
+                      </label>
+                      <label className="checkbox-field" htmlFor={`events-sponsor-active-${placement.id}`}>
+                        <input
+                          checked={placement.isActive}
+                          id={`events-sponsor-active-${placement.id}`}
+                          onChange={(event) => handleSponsorPlacementChange(placement.id, "isActive", event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span>{placement.isActive ? "Active placement" : "Inactive placement"}</span>
+                      </label>
+                    </div>
+                    <div className="field field--wide">
+                      <label htmlFor={`events-sponsor-notes-${placement.id}`}>Notes</label>
+                      <textarea
+                        className="field-control"
+                        id={`events-sponsor-notes-${placement.id}`}
+                        onChange={(event) => handleSponsorPlacementChange(placement.id, "notes", event.target.value)}
+                        placeholder={`Optional context for ${getSponsorPlacementLabel(placement.placement, instance.eventTypeId).toLowerCase()}`}
+                        rows={2}
+                        value={placement.notes ?? ""}
+                      />
+                      {placement.sponsorName.trim() ? (
+                        <div className="field__hint">
+                          Generates {deliverables.length} sponsor item{deliverables.length === 1 ? "" : "s"}, including{" "}
+                          {deliverables
+                            .slice(0, 2)
+                            .map((deliverable) =>
+                              getSponsorFulfillmentTaskTitle({
+                                sponsorName: placement.sponsorName.trim(),
+                                deliverableName: deliverable.deliverableName
+                              })
+                            )
+                            .join(" • ")}
+                          {deliverables.length > 2 ? ` + ${deliverables.length - 2} more` : ""}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="sponsor-setup__actions">
+                      <button
+                        className="button-link button-link--inline-secondary"
+                        onClick={() => onRemoveSponsorPlacement(instance.id, placement.id)}
+                        type="button"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="sponsor-setup__empty">No sponsor placements set up yet for this event instance.</div>
+            )}
+          </div>
+          <div className="events-detail-card__section-actions sponsor-setup__footer sponsor-setup__footer--events">
+            <button className="button-link button-link--inline-secondary" onClick={handleAddSponsorPlacement} type="button">
+              Add Placement
+            </button>
+            <button className="topbar__button" onClick={handleGenerateSponsorWork} type="button">
+              Generate Sponsor Work
+            </button>
+          </div>
+        </div>
+      ) : null}
         </section>
       </div>
     </aside>

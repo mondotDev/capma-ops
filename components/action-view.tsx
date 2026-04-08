@@ -55,7 +55,7 @@ import {
   WAITING_ON_SUGGESTIONS,
   WORKSTREAM_OPTIONS
 } from "@/lib/ops-utils";
-import { getSponsorCollateralPromotionDefaults } from "@/lib/sponsor-fulfillment";
+import { getSponsorCollateralLinkFromItem, getSponsorCollateralPromotionDefaults } from "@/lib/sponsor-fulfillment";
 
 const FILTER_OPTIONS: { label: string; value: ActionFilter }[] = [
   { label: "All", value: "all" },
@@ -121,7 +121,7 @@ export function ActionView({
     setIssueStatus,
     updateItem
   } = useAppActions();
-  const { nativeActionItemRecovery, nativeActionItemStoreMode } = useAppStateValues();
+  const { collateralItems, nativeActionItemRecovery, nativeActionItemStoreMode } = useAppStateValues();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -222,10 +222,31 @@ export function ActionView({
       selectedItem
         ? getSponsorCollateralPromotionDefaults({
             item: selectedItem,
-            eventSubEvents: selectedItemSubEvents
+            eventSubEvents: selectedItemSubEvents,
+            collateralItems
           })
         : null,
-    [selectedItem, selectedItemSubEvents]
+    [collateralItems, selectedItem, selectedItemSubEvents]
+  );
+  const linkedSponsorCollateralItem = useMemo(
+    () =>
+      selectedItem && selectedSponsorCollateralPromotion
+        ? (() => {
+            const explicitLink = getSponsorCollateralLinkFromItem(selectedItem);
+
+            if (explicitLink) {
+              return collateralItems.find((item) => item.id === explicitLink.collateralItemId) ?? null;
+            }
+
+            return collateralItems.find(
+              (item) =>
+                item.eventInstanceId === selectedSponsorCollateralPromotion.eventInstanceId &&
+                item.subEventId === selectedSponsorCollateralPromotion.subEventId &&
+                item.itemName === selectedSponsorCollateralPromotion.collateralItemName
+            ) ?? null;
+          })()
+        : null,
+    [collateralItems, selectedItem, selectedSponsorCollateralPromotion]
   );
   const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
@@ -1686,26 +1707,38 @@ export function ActionView({
                     <div className="field field--wide action-drawer__sponsor-bridge">
                       <label>Sponsor Collateral</label>
                       <div className="field-static action-drawer__sponsor-bridge-copy">
-                        This sponsor deliverable may need a collateral item:
+                        {linkedSponsorCollateralItem ? "This sponsor deliverable is already tied to collateral:" : "This sponsor deliverable may need a collateral item:"}
                         {" "}
                         <strong>{selectedSponsorCollateralPromotion.collateralItemName}</strong>
                       </div>
                       <div className="field-hint">
-                        Create a prefilled collateral draft in Collateral.
-                        {selectedSponsorCollateralPromotion.subEventName
-                          ? ` It will open in ${selectedSponsorCollateralPromotion.subEventName}.`
-                          : " It will open as Unassigned so you can route it manually."}
-                        {" "}
-                        The sponsor action item stays open.
+                        {linkedSponsorCollateralItem
+                          ? `Open the linked collateral item${selectedSponsorCollateralPromotion.subEventName ? ` in ${selectedSponsorCollateralPromotion.subEventName}` : ""}.`
+                          : `Create a prefilled collateral draft in Collateral.${selectedSponsorCollateralPromotion.subEventName ? ` It will open in ${selectedSponsorCollateralPromotion.subEventName}.` : " It will open as Unassigned so you can route it manually."} The sponsor action item stays open.`}
                       </div>
                       <div className="action-drawer__sponsor-bridge-actions">
-                        <button
-                          className="button-link button-link--inline-secondary"
-                          onClick={() => handleCreateCollateralFromSponsor(selectedItem)}
-                          type="button"
-                        >
-                          Create in Collateral
-                        </button>
+                        {linkedSponsorCollateralItem ? (
+                          <button
+                            className="button-link button-link--inline-secondary"
+                            onClick={() =>
+                              openCollateralExecutionItem(
+                                linkedSponsorCollateralItem.eventInstanceId,
+                                linkedSponsorCollateralItem.id
+                              )
+                            }
+                            type="button"
+                          >
+                            Open Linked Collateral
+                          </button>
+                        ) : (
+                          <button
+                            className="button-link button-link--inline-secondary"
+                            onClick={() => handleCreateCollateralFromSponsor(selectedItem)}
+                            type="button"
+                          >
+                            Create in Collateral
+                          </button>
+                        )}
                       </div>
                     </div>
                   ) : null}

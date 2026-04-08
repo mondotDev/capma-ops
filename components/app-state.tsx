@@ -56,7 +56,9 @@ import {
 import { buildCreatedEventInstanceState } from "@/lib/event-type-definitions";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import {
+  appendSponsorCollateralLinkNoteEntries,
   buildSponsorFulfillmentGenerationResult,
+  getSponsorCollateralLinkFromItem,
   type SponsorPlacement,
   type SponsorPlacementsByInstance
 } from "@/lib/sponsor-fulfillment";
@@ -153,7 +155,13 @@ type AppStateContextValue = {
   removeEventSubEvent: (instanceId: string, subEventId: string) => boolean;
   upsertSponsorPlacement: (instanceId: string, placement: SponsorPlacement) => void;
   removeSponsorPlacement: (instanceId: string, placementId: string) => void;
-  generateSponsorFulfillmentItems: (instanceId: string) => { created: number; skipped: number };
+  generateSponsorFulfillmentItems: (instanceId: string) => {
+    createdActions: number;
+    updatedActions: number;
+    matchedCollateral: number;
+    createdCollateral: number;
+    skipped: number;
+  };
   setDefaultOwnerForNewItems: (owner: string) => void;
   setWorkstreamSchedules: (schedules: WorkstreamSchedule[]) => void;
   setIssueStatus: (issue: string, status: IssueStatus) => CompletePublicationIssueResult;
@@ -1345,19 +1353,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const eventInstance = eventInstancesRef.current.find((entry) => entry.id === instanceId) ?? null;
 
     if (!eventInstance) {
-      return { created: 0, skipped: 0 };
+      return {
+        createdActions: 0,
+        updatedActions: 0,
+        matchedCollateral: 0,
+        createdCollateral: 0,
+        skipped: 0
+      };
     }
 
     const result = buildSponsorFulfillmentGenerationResult({
       placements: sponsorPlacementsByInstanceRef.current[instanceId] ?? [],
       eventInstance,
       existingItems: itemsRef.current,
+      existingCollateralItems: collateralItemsRef.current,
       defaultOwner: defaultOwnerForNewItemsRef.current,
       eventSubEvents: eventSubEventsRef.current
     });
 
-    if (result.created.length === 0) {
-      return { created: 0, skipped: result.skipped };
+    if (result.plans.length === 0) {
+      return {
+        createdActions: 0,
+        updatedActions: 0,
+        matchedCollateral: 0,
+        createdCollateral: 0,
+        skipped: result.skipped
+      };
     }
 
     enablePersistence();
@@ -1365,12 +1386,75 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       clearNativeActionItemRecovery();
     }
 
+    let nextCollateralItems = collateralItemsRef.current;
+    let createdCollateral = 0;
+    const collateralLinkBySourceKey = new Map<string, ReturnType<typeof getSponsorCollateralLinkFromItem>>();
+
+    for (const fallbackCollateral of result.fallbackCollateralToCreate) {
+      nextCollateralItems = localCollateralStore.create(nextCollateralItems, fallbackCollateral.input, getCollateralContext());
+      const createdItem = nextCollateralItems[0] ?? null;
+
+      if (!createdItem) {
+        continue;
+      }
+
+      createdCollateral += 1;
+      collateralLinkBySourceKey.set(fallbackCollateral.sourceKey, {
+        collateralItemId: createdItem.id,
+        collateralItemName: createdItem.itemName,
+        subEventId: createdItem.subEventId,
+        subEventName: eventSubEventsRef.current.find((subEvent) => subEvent.id === createdItem.subEventId)?.name ?? null,
+        source: "fallback_created"
+      });
+    }
+
+    if (createdCollateral > 0) {
+      setCollateralItems(nextCollateralItems);
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(getPersistedCollateralState({ collateralItems: nextCollateralItems }), getCollateralPersistenceContext())
+          .then(() => undefined)
+      );
+    }
+
+    let updatedActions = 0;
     setItems((current) => {
       const context = getNativeActionItemContext();
-      const nextItems = result.created.reduce(
-        (accumulator, item) => nativeActionItemMutator.create(accumulator, item, context),
-        current
-      );
+      let nextItems = current;
+
+      for (const plan of result.plans) {
+        const resolvedCollateralLink =
+          plan.collateralLink ?? collateralLinkBySourceKey.get(plan.sourceKey) ?? null;
+
+        if (plan.existingActionItemId) {
+          const existingItem = nextItems.find((item) => item.id === plan.existingActionItemId) ?? null;
+
+          if (!existingItem) {
+            continue;
+          }
+
+          const nextNoteEntries = appendSponsorCollateralLinkNoteEntries(existingItem.noteEntries, resolvedCollateralLink);
+
+          if (nextNoteEntries !== existingItem.noteEntries) {
+            nextItems = nativeActionItemMutator.update(
+              nextItems,
+              existingItem.id,
+              { noteEntries: nextNoteEntries },
+              context
+            );
+            updatedActions += 1;
+          }
+
+          continue;
+        }
+
+        const nextActionItem = {
+          ...plan.actionItem,
+          noteEntries: appendSponsorCollateralLinkNoteEntries(plan.actionItem.noteEntries ?? [], resolvedCollateralLink)
+        };
+        nextItems = nativeActionItemMutator.create(nextItems, nextActionItem, context);
+      }
+
       enqueueNativeActionItemStoreWrite(() =>
         nativeActionItemStore.replaceAll(nextItems, context).then(() => undefined)
       );
@@ -1378,14 +1462,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     });
 
     return {
-      created: result.created.length,
+      createdActions: result.created.length,
+      updatedActions,
+      matchedCollateral: result.matchedExistingCollateralCount,
+      createdCollateral,
       skipped: result.skipped
     };
   }, [
     clearNativeActionItemRecovery,
+    collateralPersistenceStore,
     enablePersistence,
+    enqueueCollateralPersistenceWrite,
     enqueueNativeActionItemStoreWrite,
+    getCollateralContext,
+    getCollateralPersistenceContext,
     getNativeActionItemContext,
+    getPersistedCollateralState,
     nativeActionItemStore,
     nativeActionItemStoreMode
   ]);

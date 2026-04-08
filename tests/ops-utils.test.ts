@@ -78,6 +78,7 @@ import {
 } from "../lib/native-action-item-bootstrap";
 import {
   buildSponsorFulfillmentGenerationResult,
+  getSponsorCollateralLinkFromItem,
   getSponsorCollateralPromotionDefaults,
   getSponsorPlacementDeliverables,
   getSponsorPlacementLabel,
@@ -4421,6 +4422,8 @@ test("sponsor placements normalize only for valid instance scope and supported p
   assert.equal(validPlacement?.sponsorName, "Acme Pest");
   assert.equal(validPlacement?.placement, "Premier");
   assert.equal(validPlacement?.logoReceived, true);
+  assert.equal(validPlacement?.isActive, true);
+  assert.equal(validPlacement?.linkedSubEventId, undefined);
 
   const invalidPlacement = normalizeSponsorPlacement(
     {
@@ -4435,6 +4438,27 @@ test("sponsor placements normalize only for valid instance scope and supported p
   );
 
   assert.equal(invalidPlacement, null);
+});
+
+test("sponsor placements keep linked sub-event anchors when they belong to the same instance", () => {
+  const validPlacement = normalizeSponsorPlacement(
+    {
+      id: "placement-3",
+      eventInstanceId: "legislative-day-2026",
+      sponsorName: "Acme Pest",
+      placement: "Wed Night Reception",
+      linkedSubEventId: "leg-day-wednesday-reception",
+      isActive: false,
+      logoReceived: true
+    },
+    {
+      eventInstances: initialEventInstances,
+      eventSubEvents: initialEventSubEvents
+    }
+  );
+
+  assert.equal(validPlacement?.linkedSubEventId, "leg-day-wednesday-reception");
+  assert.equal(validPlacement?.isActive, false);
 });
 
 test("sponsor fulfillment title preview matches radar-style action item naming", () => {
@@ -4560,6 +4584,76 @@ test("sponsor generation uses scheduled sub-event dates when the event type defi
   );
 });
 
+test("sponsor generation matches existing collateral before planning fallback collateral creation", () => {
+  const generation = buildSponsorFulfillmentGenerationResult({
+    placements: [
+      {
+        id: "placement-1",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "Acme Pest",
+        placement: "Thursday Briefing Breakfast",
+        linkedSubEventId: "leg-day-thursday-breakfast",
+        logoReceived: true
+      }
+    ],
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [],
+    existingCollateralItems: [
+      {
+        id: "briefing-breakfast-table-tents",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-thursday-breakfast",
+        itemName: "Briefing Breakfast Table Tents",
+        status: "Backlog",
+        owner: "Melissa",
+        blockedBy: "",
+        dueDate: "2026-04-23",
+        printer: "",
+        quantity: "",
+        updateType: "",
+        noteEntries: [],
+        lastUpdated: "2026-04-01"
+      }
+    ],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.equal(generation.matchedExistingCollateralCount > 0, true);
+  assert.equal(
+    generation.plans.some(
+      (plan) =>
+        plan.collateralLink?.collateralItemId === "briefing-breakfast-table-tents" &&
+        plan.actionItem.title === "Acme Pest - Table Tents Displayed"
+    ),
+    true
+  );
+});
+
+test("sponsor generation plans fallback collateral when no production target exists", () => {
+  const generation = buildSponsorFulfillmentGenerationResult({
+    placements: [
+      {
+        id: "placement-1",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "Acme Pest",
+        placement: "Golf Hole",
+        linkedSubEventId: "leg-day-golf-tournament",
+        logoReceived: true
+      }
+    ],
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [],
+    existingCollateralItems: [],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.equal(generation.fallbackCollateralToCreate.length, 1);
+  assert.equal(generation.fallbackCollateralToCreate[0]?.itemName, "Golf Hole Signs");
+  assert.equal(generation.fallbackCollateralToCreate[0]?.subEventId, "leg-day-golf-tournament");
+});
+
 test("sponsor collateral promotion defaults detect physical deliverables and map clear sub-events", () => {
   const defaults = getSponsorCollateralPromotionDefaults({
     item: createItem({
@@ -4580,6 +4674,26 @@ test("sponsor collateral promotion defaults detect physical deliverables and map
   assert.equal(defaults?.collateralItemName, "Briefing Breakfast Table Tents");
   assert.equal(defaults?.subEventId, "leg-day-thursday-breakfast");
   assert.equal(defaults?.subEventName, "Thursday Breakfast");
+});
+
+test("sponsor collateral link markers round-trip from action item notes", () => {
+  const item = createItem({
+    title: "Acme Pest - Table Tents Displayed",
+    type: "Deliverable",
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026",
+    noteEntries: [
+      createActionNoteEntry(
+        'Sponsor collateral link: {"collateralItemId":"briefing-breakfast-table-tents","collateralItemName":"Briefing Breakfast Table Tents","subEventId":"leg-day-thursday-breakfast","subEventName":"Thursday Breakfast","source":"matched"}.'
+      )!
+    ]
+  });
+
+  const link = getSponsorCollateralLinkFromItem(item);
+
+  assert.equal(link?.collateralItemId, "briefing-breakfast-table-tents");
+  assert.equal(link?.collateralItemName, "Briefing Breakfast Table Tents");
+  assert.equal(link?.source, "matched");
 });
 
 test("sponsor collateral promotion defaults ignore non-physical sponsor deliverables", () => {

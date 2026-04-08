@@ -23,15 +23,19 @@ export function EventsView() {
     eventInstances,
     eventSubEvents,
     eventTypes,
-    items
+    items,
+    sponsorPlacementsByInstance
   } = useAppStateValues();
   const {
     applyDefaultTemplateToInstance,
     createEventInstance,
+    generateSponsorFulfillmentItems,
     removeEventSubEvent,
+    removeSponsorPlacement,
     setActiveEventInstanceId,
     updateEventInstance,
-    upsertEventSubEvent
+    upsertEventSubEvent,
+    upsertSponsorPlacement
   } = useAppActions();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
@@ -248,6 +252,9 @@ export function EventsView() {
               setHasDismissedDrawer(false);
               setFeedback("Active event context updated.");
             }}
+            onGenerateSponsorFulfillment={generateSponsorFulfillmentItems}
+            onRemoveSponsorPlacement={removeSponsorPlacement}
+            onUpsertSponsorPlacement={upsertSponsorPlacement}
             onUpdateInstance={(instanceId, updates) => {
               const didUpdate = updateEventInstance(instanceId, updates);
               if (didUpdate) {
@@ -263,6 +270,7 @@ export function EventsView() {
               return nextId;
             }}
             selectedInstance={onboardingView.selectedInstance}
+            sponsorPlacements={sponsorPlacementsByInstance[onboardingView.selectedInstance.instance.id] ?? []}
           />
         </>
       ) : null}
