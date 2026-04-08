@@ -189,6 +189,7 @@ export function EventsView() {
                   {group.instances.map((instance) => {
                     const isSelected = instance.id === onboardingView.selectedInstance?.instance.id;
                     const scheduleStatus = getInstanceScheduleStatus(instance.id, eventSubEvents);
+                    const subEventCount = getInstanceSubEventCount(instance.id, eventSubEvents);
                     return (
                       <article
                         className={`events-instance-card${isSelected ? " events-instance-card--selected" : ""}`}
@@ -208,6 +209,7 @@ export function EventsView() {
                           <div className="events-instance-card__meta">
                             <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
                             {instance.location ? <span>{instance.location}</span> : null}
+                            <span>{subEventCount} sub-event{subEventCount === 1 ? "" : "s"}</span>
                             <span>{group.definition.collateralTemplatePackId ? "Collateral pack available" : "Can start empty"}</span>
                             <span>{formatScheduleStatus(scheduleStatus)}</span>
                           </div>
@@ -325,6 +327,12 @@ function getInstanceScheduleStatus(instanceId: string, eventSubEvents: Array<{ e
   }
 
   return "partial";
+}
+
+function getInstanceSubEventCount(instanceId: string, eventSubEvents: Array<{ eventInstanceId: string; id: string }>) {
+  return eventSubEvents.filter(
+    (subEvent) => subEvent.eventInstanceId === instanceId && !subEvent.id.endsWith("-unassigned")
+  ).length;
 }
 
 function formatScheduleStatus(status: "none" | "partial" | "scheduled") {

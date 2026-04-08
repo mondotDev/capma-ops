@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { UpdateEventInstanceInput, UpsertEventSubEventInput } from "@/components/app-state";
 import { type EventOnboardingSelectedInstance } from "@/lib/events/event-onboarding";
 import { getDefaultDatesForEventDateMode, validateEventInstanceCreationInput } from "@/lib/event-type-definitions";
@@ -46,6 +46,7 @@ export function EventInstanceDetailPanel({
   const [newSubEventStartTime, setNewSubEventStartTime] = useState("");
   const [newSubEventEndTime, setNewSubEventEndTime] = useState("");
   const [feedback, setFeedback] = useState("");
+  const newSubEventNameRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!selectedInstance) {
@@ -92,7 +93,7 @@ export function EventInstanceDetailPanel({
     );
     setFeedback("");
     setNewSubEventName("");
-    setNewSubEventDate("");
+    setNewSubEventDate(getDefaultNewSubEventDate(selectedInstance.instance));
     setNewSubEventStartTime("");
     setNewSubEventEndTime("");
   }, [selectedInstance]);
@@ -169,9 +170,10 @@ export function EventInstanceDetailPanel({
     );
     if (addedId) {
       setNewSubEventName("");
-      setNewSubEventDate("");
+      setNewSubEventDate(getDefaultNewSubEventDate(instance));
       setNewSubEventStartTime("");
       setNewSubEventEndTime("");
+      setTimeout(() => newSubEventNameRef.current?.focus(), 0);
     }
   }
 
@@ -447,6 +449,9 @@ export function EventInstanceDetailPanel({
 
       <div className="events-detail-card__section">
         <div className="events-detail-card__section-title">Sub-Events</div>
+        <div className="field__hint">
+          These are the sub-events for this instance. Default rows came from the event type, and you can add more rows here for this specific event as needed.
+        </div>
         <div className="events-sub-events">
           {scheduledSubEvents.map((subEvent) => (
             <div className="events-sub-events__row" key={subEvent.id}>
@@ -545,6 +550,87 @@ export function EventInstanceDetailPanel({
               </div>
             </div>
           ))}
+
+          <div className="events-sub-events__row events-sub-events__row--draft">
+            <div className="events-sub-events__main">
+              <div className="events-sub-events__top">
+                <input
+                  ref={newSubEventNameRef}
+                  className="field-control"
+                  onChange={(event) => setNewSubEventName(event.target.value)}
+                  placeholder="Add another sub-event"
+                  value={newSubEventName}
+                />
+                <div className="events-sub-events__actions">
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    disabled={!newSubEventName.trim()}
+                    onClick={handleAddSubEvent}
+                    type="button"
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    disabled={
+                      !newSubEventName.trim() &&
+                      !newSubEventDate &&
+                      !newSubEventStartTime &&
+                      !newSubEventEndTime
+                    }
+                    onClick={() => {
+                      setNewSubEventName("");
+                      setNewSubEventDate(getDefaultNewSubEventDate(instance));
+                      setNewSubEventStartTime("");
+                      setNewSubEventEndTime("");
+                      newSubEventNameRef.current?.focus();
+                    }}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="events-sub-events__schedule events-sub-events__schedule--compact">
+                <div className="field">
+                  <label htmlFor="events-new-sub-event-date">Date</label>
+                  <input
+                    className="field-control"
+                    id="events-new-sub-event-date"
+                    onChange={(event) => setNewSubEventDate(event.target.value)}
+                    type="date"
+                    value={newSubEventDate}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="events-new-sub-event-start">Start</label>
+                  <input
+                    className="field-control"
+                    id="events-new-sub-event-start"
+                    onChange={(event) => setNewSubEventStartTime(event.target.value)}
+                    type="time"
+                    value={newSubEventStartTime}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="events-new-sub-event-end">End</label>
+                  <input
+                    className="field-control"
+                    id="events-new-sub-event-end"
+                    onChange={(event) => setNewSubEventEndTime(event.target.value)}
+                    type="time"
+                    value={newSubEventEndTime}
+                  />
+                </div>
+              </div>
+              <div className="events-sub-events__meta">
+                <span className="events-chip">New for this instance</span>
+              </div>
+              <div className="field__hint">
+                Save a new row here, then keep going. After each save, a fresh blank row stays ready for the next sub-event.
+              </div>
+            </div>
+          </div>
         </div>
 
         {fallbackLane ? (
@@ -553,7 +639,7 @@ export function EventInstanceDetailPanel({
               <div>
                 <div className="events-detail-card__section-title">Catch-All Lane</div>
                 <div className="field__hint">
-                  Keep this fallback lane in place so new work always has a safe place to land before it is assigned to a sub-event.
+                  Keep this fallback lane in place so new work has a temporary place to land before you assign it to a planned or one-off sub-event.
                 </div>
               </div>
               <span className="events-chip">Fallback lane</span>
@@ -572,60 +658,6 @@ export function EventInstanceDetailPanel({
             ) : null}
           </div>
         ) : null}
-
-        <div className="events-sub-events__create">
-          <div className="field field--wide">
-            <label htmlFor="events-new-sub-event">Add Manual Sub-Event</label>
-            <input
-              className="field-control"
-              id="events-new-sub-event"
-              onChange={(event) => setNewSubEventName(event.target.value)}
-              placeholder="Example: Friday Breakfast"
-              value={newSubEventName}
-            />
-            <div className="field__hint">
-              Manual sub-events are instance-specific. They can be removed later if no Action View or Collateral work uses them.
-            </div>
-          </div>
-          <div className="field">
-            <label htmlFor="events-new-sub-event-date">Date</label>
-            <input
-              className="field-control"
-              id="events-new-sub-event-date"
-              onChange={(event) => setNewSubEventDate(event.target.value)}
-              type="date"
-              value={newSubEventDate}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="events-new-sub-event-start">Start</label>
-            <input
-              className="field-control"
-              id="events-new-sub-event-start"
-              onChange={(event) => setNewSubEventStartTime(event.target.value)}
-              type="time"
-              value={newSubEventStartTime}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="events-new-sub-event-end">End</label>
-            <input
-              className="field-control"
-              id="events-new-sub-event-end"
-              onChange={(event) => setNewSubEventEndTime(event.target.value)}
-              type="time"
-              value={newSubEventEndTime}
-            />
-          </div>
-          <button
-            className="button-link button-link--inline-secondary"
-            disabled={!newSubEventName.trim()}
-            onClick={handleAddSubEvent}
-            type="button"
-          >
-            Add Sub-Event
-          </button>
-        </div>
       </div>
         </section>
       </div>
@@ -683,4 +715,8 @@ function formatSetupStepStatus(status: "needs_attention" | "ready_next" | "done"
   }
 
   return "Needs attention";
+}
+
+function getDefaultNewSubEventDate(instance: { dates: string[]; startDate: string }) {
+  return instance.dates.find((date) => Boolean(date)) ?? instance.startDate ?? "";
 }

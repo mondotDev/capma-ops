@@ -853,6 +853,11 @@ textarea {
   background: #ffffff;
 }
 
+.events-sub-events__row--draft {
+  border-style: dashed;
+  background: #f9fbfd;
+}
+
 .events-sub-events__main {
   display: grid;
   gap: 10px;
@@ -887,12 +892,6 @@ textarea {
   align-items: flex-start;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.events-sub-events__create {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
 }
 
 .events-fallback-lane {
