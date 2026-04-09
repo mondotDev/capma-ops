@@ -4,10 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useCollateralWorkspaceReadModel } from "@/components/app-read-models";
-import {
-  CollateralProfileCard,
-  type CollateralProfileDeadlineFilter
-} from "@/components/collateral-profile-card";
+import { type CollateralProfileDeadlineFilter } from "@/components/collateral-profile-card";
 import {
   CollateralSummaryStrip,
   type CollateralSummaryFilter
@@ -39,9 +36,6 @@ import {
   getAvailableEventTypeDefinitions
 } from "@/lib/event-type-definitions";
 import {
-  SCHEDULED_WORKSTREAM_OPTIONS,
-  type WorkstreamSchedule,
-  type WorkstreamScheduleMode,
   createActionNoteEntry,
   formatShortDate,
   getOwnerOptions,
@@ -49,12 +43,8 @@ import {
 } from "@/lib/ops-utils";
 import {
   buildSponsorFulfillmentGenerationResult,
-  createSponsorPlacementDraft,
-  getSponsorPlacementOptions,
   getSponsorCollateralPromotionDefaults,
-  getSponsorPlacementDeliverables,
   getSponsorPlacementLabel,
-  getSponsorFulfillmentTaskTitle,
   supportsSponsorSetupForEventType
 } from "@/lib/sponsor-fulfillment";
 
@@ -90,7 +80,7 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
-  const { defaultOwnerForNewItems, items, sponsorPlacementsByInstance, workstreamSchedules } = useAppStateValues();
+  const { defaultOwnerForNewItems, items, sponsorPlacementsByInstance } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -98,11 +88,6 @@ export function CollateralView({
     deleteCollateralItem,
     ensureEventInstanceUnassignedSubEvent,
     setActiveEventInstanceId,
-    setCollateralProfile,
-    setWorkstreamSchedules,
-    upsertSponsorPlacement,
-    removeSponsorPlacement,
-    generateSponsorFulfillmentItems,
     updateCollateralItem
   } = useAppActions();
   const searchParams = useSearchParams();
@@ -116,7 +101,6 @@ export function CollateralView({
   const [draftCollateralItem, setDraftCollateralItem] = useState<CollateralItem | null>(null);
   const [pendingDraftDiscardIntent, setPendingDraftDiscardIntent] = useState<PendingDraftDiscardIntent>(null);
   const [setupFeedback, setSetupFeedback] = useState<string>("");
-  const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -160,19 +144,10 @@ export function CollateralView({
   const currentEventProgram = workspaceBundle.currentEventProgram;
   const defaultTemplatePack = workspaceBundle.defaultTemplatePack;
   const isSelectedEventProgramSupported = workspaceBundle.isSelectedEventProgramSupported;
-  const activeProfile = workspaceBundle.activeProfile;
-  const scheduledWorkstream = getScheduledWorkstreamForEventProgram(currentEventProgram?.name ?? "");
-  const currentProgramSchedule = scheduledWorkstream
-    ? workstreamSchedules.find((entry) => entry.workstream === scheduledWorkstream) ?? null
-    : null;
   const sponsorPlacements = sponsorPlacementsByInstance[resolvedActiveEventInstanceId] ?? [];
   const supportsSponsorSetup = selectedEventInstance
     ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
     : false;
-  const sponsorPlacementOptions = useMemo(
-    () => (selectedEventInstance ? getSponsorPlacementOptions(selectedEventInstance.eventTypeId) : []),
-    [selectedEventInstance]
-  );
   const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
   const creatableEventTypeDefinitions = useMemo(() => getAvailableEventTypeDefinitions(eventPrograms), [eventPrograms]);
   const sponsorGenerationPreview = useMemo<SponsorGenerationPreview | null>(() => {
@@ -430,10 +405,6 @@ export function CollateralView({
   const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
   const activeFilterLabel = getCollateralSummaryFilterLabel(activeSummaryFilter);
   const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
-  const showSetupPanel =
-    Boolean(selectedEventInstance) &&
-    Boolean(currentProgramSchedule || supportsSponsorSetup || activeProfile);
-
   function handleAddCollateralItem() {
     if (draftCollateralItem && draftCollateralItem.eventInstanceId === resolvedActiveEventInstanceId) {
       setSelectedId(draftCollateralItem.id);
@@ -647,140 +618,9 @@ export function CollateralView({
     setShowArchived(false);
   }
 
-  function updateWorkstreamSchedule(
-    workstream: WorkstreamSchedule["workstream"],
-    updater: (schedule: WorkstreamSchedule) => WorkstreamSchedule
-  ) {
-    setWorkstreamSchedules(
-      workstreamSchedules.map((schedule) => (schedule.workstream === workstream ? updater(schedule) : schedule))
-    );
-  }
-
-  function handleWorkstreamScheduleModeChange(
-    workstream: WorkstreamSchedule["workstream"],
-    mode: WorkstreamScheduleMode
-  ) {
-    updateWorkstreamSchedule(workstream, (schedule) => ({
-      ...schedule,
-      mode,
-      ...(mode === "multiple" && (!schedule.dates || schedule.dates.length === 0) ? { dates: [""] } : {})
-    }));
-  }
-
-  function handleWorkstreamScheduleFieldChange(
-    workstream: WorkstreamSchedule["workstream"],
-    field: "singleDate" | "startDate" | "endDate",
-    value: string
-  ) {
-    updateWorkstreamSchedule(workstream, (schedule) => ({
-      ...schedule,
-      [field]: value
-    }));
-  }
-
-  function handleWorkstreamScheduleDateChange(
-    workstream: WorkstreamSchedule["workstream"],
-    index: number,
-    value: string
-  ) {
-    updateWorkstreamSchedule(workstream, (schedule) => ({
-      ...schedule,
-      dates: (schedule.dates ?? []).map((date, dateIndex) => (dateIndex === index ? value : date))
-    }));
-  }
-
-  function handleAddWorkstreamScheduleDate(workstream: WorkstreamSchedule["workstream"]) {
-    updateWorkstreamSchedule(workstream, (schedule) => ({
-      ...schedule,
-      dates: [...(schedule.dates ?? []), ""]
-    }));
-  }
-
-  function handleRemoveWorkstreamScheduleDate(workstream: WorkstreamSchedule["workstream"], index: number) {
-    updateWorkstreamSchedule(workstream, (schedule) => {
-      const nextDates = (schedule.dates ?? []).filter((_, dateIndex) => dateIndex !== index);
-
-      return {
-        ...schedule,
-        dates: nextDates.length > 0 ? nextDates : [""]
-      };
-    });
-  }
-
-  function handleAddSponsorPlacement() {
-    upsertSponsorPlacement(
-      resolvedActiveEventInstanceId,
-      createSponsorPlacementDraft(
-        resolvedActiveEventInstanceId,
-        selectedEventInstance?.eventTypeId ?? "legislative-day"
-      )
-    );
-  }
-
-  function handleSponsorPlacementChange(
-    placementId: string,
-    field: "sponsorName" | "placement" | "logoReceived" | "notes",
-    value: string | boolean
-  ) {
-    const placement = sponsorPlacements.find((entry) => entry.id === placementId);
-
-    if (!placement) {
-      return;
-    }
-
-    upsertSponsorPlacement(resolvedActiveEventInstanceId, {
-      ...placement,
-      [field]: value
-    });
-  }
-
-  function handleGenerateSponsorFulfillment() {
-    const result = generateSponsorFulfillmentItems(resolvedActiveEventInstanceId);
-
-    if (
-      result.createdActions === 0 &&
-      result.updatedActions === 0 &&
-      result.createdCollateral === 0 &&
-      result.matchedCollateral === 0 &&
-      result.skipped === 0
-    ) {
-      setSetupFeedback("No sponsor work was generated yet. Add at least one sponsor placement first.");
-      return;
-    }
-
-    const messageParts = [];
-
-    if (result.createdActions > 0) {
-      messageParts.push(
-        `${result.createdActions} sponsor deadline action item${result.createdActions === 1 ? "" : "s"} created in Action View`
-      );
-    }
-
-    if (result.updatedActions > 0) {
-      messageParts.push(
-        `${result.updatedActions} existing sponsor action item${result.updatedActions === 1 ? "" : "s"} linked to collateral`
-      );
-    }
-
-    if (result.matchedCollateral > 0) {
-      messageParts.push(
-        `${result.matchedCollateral} deliverable${result.matchedCollateral === 1 ? "" : "s"} matched existing collateral`
-      );
-    }
-
-    if (result.createdCollateral > 0) {
-      messageParts.push(
-        `${result.createdCollateral} fallback collateral item${result.createdCollateral === 1 ? "" : "s"} created`
-      );
-    }
-
-    if (result.skipped > 0) {
-      messageParts.push(
-        `${result.skipped} deliverable${result.skipped === 1 ? "" : "s"} skipped because matching action items already exist or setup is incomplete`
-      );
-    }
-
-    setSetupFeedback(messageParts.join(". ") + ".");
+  function handleOpenSponsorSetupInEvents() {
+    setActiveEventInstanceId(resolvedActiveEventInstanceId);
+    router.push("/events");
   }
 
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
@@ -875,7 +715,7 @@ export function CollateralView({
             onClick={() => router.push("/events")}
             type="button"
           >
-            Events Setup
+            Open Events
           </button>
           <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
             Quick Create Instance
@@ -1414,336 +1254,45 @@ export function CollateralView({
         ) : null}
       </div>
 
-      {showSetupPanel ? (
-        <div className="card card--secondary collateral-secondary-setup">
-          <div className="collateral-secondary-setup__header">
+      {selectedEventInstance && supportsSponsorSetup ? (
+        <div className="card card--secondary collateral-sponsor-setup" role="status">
+          <div className="collateral-event-setup__header">
             <div>
-              <div className="card__title">SETUP & ADMIN</div>
-              <div className="collateral-secondary-setup__meta">
-                Open when you need to adjust profile dates, schedule rules, or sponsor placement setup for this instance.
+              <div className="card__title">SPONSOR PRODUCTION CONTEXT</div>
+              <div className="collateral-event-setup__meta">
+                Sponsor onboarding and generation now start in Events. Collateral stays focused on the production pieces those sponsors affect.
               </div>
             </div>
             <button
               className="button-link button-link--inline-secondary"
-              onClick={() => setIsSetupOpen((current) => !current)}
+              onClick={handleOpenSponsorSetupInEvents}
               type="button"
             >
-              {isSetupOpen ? "Hide setup" : "Show setup"}
+              Open Events
             </button>
           </div>
-          {!isSetupOpen ? (
-            <div className="collateral-secondary-setup__summary">
-              {selectedEventInstance?.eventTypeId === "legislative-day" && activeProfile ? (
-                <span>Event profile available</span>
-              ) : null}
-              {currentProgramSchedule ? (
-                <span>Schedule rules for {currentProgramSchedule.workstream}</span>
-              ) : null}
-              {supportsSponsorSetup ? (
+          {sponsorGenerationPreview ? (
+            <div className="sponsor-setup__summary" role="status">
+              <span>
+                {sponsorPlacements.length > 0
+                  ? `${sponsorPlacements.length} sponsor placement${sponsorPlacements.length === 1 ? "" : "s"} configured for this instance`
+                  : "No sponsor placements configured for this instance yet"}
+              </span>
+              {sponsorGenerationPreview.actionItemsToCreate > 0 ? (
                 <span>
-                  {sponsorPlacements.length > 0
-                    ? `${sponsorPlacements.length} sponsor placement${sponsorPlacements.length === 1 ? "" : "s"} configured`
-                    : "No sponsor placements yet"}
+                  {sponsorGenerationPreview.actionItemsToCreate} sponsor execution item{sponsorGenerationPreview.actionItemsToCreate === 1 ? "" : "s"} would flow into Action View from Events
+                </span>
+              ) : null}
+              {sponsorGenerationPreview.previewTitles.length > 0 ? (
+                <span>
+                  Upcoming sponsor work: {sponsorGenerationPreview.previewTitles.join(", ")}
                 </span>
               ) : null}
             </div>
-          ) : (
-            <div className="collateral-secondary-setup__body">
-              {selectedEventInstance?.eventTypeId === "legislative-day" && activeProfile ? (
-                <CollateralProfileCard
-                  activeProfileDeadlineFilter={activeProfileDeadlineFilter}
-                  onProfileChange={(updates) =>
-                    setCollateralProfile(resolvedActiveEventInstanceId, {
-                      ...activeProfile,
-                      ...updates
-                    })
-                  }
-                  onToggleProfileDeadlineFilter={toggleProfileDeadlineFilter}
-                  profile={activeProfile}
-                />
-              ) : null}
-
-              {selectedEventInstance && currentProgramSchedule ? (
-                <div className="card card--secondary collateral-event-setup">
-                  <div className="collateral-event-setup__header">
-                    <div>
-                      <div className="card__title">EVENT SETUP</div>
-                      <div className="collateral-event-setup__meta">
-                        Schedule rules for {currentProgramSchedule.workstream} now live with the active event instance instead of global settings.
-                      </div>
-                    </div>
-                  </div>
-                  <div className="schedule-settings">
-                    <div className="schedule-settings__row">
-                      <div className="schedule-settings__heading">
-                        <div className="schedule-settings__name">{currentProgramSchedule.workstream}</div>
-                      </div>
-
-                      <div className="schedule-settings__controls">
-                        <div className="field">
-                          <label htmlFor={`collateral-schedule-mode-${currentProgramSchedule.workstream}`}>Schedule Type</label>
-                          <select
-                            className="field-control"
-                            id={`collateral-schedule-mode-${currentProgramSchedule.workstream}`}
-                            onChange={(event) =>
-                              handleWorkstreamScheduleModeChange(
-                                currentProgramSchedule.workstream,
-                                event.target.value as WorkstreamScheduleMode
-                              )
-                            }
-                            value={currentProgramSchedule.mode}
-                          >
-                            <option value="none">None</option>
-                            <option value="single">Single day</option>
-                            <option value="range">Date range</option>
-                            <option value="multiple">Multiple dates</option>
-                          </select>
-                        </div>
-
-                        {currentProgramSchedule.mode === "single" ? (
-                          <div className="field">
-                            <label htmlFor={`collateral-schedule-single-${currentProgramSchedule.workstream}`}>Date</label>
-                            <input
-                              className="field-control"
-                              id={`collateral-schedule-single-${currentProgramSchedule.workstream}`}
-                              onChange={(event) =>
-                                handleWorkstreamScheduleFieldChange(
-                                  currentProgramSchedule.workstream,
-                                  "singleDate",
-                                  event.target.value
-                                )
-                              }
-                              type="date"
-                              value={currentProgramSchedule.singleDate ?? ""}
-                            />
-                          </div>
-                        ) : null}
-
-                        {currentProgramSchedule.mode === "range" ? (
-                          <div className="schedule-settings__range">
-                            <div className="field">
-                              <label htmlFor={`collateral-schedule-start-${currentProgramSchedule.workstream}`}>Start Date</label>
-                              <input
-                                className="field-control"
-                                id={`collateral-schedule-start-${currentProgramSchedule.workstream}`}
-                                onChange={(event) =>
-                                  handleWorkstreamScheduleFieldChange(
-                                    currentProgramSchedule.workstream,
-                                    "startDate",
-                                    event.target.value
-                                  )
-                                }
-                                type="date"
-                                value={currentProgramSchedule.startDate ?? ""}
-                              />
-                            </div>
-                            <div className="field">
-                              <label htmlFor={`collateral-schedule-end-${currentProgramSchedule.workstream}`}>End Date</label>
-                              <input
-                                className="field-control"
-                                id={`collateral-schedule-end-${currentProgramSchedule.workstream}`}
-                                onChange={(event) =>
-                                  handleWorkstreamScheduleFieldChange(
-                                    currentProgramSchedule.workstream,
-                                    "endDate",
-                                    event.target.value
-                                  )
-                                }
-                                type="date"
-                                value={currentProgramSchedule.endDate ?? ""}
-                              />
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {currentProgramSchedule.mode === "multiple" ? (
-                          <div className="schedule-settings__multiple">
-                            {(currentProgramSchedule.dates ?? [""]).map((date, index) => (
-                              <div className="schedule-settings__date-row" key={`${currentProgramSchedule.workstream}-${index}`}>
-                                <input
-                                  aria-label={`${currentProgramSchedule.workstream} date ${index + 1}`}
-                                  className="field-control"
-                                  onChange={(event) =>
-                                    handleWorkstreamScheduleDateChange(
-                                      currentProgramSchedule.workstream,
-                                      index,
-                                      event.target.value
-                                    )
-                                  }
-                                  type="date"
-                                  value={date}
-                                />
-                                <button
-                                  className="button-link button-link--inline-secondary"
-                                  onClick={() => handleRemoveWorkstreamScheduleDate(currentProgramSchedule.workstream, index)}
-                                  type="button"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
-                            <button
-                              className="button-link button-link--inline-secondary"
-                              onClick={() => handleAddWorkstreamScheduleDate(currentProgramSchedule.workstream)}
-                              type="button"
-                            >
-                              Add Date
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {selectedEventInstance && supportsSponsorSetup ? (
-                <div className="card card--secondary collateral-event-setup collateral-sponsor-setup">
-                  <div className="collateral-event-setup__header">
-                    <div>
-                      <div className="card__title">SPONSOR PLACEMENTS</div>
-                      <div className="collateral-event-setup__meta">
-                        Track sponsor placement commitments for {selectedEventInstance.name}, then generate fulfillment work into Action View.
-                      </div>
-                    </div>
-                    <button
-                      className="button-link button-link--inline-secondary"
-                      onClick={handleGenerateSponsorFulfillment}
-                      type="button"
-                    >
-                      Generate Action Items
-                    </button>
-                  </div>
-                  <div className="sponsor-setup__hint">
-                    This first slice supports Legislative Day only. Each sponsor placement expands into sponsor deadline work, and generation creates native action items in Action View. Reruns skip matching sponsor-generated work that already exists.
-                  </div>
-                  {sponsorGenerationPreview ? (
-                    <div className="sponsor-setup__summary" role="status">
-                      <span>
-                        {sponsorGenerationPreview.actionItemsToCreate > 0
-                          ? `${sponsorGenerationPreview.actionItemsToCreate} sponsor deadline action item${sponsorGenerationPreview.actionItemsToCreate === 1 ? "" : "s"} ready to generate`
-                          : sponsorGenerationPreview.readyCount > 0
-                            ? "No new sponsor deadline action items ready right now"
-                            : "Add a sponsor name to make a placement generation-ready"}
-                      </span>
-                      {sponsorGenerationPreview.skippedCount > 0 ? (
-                        <span>
-                          {sponsorGenerationPreview.skippedCount} deliverable{sponsorGenerationPreview.skippedCount === 1 ? "" : "s"} will be skipped because matching work already exists or setup is incomplete
-                        </span>
-                      ) : null}
-                      {sponsorGenerationPreview.previewTitles.length > 0 ? (
-                        <span>
-                          Next up: {sponsorGenerationPreview.previewTitles.join(" • ")}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="sponsor-setup__rows">
-                    {sponsorPlacements.length > 0 ? (
-                      sponsorPlacements.map((placement) => (
-                        <div className="sponsor-setup__row" key={placement.id}>
-                          <div className="field">
-                            <label htmlFor={`sponsor-name-${placement.id}`}>Sponsor</label>
-                            <input
-                              className="field-control"
-                              id={`sponsor-name-${placement.id}`}
-                              onChange={(event) =>
-                                handleSponsorPlacementChange(placement.id, "sponsorName", event.target.value)
-                              }
-                              placeholder="Sponsor name"
-                              value={placement.sponsorName}
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`sponsor-placement-${placement.id}`}>Placement</label>
-                            <select
-                              className="field-control"
-                              id={`sponsor-placement-${placement.id}`}
-                              onChange={(event) =>
-                                handleSponsorPlacementChange(placement.id, "placement", event.target.value)
-                              }
-                              value={placement.placement}
-                            >
-                              {sponsorPlacementOptions.map((option) => (
-                                <option key={option.id} value={option.id}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="field">
-                            <label htmlFor={`sponsor-logo-${placement.id}`}>Logo Received</label>
-                            <label className="checkbox-field" htmlFor={`sponsor-logo-${placement.id}`}>
-                              <input
-                                checked={placement.logoReceived}
-                                id={`sponsor-logo-${placement.id}`}
-                                onChange={(event) =>
-                                  handleSponsorPlacementChange(placement.id, "logoReceived", event.target.checked)
-                                }
-                                type="checkbox"
-                              />
-                              <span>{placement.logoReceived ? "Yes, logo is already in hand" : "No, still waiting on sponsor logo"}</span>
-                            </label>
-                          </div>
-                          <div className="field field--wide">
-                            <label htmlFor={`sponsor-notes-${placement.id}`}>Notes</label>
-                            <textarea
-                              className="field-control"
-                              id={`sponsor-notes-${placement.id}`}
-                              onChange={(event) =>
-                                handleSponsorPlacementChange(placement.id, "notes", event.target.value)
-                              }
-                              placeholder={`Optional context for ${getSponsorPlacementLabel(placement.placement, selectedEventInstance.eventTypeId).toLowerCase()}`}
-                              rows={2}
-                              value={placement.notes ?? ""}
-                            />
-                            {placement.sponsorName.trim() ? (
-                              <div className="field__hint">
-                                Generates {getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length} sponsor deadline item{getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length === 1 ? "" : "s"}, including{" "}
-                                {getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId)
-                                  .slice(0, 2)
-                                  .map((deliverable) =>
-                                    getSponsorFulfillmentTaskTitle({
-                                      sponsorName: placement.sponsorName.trim(),
-                                      deliverableName: deliverable.deliverableName
-                                    })
-                                  )
-                                  .join(" • ")}
-                                {getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length > 2
-                                  ? ` + ${getSponsorPlacementDeliverables(placement.placement, selectedEventInstance.eventTypeId).length - 2} more`
-                                  : ""}
-                                {!placement.logoReceived
-                                  ? ". Logo-required deliverables will start in Waiting until the sponsor logo is received."
-                                  : ""}
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="sponsor-setup__actions">
-                            <button
-                              className="button-link button-link--inline-secondary"
-                              onClick={() => removeSponsorPlacement(resolvedActiveEventInstanceId, placement.id)}
-                              type="button"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="sponsor-setup__empty">
-                        No sponsor placements set up yet for this event instance.
-                      </div>
-                    )}
-                  </div>
-                  <div className="sponsor-setup__footer">
-                    <button className="button-link button-link--inline-secondary" onClick={handleAddSponsorPlacement} type="button">
-                      Add Placement
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          )}
+          ) : null}
+          <div className="sponsor-setup__hint">
+            Use Events when you need to add sponsors, adjust placements, or rerun sponsor generation. Stay in Collateral to work the linked production assets.
+          </div>
         </div>
       ) : null}
 
@@ -1915,6 +1464,3 @@ function getCollateralReadinessClassName(tone: "warning" | "attention") {
     : "collateral-readiness__pill collateral-readiness__pill--attention";
 }
 
-function getScheduledWorkstreamForEventProgram(name: string): WorkstreamSchedule["workstream"] | null {
-  return SCHEDULED_WORKSTREAM_OPTIONS.find((option) => option === name) ?? null;
-}
