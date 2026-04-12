@@ -11,6 +11,20 @@ import type { ActionItem } from "@/lib/sample-data";
 
 export type SponsorPlacementType = string;
 
+export type SponsorOpportunityDeliverable = {
+  id: string;
+  deliverableName: string;
+  category: string;
+  channel: string;
+  timingType: string;
+  offsetDays: string;
+  fixedMonth: string;
+  eventDayOffset: string;
+  requiresLogo: boolean;
+  requiresCopy: boolean;
+  requiresApproval: boolean;
+};
+
 export type SponsorOpportunity = {
   id: string;
   eventInstanceId: string;
@@ -19,6 +33,7 @@ export type SponsorOpportunity = {
   linkedSubEventId?: string;
   isActive?: boolean;
   notes?: string;
+  deliverables?: SponsorOpportunityDeliverable[];
 };
 
 export type SponsorCommitment = {
@@ -140,7 +155,10 @@ export function ensureSponsorshipSetupForEventInstance(
 ) {
   if (currentSetup) {
     return {
-      opportunities: currentSetup.opportunities.map((opportunity) => ({ ...opportunity })),
+      opportunities: currentSetup.opportunities.map((opportunity) => ({
+        ...opportunity,
+        deliverables: opportunity.deliverables?.map((deliverable) => ({ ...deliverable })) ?? []
+      })),
       commitments: currentSetup.commitments.map((commitment) => ({ ...commitment }))
     } satisfies SponsorshipSetup;
   }
@@ -165,7 +183,8 @@ export function createSponsorOpportunityDraft(
     placementType: placementOptions[0]?.id ?? "",
     linkedSubEventId: undefined,
     isActive: true,
-    notes: ""
+    notes: "",
+    deliverables: []
   };
 }
 
@@ -230,7 +249,8 @@ export function normalizeSponsorOpportunity(
     placementType,
     linkedSubEventId: normalizeLinkedSubEventId(value.linkedSubEventId, value.eventInstanceId, input.eventSubEvents ?? []),
     isActive: normalizeIsActiveValue(value.isActive),
-    notes: typeof value.notes === "string" && value.notes.trim() ? value.notes.trim() : undefined
+    notes: typeof value.notes === "string" && value.notes.trim() ? value.notes.trim() : undefined,
+    deliverables: normalizeSponsorOpportunityDeliverables((value as Partial<SponsorOpportunity>).deliverables)
   };
 }
 
@@ -763,6 +783,60 @@ function serializeSponsorCommitmentKey(commitment: SponsorCommitment, opportunit
     placementType: opportunity.placementType,
     linkedSubEventId: commitment.linkedSubEventId ?? opportunity.linkedSubEventId ?? null
   });
+}
+
+function normalizeSponsorOpportunityDeliverables(
+  value: unknown
+): SponsorOpportunityDeliverable[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => normalizeSponsorOpportunityDeliverable(entry))
+    .filter((entry): entry is SponsorOpportunityDeliverable => entry !== null);
+}
+
+function normalizeSponsorOpportunityDeliverable(
+  value: unknown
+): SponsorOpportunityDeliverable | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const entry = value as Partial<SponsorOpportunityDeliverable>;
+
+  return {
+    id:
+      typeof entry.id === "string" && entry.id.trim().length > 0
+        ? entry.id
+        : `deliverable-${Math.random().toString(36).slice(2, 8)}`,
+    deliverableName: typeof entry.deliverableName === "string" ? entry.deliverableName : "",
+    category: typeof entry.category === "string" ? entry.category : "",
+    channel: typeof entry.channel === "string" ? entry.channel : "",
+    timingType: typeof entry.timingType === "string" ? entry.timingType : "",
+    offsetDays:
+      typeof entry.offsetDays === "string"
+        ? entry.offsetDays
+        : typeof entry.offsetDays === "number"
+          ? String(entry.offsetDays)
+          : "",
+    fixedMonth:
+      typeof entry.fixedMonth === "string"
+        ? entry.fixedMonth
+        : typeof entry.fixedMonth === "number"
+          ? String(entry.fixedMonth)
+          : "",
+    eventDayOffset:
+      typeof entry.eventDayOffset === "string"
+        ? entry.eventDayOffset
+        : typeof entry.eventDayOffset === "number"
+          ? String(entry.eventDayOffset)
+          : "",
+    requiresLogo: entry.requiresLogo === true,
+    requiresCopy: entry.requiresCopy === true,
+    requiresApproval: entry.requiresApproval === true
+  };
 }
 
 function parseSponsorFulfillmentSourceFromItem(item: ActionItem) {

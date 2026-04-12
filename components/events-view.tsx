@@ -32,9 +32,9 @@ export function EventsView() {
     sponsorshipSetupByInstance
   } = useAppStateValues();
   const {
+    addItem,
     applyDefaultTemplateToInstance,
     createEventInstance,
-    generateSponsorFulfillmentItems,
     removeEventSubEvent,
     removeSponsorCommitment,
     removeSponsorOpportunity,
@@ -149,12 +149,12 @@ export function EventsView() {
         <div>
           <h1 className="collateral-page__title">Events</h1>
           <p className="collateral-page__subtitle">
-            Use Events as the revisitable builder workspace: shape the event, add sponsors progressively, and review what will flow into Action View and Collateral before handing work off.
+            Manage event records, open an event-centered workspace, and keep setup clear before work flows into Action View and Collateral.
           </p>
         </div>
         <div className="events-page__actions">
           <button className="topbar__button" onClick={() => setIsCreateOpen(true)} type="button">
-            New Event Instance
+            Add New Event
           </button>
         </div>
       </div>
@@ -168,94 +168,111 @@ export function EventsView() {
         </div>
       ) : null}
 
-      <div className="events-page__grid">
-        <div className="events-page__aside">
-          <section className="card card--secondary events-selector-card">
-            <div className="events-selector-card__header">
-              <div className="card__title">Event Instances</div>
-              <div className="events-selector-card__copy">
-                Pick an instance to open its builder workspace. Melissa can come back here throughout the event lifecycle to revise setup, sponsors, and downstream review.
+      <section className="card card--secondary events-selector-card events-selector-card--board">
+        <div className="events-selector-card__header events-selector-card__header--board">
+          <div>
+            <div className="card__title">Event Records</div>
+            <div className="events-selector-card__copy">
+              Choose an event card to open its workspace. The selected event becomes the clear home for basics, sub-events, placements, sponsors, collateral context, and fulfillment preview.
+            </div>
+          </div>
+          <button className="button-link button-link--inline-secondary" onClick={() => setIsCreateOpen(true)} type="button">
+            Add New Event
+          </button>
+        </div>
+        {onboardingView.groups.map((group) => (
+          <section className="events-group" key={group.definition.key}>
+            <div className="events-group__header">
+              <div>
+                <div className="events-group__title-row">
+                  <div className="card__title">{group.definition.label}</div>
+                  <div className="events-group__tags">
+                    <span className="events-chip">
+                      {group.definition.supportsCollateral === false
+                        ? "No collateral pack yet"
+                        : group.definition.collateralTemplatePackId
+                          ? "Collateral pack ready"
+                          : "Can start empty"}
+                    </span>
+                    {group.definition.supportsSponsorSetup ? (
+                      <span className="events-chip events-chip--accent">
+                        {group.definition.sponsorModelReference ?? "Sponsor setup supported"}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="events-group__meta">
+                  <span>{group.eventFamilyName}</span>
+                  <span>{describeDateMode(group.definition.dateMode)}</span>
+                  <span>{group.definition.defaultSubEvents.length} default sub-events</span>
+                </div>
               </div>
             </div>
-          {onboardingView.groups.map((group) => (
-            <section className="events-group" key={group.definition.key}>
-              <div className="events-group__header">
-                <div>
-                  <div className="events-group__title-row">
-                    <div className="card__title">{group.definition.label}</div>
-                    <div className="events-group__tags">
-                      <span className="events-chip">
-                        {group.definition.supportsCollateral === false
-                          ? "No collateral pack yet"
-                          : group.definition.collateralTemplatePackId
-                            ? "Collateral pack ready"
-                            : "Can start empty"}
-                      </span>
-                      {group.definition.supportsSponsorSetup ? (
-                        <span className="events-chip events-chip--accent">
-                          {group.definition.sponsorModelReference ?? "Sponsor setup supported"}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="events-group__meta">
-                    <span>{group.eventFamilyName}</span>
-                    <span>{describeDateMode(group.definition.dateMode)}</span>
-                    <span>{group.definition.defaultSubEvents.length} default sub-events</span>
-                  </div>
-                </div>
-              </div>
-              {group.instances.length > 0 ? (
-                <div className="events-instance-list">
-                  {group.instances.map((instance) => {
-                    const isSelected = instance.id === selectedWorkspaceInstance?.instance.id;
-                    const scheduleStatus = getInstanceScheduleStatus(instance.id, eventSubEvents);
-                    const subEventCount = getInstanceSubEventCount(instance.id, eventSubEvents);
-                    return (
-                      <article
-                        className={`events-instance-card${isSelected ? " events-instance-card--selected" : ""}`}
-                        key={instance.id}
+            {group.instances.length > 0 ? (
+              <div className="events-instance-list events-instance-list--board">
+                {group.instances.map((instance) => {
+                  const isSelected = instance.id === selectedWorkspaceInstance?.instance.id;
+                  const scheduleStatus = getInstanceScheduleStatus(instance.id, eventSubEvents);
+                  const subEventCount = getInstanceSubEventCount(instance.id, eventSubEvents);
+
+                  return (
+                    <article
+                      className={`events-instance-card${isSelected ? " events-instance-card--selected" : ""}`}
+                      key={instance.id}
+                    >
+                      <button
+                        className="events-instance-card__body events-instance-card__body--button"
+                        onClick={() => handleSelectInstance(instance.id)}
+                        type="button"
                       >
-                        <button
-                          className="events-instance-card__body events-instance-card__body--button"
-                          onClick={() => handleSelectInstance(instance.id)}
-                          type="button"
-                        >
-                          <div className="events-instance-card__title-row">
-                            <strong>{instance.name}</strong>
-                            {isSelected ? (
-                              <span className="events-chip">Selected</span>
-                            ) : null}
-                          </div>
-                          <div className="events-instance-card__meta">
-                            <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
-                            {instance.location ? <span>{instance.location}</span> : null}
-                            <span>{subEventCount} sub-event{subEventCount === 1 ? "" : "s"}</span>
-                            <span>{group.definition.collateralTemplatePackId ? "Collateral pack available" : "Can start empty"}</span>
-                            <span>{formatScheduleStatus(scheduleStatus)}</span>
-                          </div>
-                          {instance.notes ? <div className="events-instance-card__notes">{instance.notes}</div> : null}
-                        </button>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="events-group__empty">
-                  No instances created for this event type yet.
-                </div>
-              )}
-            </section>
-          ))}
+                        <div className="events-instance-card__title-row">
+                          <strong>{instance.name}</strong>
+                          <span className={`events-chip${isSelected ? " events-chip--workspace-active" : ""}`}>
+                            {isSelected ? "Open Event" : "Open Workspace"}
+                          </span>
+                        </div>
+                        <div className="events-instance-card__meta">
+                          <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
+                          {instance.location ? <span>{instance.location}</span> : null}
+                          <span>{subEventCount} sub-event{subEventCount === 1 ? "" : "s"}</span>
+                          <span>{group.definition.collateralTemplatePackId ? "Collateral pack available" : "Can start empty"}</span>
+                          <span>{formatScheduleStatus(scheduleStatus)}</span>
+                        </div>
+                        {instance.notes ? <div className="events-instance-card__notes">{instance.notes}</div> : null}
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="events-group__empty">
+                No instances created for this event type yet.
+              </div>
+            )}
           </section>
-        </div>
-        <div className="events-page__main">
+        ))}
+      </section>
+
+      <section className="events-page__workspace">
+        {selectedWorkspaceInstance ? (
+          <div className="events-page__workspace-header">
+            <div>
+              <div className="card__title">Selected Event</div>
+              <div className="events-selector-card__copy">
+                You are viewing <strong>{selectedWorkspaceInstance.instance.name}</strong>. Use the section navigation inside the workspace to move between event setup areas.
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <div className="events-page__workspace-body">
           {selectedWorkspaceInstance ? (
           <EventInstanceDetailPanel
+            addItem={addItem}
             actionItemCount={items.filter((item) => item.eventInstanceId === selectedWorkspaceInstance.instance.id).length}
             actionViewHref={`/action?focus=sponsor&eventGroup=${encodeURIComponent(selectedWorkspaceInstance.instance.name)}`}
             collateralItemCount={collateralItems.filter((item) => item.eventInstanceId === selectedWorkspaceInstance.instance.id).length}
             isActive={selectedWorkspaceInstance.instance.id === activeEventInstanceId}
+            items={items}
             onOpenInAction={(href) => router.push(href)}
             onOpenInCollateral={handleOpenInCollateral}
             onRemoveSubEvent={removeEventSubEvent}
@@ -263,7 +280,6 @@ export function EventsView() {
               setActiveEventInstanceId(instanceId);
               setFeedback("Active event context updated.");
             }}
-            onGenerateSponsorFulfillment={generateSponsorFulfillmentItems}
             onRemoveSponsorCommitment={removeSponsorCommitment}
             onRemoveSponsorOpportunity={removeSponsorOpportunity}
             onUpsertSponsorCommitment={upsertSponsorCommitment}
@@ -288,14 +304,14 @@ export function EventsView() {
           />
           ) : (
             <section className="card card--secondary events-builder-empty">
-              <div className="empty-state__title">Select an event to open its workspace</div>
+              <div className="empty-state__title">Select an event card to open its workspace</div>
               <div className="empty-state__copy">
-                Melissa can create a new event instance or choose an existing one from the left to continue setup, sponsor edits, and downstream review.
+                Create a new event or choose an existing event record above to continue setup, sponsor edits, and downstream review.
               </div>
             </section>
           )}
         </div>
-      </div>
+      </section>
 
       <EventInstanceCreateModal
         availableEventTypeDefinitions={onboardingView.groups.map((group) => group.definition)}

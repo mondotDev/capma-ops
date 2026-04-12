@@ -1,41 +1,33 @@
 "use client";
 
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import type { UpdateEventInstanceInput, UpsertEventSubEventInput } from "@/components/app-state";
+import type { NewActionItem, UpdateEventInstanceInput, UpsertEventSubEventInput } from "@/components/app-state";
 import { sortSubEventsForEventWorkspace } from "@/lib/events/sub-event-ordering";
 import type { EventOnboardingSelectedInstance } from "@/lib/events/event-onboarding";
 import type { EventSubEventScheduleMode } from "@/lib/event-instances";
 import { deriveEventDateRange } from "@/lib/event-instances";
+import type { ActionItem } from "@/lib/sample-data";
 import {
   createSponsorCommitmentDraft,
   createSponsorOpportunityDraft,
   ensureSponsorshipSetupForEventInstance,
   getSponsorCommitmentOpportunityOptions,
-  getSponsorPlacementDeliverables,
-  getSponsorPlacementLabel,
   type SponsorCommitment,
   type SponsorFulfillmentGenerationResult,
+  type SponsorOpportunityDeliverable,
   type SponsorOpportunity,
   type SponsorshipSetup
 } from "@/lib/sponsor-fulfillment";
+import { createActionNoteEntry, isTerminalStatus, LOCAL_FALLBACK_NOTE_AUTHOR } from "@/lib/ops-utils";
 
 type Props = {
+  addItem: (item: NewActionItem) => void;
+  items: ActionItem[];
   selectedInstance: EventOnboardingSelectedInstance;
   isActive: boolean;
   actionItemCount: number;
   actionViewHref: string;
   collateralItemCount: number;
-  onGenerateSponsorFulfillment: (instanceId: string) => {
-    createdActions: number;
-    updatedActions: number;
-    matchedCollateral: number;
-    createdCollateral: number;
-    skipped: number;
-    obsoleteActions: number;
-    obsoleteCollateral: number;
-    progressedObsoleteActions: number;
-    progressedObsoleteCollateral: number;
-  };
   onOpenInAction: (href: string) => void;
   onOpenInCollateral: (instanceId: string) => void;
   onRemoveSubEvent: (instanceId: string, subEventId: string) => boolean;
@@ -60,23 +52,60 @@ type WorkspaceStep = {
   copy: string;
 };
 
+type SponsorFulfillmentPreviewRow = {
+  id: string;
+  sourceKey: string;
+  sponsorId: string;
+  sponsorName: string;
+  placementId: string;
+  placementName: string;
+  linkedSubEventId?: string;
+  sponsorNotes?: string;
+  placementNotes?: string;
+  logoReceived: boolean;
+  deliverableName: string;
+  deliverableId: string;
+  category: string;
+  channel: string;
+  timingType: string;
+  offsetDays: string;
+  fixedMonth: string;
+  eventDayOffset: string;
+  requiresLogo: boolean;
+  requiresCopy: boolean;
+  requiresApproval: boolean;
+};
+
+type FulfillmentPreviewSourceLink = {
+  eventInstanceId: string;
+  placementId: string;
+  sponsorId: string;
+  deliverableId: string;
+};
+
+type FulfillmentRollup = {
+  generated: number;
+  complete: number;
+  open: number;
+};
+
 const WORKSPACE_SECTIONS = [
-  { id: "details", label: "Event details" },
+  { id: "basics", label: "Basics" },
   { id: "sub-events", label: "Sub-events" },
-  { id: "opportunities", label: "Sponsor opportunities" },
-  { id: "commitments", label: "Sponsor commitments" },
-  { id: "deliverables", label: "Generated work preview" },
+  { id: "placements", label: "Placements" },
+  { id: "sponsors", label: "Sponsors" },
   { id: "collateral", label: "Collateral" },
-  { id: "review", label: "Review / execution preview" }
+  { id: "fulfillment-preview", label: "Fulfillment Preview" }
 ] as const;
 
 export function EventInstanceDetailPanel({
+  addItem,
+  items,
   selectedInstance,
   isActive,
   actionItemCount,
   actionViewHref,
   collateralItemCount,
-  onGenerateSponsorFulfillment,
   onOpenInAction,
   onOpenInCollateral,
   onRemoveSubEvent,
@@ -100,7 +129,7 @@ export function EventInstanceDetailPanel({
     () => ensureSponsorshipSetupForEventInstance(instance.id, instance.eventTypeId, sponsorshipSetup),
     [instance.eventTypeId, instance.id, sponsorshipSetup]
   );
-  const opportunityOptions = useMemo(() => getSponsorCommitmentOpportunityOptions(resolvedSetup), [resolvedSetup]);
+  const placementOptions = useMemo(() => getSponsorCommitmentOpportunityOptions(resolvedSetup), [resolvedSetup]);
   const subEventOptions = useMemo(
     () =>
       [
@@ -112,16 +141,60 @@ export function EventInstanceDetailPanel({
   const [detailsDraft, setDetailsDraft] = useState<DetailsDraft>(() => createDetailsDraft(instance));
   const [newSubEventDraft, setNewSubEventDraft] = useState<UpsertEventSubEventInput>(createEmptySubEventDraft());
   const [feedback, setFeedback] = useState("");
-  const [activeSectionId, setActiveSectionId] = useState<WorkspaceSectionId>("details");
+  const [activeSectionId, setActiveSectionId] = useState<WorkspaceSectionId>("basics");
+  const fulfillmentActionItems = useMemo(
+    () =>
+      items.flatMap((item) => {
+        const source = getFulfillmentPreviewSourceLink(item);
+
+        if (!source || source.eventInstanceId !== instance.id) {
+          return [];
+        }
+
+        return [{ item, source }];
+      }),
+    [instance.id, items]
+  );
+  const placementRollups = useMemo(
+    () =>
+      resolvedSetup.opportunities.reduce((map, opportunity) => {
+        const matchingItems = fulfillmentActionItems.filter(({ source }) => source.placementId === opportunity.id);
+        const generated = matchingItems.length;
+        const complete = matchingItems.filter(({ item }) => isTerminalStatus(item.status)).length;
+
+        map.set(opportunity.id, {
+          generated,
+          complete,
+          open: generated - complete
+        });
+        return map;
+      }, new Map<string, FulfillmentRollup>()),
+    [fulfillmentActionItems, resolvedSetup.opportunities]
+  );
+  const sponsorRollups = useMemo(
+    () =>
+      resolvedSetup.commitments.reduce((map, commitment) => {
+        const matchingItems = fulfillmentActionItems.filter(({ source }) => source.sponsorId === commitment.id);
+        const generated = matchingItems.length;
+        const complete = matchingItems.filter(({ item }) => isTerminalStatus(item.status)).length;
+
+        map.set(commitment.id, {
+          generated,
+          complete,
+          open: generated - complete
+        });
+        return map;
+      }, new Map<string, FulfillmentRollup>()),
+    [fulfillmentActionItems, resolvedSetup.commitments]
+  );
 
   useEffect(() => setDetailsDraft(createDetailsDraft(instance)), [instance]);
-  useEffect(() => setActiveSectionId("details"), [instance.id]);
+  useEffect(() => setActiveSectionId("basics"), [instance.id]);
 
   const steps = useMemo(
-    () => buildSteps(instance.name, instance.startDate, scheduleStatus, resolvedSetup, sponsorGenerationPreview),
-    [instance.name, instance.startDate, resolvedSetup, scheduleStatus, sponsorGenerationPreview]
+    () => buildSteps(instance.name, instance.startDate, scheduleStatus, resolvedSetup),
+    [instance.name, instance.startDate, resolvedSetup, scheduleStatus]
   );
-  const previewRows = (sponsorGenerationPreview?.plans ?? []).slice(0, 8);
   const activeStep = steps.find((step) => step.sectionId === activeSectionId) ?? steps[0];
 
   function saveEventDetails() {
@@ -148,23 +221,6 @@ export function EventInstanceDetailPanel({
     setFeedback("Sub-event added.");
   }
 
-  function generateSponsorWork() {
-    const result = onGenerateSponsorFulfillment(instance.id);
-    const staleCount = result.obsoleteActions + result.obsoleteCollateral;
-    const progressCount = result.progressedObsoleteActions + result.progressedObsoleteCollateral;
-    setFeedback(
-      [
-        result.createdActions > 0 ? `${result.createdActions} new action item${result.createdActions === 1 ? "" : "s"}` : "",
-        result.updatedActions > 0 ? `${result.updatedActions} action item${result.updatedActions === 1 ? "" : "s"} refreshed` : "",
-        result.createdCollateral > 0 ? `${result.createdCollateral} fallback collateral item${result.createdCollateral === 1 ? "" : "s"}` : "",
-        result.matchedCollateral > 0 ? `${result.matchedCollateral} collateral match${result.matchedCollateral === 1 ? "" : "es"}` : "",
-        result.skipped > 0 ? `${result.skipped} skipped duplicate or incomplete row${result.skipped === 1 ? "" : "s"}` : "",
-        staleCount > 0 ? `${staleCount} generated item${staleCount === 1 ? "" : "s"} kept for review` : "",
-        progressCount > 0 ? `${progressCount} preserved review item${progressCount === 1 ? "" : "s"} already had progress` : ""
-      ].filter(Boolean).join(", ") || "No new sponsor work was needed."
-    );
-  }
-
   function selectSection(sectionId: WorkspaceSectionId) {
     setActiveSectionId(sectionId);
   }
@@ -173,7 +229,7 @@ export function EventInstanceDetailPanel({
     <section className="card card--secondary events-workspace" aria-label="Event workspace">
       <div className="events-workspace__header">
         <div>
-          <div className="events-workspace__eyebrow">Event Workspace</div>
+          <div className="events-workspace__eyebrow">Event Page</div>
           <h2 className="collateral-page__title">{instance.name}</h2>
           <div className="events-detail-card__meta">
             <span>{eventFamilyName}</span>
@@ -204,8 +260,8 @@ export function EventInstanceDetailPanel({
       ) : null}
 
       <div className="events-workspace__compact-summary">
-        <Stat value={resolvedSetup.opportunities.length} label="Opportunities" />
-        <Stat value={resolvedSetup.commitments.length} label="Commitments" />
+        <Stat value={resolvedSetup.opportunities.length} label="Placements" />
+        <Stat value={resolvedSetup.commitments.length} label="Sponsors" />
         <Stat value={actionItemCount} label="Action items" />
         <Stat value={collateralItemCount} label="Collateral items" />
       </div>
@@ -231,7 +287,7 @@ export function EventInstanceDetailPanel({
         <section className={`events-workspace__content${activeSectionId === "sub-events" ? " events-workspace__content--sub-events" : ""}`} aria-label={activeStep?.label ?? "Event workspace section"}>
           <div className="events-workspace__section-header">
             <div>
-              <div className="events-workspace__section-eyebrow">Selected Section</div>
+              <div className="events-workspace__section-eyebrow">{instance.name}</div>
               <h3 className="events-workspace__section-title">{activeStep?.label ?? "Event workspace section"}</h3>
               <div className="events-detail-card__meta">
                 <span>{instance.name}</span>
@@ -240,7 +296,7 @@ export function EventInstanceDetailPanel({
               </div>
             </div>
           </div>
-          {activeSectionId === "details" ? (
+          {activeSectionId === "basics" ? (
             <EventDetailsSection detailsDraft={detailsDraft} instance={instance} onSave={saveEventDetails} setDetailsDraft={setDetailsDraft} />
           ) : null}
           {activeSectionId === "sub-events" ? (
@@ -255,49 +311,56 @@ export function EventInstanceDetailPanel({
               scheduledSubEvents={orderedScheduledSubEvents}
             />
           ) : null}
-          {activeSectionId === "opportunities" ? (
+          {activeSectionId === "placements" ? (
             <SponsorOpportunitiesSection
-              eventTypeId={instance.eventTypeId}
               onAdd={() => {
                 onUpsertSponsorOpportunity(instance.id, createSponsorOpportunityDraft(instance.id, instance.eventTypeId));
-                setFeedback("Sponsor opportunity added.");
+                setFeedback("Placement added.");
               }}
               onRemove={(opportunityId) =>
-                setFeedback(onRemoveSponsorOpportunity(instance.id, opportunityId) ? "Sponsor opportunity removed." : "That opportunity still has commitments attached, so it was kept.")
+                setFeedback(onRemoveSponsorOpportunity(instance.id, opportunityId) ? "Placement removed." : "That placement still has sponsors assigned, so it was kept.")
               }
               onUpsert={(opportunity) => onUpsertSponsorOpportunity(instance.id, opportunity)}
               opportunities={resolvedSetup.opportunities}
+              placementRollups={placementRollups}
+              sponsorCommitments={resolvedSetup.commitments}
               subEventOptions={subEventOptions}
               supportsSponsorSetup={supportsSponsorSetup}
             />
           ) : null}
-          {activeSectionId === "commitments" ? (
+          {activeSectionId === "sponsors" ? (
             <SponsorCommitmentsSection
               commitments={resolvedSetup.commitments}
-              eventTypeId={instance.eventTypeId}
               onAdd={() => {
                 onUpsertSponsorCommitment(instance.id, createSponsorCommitmentDraft(instance.id, resolvedSetup));
-                setFeedback("Sponsor commitment added.");
+                setFeedback("Sponsor added.");
               }}
               onRemove={(commitmentId) => {
                 onRemoveSponsorCommitment(instance.id, commitmentId);
-                setFeedback("Sponsor commitment removed.");
+                setFeedback("Sponsor removed.");
               }}
               onUpsert={(commitment) => onUpsertSponsorCommitment(instance.id, commitment)}
               opportunities={resolvedSetup.opportunities}
-              opportunityOptions={opportunityOptions}
+              placementOptions={placementOptions}
+              sponsorRollups={sponsorRollups}
               subEventOptions={subEventOptions}
               supportsSponsorSetup={supportsSponsorSetup}
             />
-          ) : null}
-          {activeSectionId === "deliverables" ? (
-            <DeliverablesSection onGenerate={generateSponsorWork} previewRows={previewRows} sponsorGenerationPreview={sponsorGenerationPreview} supportsSponsorSetup={supportsSponsorSetup} />
           ) : null}
           {activeSectionId === "collateral" ? (
             <CollateralSection collateralItemCount={collateralItemCount} onOpenInCollateral={() => onOpenInCollateral(instance.id)} sponsorGenerationPreview={sponsorGenerationPreview} />
           ) : null}
-          {activeSectionId === "review" ? (
-            <ReviewSection actionItemCount={actionItemCount} actionViewHref={actionViewHref} onOpenInAction={onOpenInAction} sponsorGenerationPreview={sponsorGenerationPreview} />
+          {activeSectionId === "fulfillment-preview" ? (
+            <FulfillmentPreviewSection
+              actionItemCount={actionItemCount}
+              addItem={addItem}
+              commitments={resolvedSetup.commitments}
+              definitionLabel={definition?.label ?? instance.eventTypeId}
+              eventInstanceId={instance.id}
+              items={items}
+              opportunities={resolvedSetup.opportunities}
+              supportsSponsorSetup={supportsSponsorSetup}
+            />
           ) : null}
         </section>
       </div>
@@ -318,28 +381,23 @@ function createDetailsDraft(instance: EventOnboardingSelectedInstance["instance"
   };
 }
 
-function buildSteps(name: string, startDate: string, scheduleStatus: EventOnboardingSelectedInstance["scheduleStatus"], setup: SponsorshipSetup, preview: SponsorFulfillmentGenerationResult | null): WorkspaceStep[] {
-  const hasPreview = (preview?.plans.length ?? 0) > 0;
-  const hasReview = (preview?.obsoleteActionItems.length ?? 0) + (preview?.obsoleteCollateralItems.length ?? 0) > 0;
-  return [
-    { sectionId: "details", label: "Event details", badge: name.trim() && startDate ? "Ready" : "Needs attention", status: name.trim() && startDate ? "done" : "attention", copy: name.trim() && startDate ? "Core details are in place and stay editable." : "Start by confirming the event name, dates, and location." },
-    { sectionId: "sub-events", label: "Sub-events", badge: scheduleStatus === "scheduled" ? "Ready" : "Next", status: scheduleStatus === "scheduled" ? "done" : "next", copy: scheduleStatus === "scheduled" ? "Sub-event scheduling is ready for downstream work." : "Confirm dates and times so downstream work lands in the right places." },
-    { sectionId: "opportunities", label: "Sponsor opportunities", badge: setup.opportunities.length > 0 ? "Ready" : "Next", status: setup.opportunities.length > 0 ? "done" : "next", copy: setup.opportunities.length > 0 ? `${setup.opportunities.length} opportunity row${setup.opportunities.length === 1 ? "" : "s"} currently define this event's sponsor setup.` : "Add the event-specific sponsor opportunities Melissa is actually working from." },
-    { sectionId: "commitments", label: "Sponsor commitments", badge: setup.commitments.length > 0 ? "Ready" : "Next", status: setup.commitments.length > 0 ? "done" : "next", copy: setup.commitments.length > 0 ? `${setup.commitments.length} commitment${setup.commitments.length === 1 ? "" : "s"} can drive downstream work.` : "Add commitments progressively as sponsors close." },
-    { sectionId: "deliverables", label: "Generated work review", badge: hasReview ? "Review" : hasPreview ? "Ready" : "Next", status: hasReview ? "attention" : hasPreview ? "done" : "next", copy: hasReview ? "Some prior generated work is being preserved for review instead of deleted." : hasPreview ? "A sponsor-driven preview is ready for reconciliation." : "Once sponsor setup is in place, review what will flow into Action View and Collateral." }
-  ];
-}
+function buildSteps(name: string, startDate: string, scheduleStatus: EventOnboardingSelectedInstance["scheduleStatus"], setup: SponsorshipSetup): WorkspaceStep[] {
+  const hasPreview = setup.commitments.some((commitment) => {
+    if (commitment.isActive === false || !commitment.opportunityId || !commitment.sponsorName.trim()) {
+      return false;
+    }
 
-function getReviewCalloutText(preview: SponsorFulfillmentGenerationResult | null) {
-  if (!preview) {
-    return "No sponsor generation preview is available yet.";
-  }
-  const obsoleteCount = preview.obsoleteActionItems.length + preview.obsoleteCollateralItems.length;
-  const progressCount = preview.obsoleteActionItems.filter((item) => item.hasMeaningfulProgress).length + preview.obsoleteCollateralItems.filter((item) => item.hasMeaningfulProgress).length;
-  if (obsoleteCount === 0) {
-    return "No stale generated sponsor work is currently waiting for review.";
-  }
-  return progressCount === 0 ? `${obsoleteCount} generated item${obsoleteCount === 1 ? "" : "s"} would be preserved for review.` : `${obsoleteCount} generated item${obsoleteCount === 1 ? "" : "s"} would be preserved for review, including ${progressCount} item${progressCount === 1 ? "" : "s"} that already have progress.`;
+    const opportunity = setup.opportunities.find((entry) => entry.id === commitment.opportunityId);
+    return Boolean(opportunity && opportunity.isActive !== false && (opportunity.deliverables?.length ?? 0) > 0);
+  });
+  return [
+    { sectionId: "basics", label: "Basics", badge: name.trim() && startDate ? "Ready" : "Needs attention", status: name.trim() && startDate ? "done" : "attention", copy: name.trim() && startDate ? "Core event details are in place and stay editable." : "Start by confirming the event name, dates, and location." },
+    { sectionId: "sub-events", label: "Sub-events", badge: scheduleStatus === "scheduled" ? "Ready" : "Next", status: scheduleStatus === "scheduled" ? "done" : "next", copy: scheduleStatus === "scheduled" ? "Sub-event scheduling is ready for downstream work." : "Confirm dates and times so downstream work lands in the right places." },
+    { sectionId: "placements", label: "Placements", badge: setup.opportunities.length > 0 ? "Ready" : "Next", status: setup.opportunities.length > 0 ? "done" : "next", copy: setup.opportunities.length > 0 ? `${setup.opportunities.length} placement${setup.opportunities.length === 1 ? "" : "s"} currently define this event structure.` : "Add the placements that sponsors can be assigned into for this event." },
+    { sectionId: "sponsors", label: "Sponsors", badge: setup.commitments.length > 0 ? "Ready" : "Next", status: setup.commitments.length > 0 ? "done" : "next", copy: setup.commitments.length > 0 ? `${setup.commitments.length} sponsor${setup.commitments.length === 1 ? "" : "s"} currently attach to this event.` : "Add sponsors as they confirm and attach each one to a placement." },
+    { sectionId: "collateral", label: "Collateral", badge: "Linked", status: "next", copy: "Review the current downstream collateral context without changing the collateral workspace itself." },
+    { sectionId: "fulfillment-preview", label: "Fulfillment Preview", badge: hasPreview ? "Ready" : "Next", status: hasPreview ? "done" : "next", copy: hasPreview ? "Preview rows are ready for review and approval before downstream execution." : "Once sponsors are assigned to placements with deliverables, review rows will appear here automatically." }
+  ];
 }
 
 function EventDetailsSection(input: {
@@ -349,8 +407,8 @@ function EventDetailsSection(input: {
   setDetailsDraft: Dispatch<SetStateAction<DetailsDraft>>;
 }) {
   return (
-    <section className="events-detail-card__section" id="event-workspace-details">
-      <div className="events-detail-card__section-title">Event Details</div>
+    <section className="events-detail-card__section" id="event-workspace-basics">
+      <div className="events-detail-card__section-title">Basics</div>
       <div className="events-workspace__grid events-workspace__grid--details">
         <Field label="Event name">
           <input className="field-control" onChange={(event) => input.setDetailsDraft((current) => ({ ...current, name: event.target.value }))} value={input.detailsDraft.name} />
@@ -690,165 +748,282 @@ function formatWorkspaceDateRange(startDate: string, endDate: string) {
 }
 
 function SponsorOpportunitiesSection(input: {
-  eventTypeId: string;
   onAdd: () => void;
   onRemove: (opportunityId: string) => void;
   onUpsert: (opportunity: SponsorOpportunity) => void;
   opportunities: SponsorOpportunity[];
+  placementRollups: Map<string, FulfillmentRollup>;
+  sponsorCommitments: SponsorCommitment[];
   subEventOptions: Array<{ id: string; label: string }>;
   supportsSponsorSetup: boolean;
 }) {
-  const placementOptions = useMemo(
-    () => Array.from(new Set(input.opportunities.map((opportunity) => opportunity.placementType))),
-    [input.opportunities]
-  );
-  return (
-    <section className="events-detail-card__section" id="event-workspace-opportunities">
-      <div className="events-detail-card__header">
-        <div>
-          <div className="events-detail-card__section-title">Sponsor Opportunities</div>
-          <div className="events-selector-card__copy">The event instance owns this list now. Keep it current as opportunities are added, changed, or paused.</div>
-        </div>
-        {input.supportsSponsorSetup ? <button className="button-link button-link--inline-secondary" onClick={input.onAdd} type="button">Add Opportunity</button> : null}
-      </div>
-      {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use sponsor setup.</div> : input.opportunities.length === 0 ? <div className="events-detail-card__empty">No sponsor opportunities yet.</div> : (
-        <div className="events-workspace__list">
-          {input.opportunities.map((opportunity) => (
-            <div className="events-workspace__list-row" key={opportunity.id}>
-              <div className="events-workspace__grid events-workspace__grid--sponsor">
-                <Field label="Opportunity label">
-                  <input className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, label: event.target.value })} value={opportunity.label} />
-                </Field>
-                <Field label="Placement type">
-                  <select className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, placementType: event.target.value, label: opportunity.label || getSponsorPlacementLabel(event.target.value, input.eventTypeId) })} value={opportunity.placementType}>
-                    {placementOptions.map((placementType) => <option key={placementType} value={placementType}>{getSponsorPlacementLabel(placementType, input.eventTypeId)}</option>)}
-                  </select>
-                </Field>
-                <Field label="Linked sub-event">
-                  <select className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, linkedSubEventId: event.target.value || undefined })} value={opportunity.linkedSubEventId ?? ""}>
-                    <option value="">No sub-event link</option>
-                    {input.subEventOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                  </select>
-                </Field>
-                <label className="events-workspace__toggle"><input checked={opportunity.isActive !== false} onChange={(event) => input.onUpsert({ ...opportunity, isActive: event.target.checked })} type="checkbox" />Active opportunity</label>
-                <Field label="Notes" wide>
-                  <textarea className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, notes: event.target.value })} value={opportunity.notes ?? ""} />
-                </Field>
-              </div>
-              <div className="events-detail-card__actions">
-                <div className="field-hint">{getSponsorPlacementDeliverables(opportunity.placementType, input.eventTypeId).length} deliverable rule{getSponsorPlacementDeliverables(opportunity.placementType, input.eventTypeId).length === 1 ? "" : "s"} flow from this type.</div>
-                <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(opportunity.id)} type="button">Remove</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
+  const [expandedPlacements, setExpandedPlacements] = useState<Record<string, boolean>>({});
 
-function SponsorCommitmentsSection(input: {
-  commitments: SponsorCommitment[];
-  eventTypeId: string;
-  onAdd: () => void;
-  onRemove: (commitmentId: string) => void;
-  onUpsert: (commitment: SponsorCommitment) => void;
-  opportunities: SponsorOpportunity[];
-  opportunityOptions: Array<{ id: string; label: string }>;
-  subEventOptions: Array<{ id: string; label: string }>;
-  supportsSponsorSetup: boolean;
-}) {
-  const [expandedDeliverablesByCommitment, setExpandedDeliverablesByCommitment] = useState<Record<string, boolean>>({});
-  const totalDerivedDeliverables = input.commitments.reduce((total, commitment) => {
-    const selectedOpportunity = input.opportunities.find((opportunity) => opportunity.id === commitment.opportunityId) ?? null;
-    return total + (selectedOpportunity ? getSponsorPlacementDeliverables(selectedOpportunity.placementType, input.eventTypeId).length : 0);
-  }, 0);
-  const commitmentsMissingLogo = input.commitments.filter((commitment) => !commitment.logoReceived).length;
+  function updateDeliverable(
+    opportunity: SponsorOpportunity,
+    deliverableId: string,
+    updates: Partial<SponsorOpportunityDeliverable>
+  ) {
+    input.onUpsert({
+      ...opportunity,
+      deliverables: (opportunity.deliverables ?? []).map((deliverable) =>
+        deliverable.id === deliverableId ? { ...deliverable, ...updates } : deliverable
+      )
+    });
+  }
+
+  function addDeliverable(opportunity: SponsorOpportunity) {
+    input.onUpsert({
+      ...opportunity,
+      deliverables: [...(opportunity.deliverables ?? []), createEmptyPlacementDeliverable()]
+    });
+  }
+
+  function removeDeliverable(opportunity: SponsorOpportunity, deliverableId: string) {
+    input.onUpsert({
+      ...opportunity,
+      deliverables: (opportunity.deliverables ?? []).filter((deliverable) => deliverable.id !== deliverableId)
+    });
+  }
 
   return (
-    <section className="events-detail-card__section" id="event-workspace-commitments">
+    <section className="events-detail-card__section" id="event-workspace-placements">
       <div className="events-detail-card__header">
         <div>
-          <div className="events-detail-card__section-title">Sponsor Commitments</div>
-          <div className="events-selector-card__copy">Add sponsors as they close. Late additions should only create newly needed downstream work.</div>
-        </div>
-        {input.supportsSponsorSetup ? <button className="button-link button-link--inline-secondary" disabled={input.opportunityOptions.length === 0} onClick={input.onAdd} type="button">Add Commitment</button> : null}
-      </div>
-      {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use sponsor commitments.</div> : input.commitments.length === 0 ? <div className="events-detail-card__empty">No sponsor commitments yet.</div> : (
-        <div className="events-workspace__list">
-          <div className="events-workspace__stat-grid">
-            <Stat label="Total commitments" value={input.commitments.length} />
-            <Stat label="Derived deliverables" value={totalDerivedDeliverables} />
-            <Stat label="Missing logo" value={commitmentsMissingLogo} />
+          <div className="events-detail-card__section-title">Placements</div>
+          <div className="events-selector-card__copy">
+            Placements define sponsorable slots for this event. They can be event-wide or tied to a specific sub-event, and they do not need a sponsor assigned yet.
           </div>
-          {input.commitments.map((commitment) => {
-            const selectedOpportunity = input.opportunities.find((opportunity) => opportunity.id === commitment.opportunityId) ?? null;
-            const derivedDeliverables = selectedOpportunity
-              ? getSponsorPlacementDeliverables(selectedOpportunity.placementType, input.eventTypeId)
-              : [];
-            const deliverableCount = derivedDeliverables.length;
-            const isExpanded = expandedDeliverablesByCommitment[commitment.id] ?? false;
+        </div>
+        {input.supportsSponsorSetup ? <button className="button-link button-link--inline-secondary" onClick={input.onAdd} type="button">Add Placement</button> : null}
+      </div>
+      {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use placements or sponsors.</div> : input.opportunities.length === 0 ? <div className="events-detail-card__empty">No placements yet.</div> : (
+        <div className="events-workspace__list">
+          {input.opportunities.map((opportunity) => {
+            const sponsorCount = input.sponsorCommitments.filter((commitment) => commitment.opportunityId === opportunity.id).length;
+            const deliverableCount = (opportunity.deliverables ?? []).length;
+            const rollup = input.placementRollups.get(opportunity.id) ?? { generated: 0, complete: 0, open: 0 };
+
             return (
-              <div className="events-workspace__list-row" key={commitment.id}>
-                <div className="events-detail-card__header">
-                  <div>
-                    <strong>{commitment.sponsorName.trim() || "New sponsor commitment"}</strong>
-                    <div className="field-hint">
-                      {selectedOpportunity ? selectedOpportunity.label : "Choose an opportunity to make downstream deliverables explicit."}
+              <div className="events-workspace__placement-card" key={opportunity.id}>
+                <div className="events-workspace__placement-card-header">
+                  <div className="events-workspace__placement-card-title-block">
+                    <strong>{opportunity.label.trim() || "New placement"}</strong>
+                    <div className="events-workspace__placement-card-meta">
+                      <span className="events-chip">
+                        {opportunity.linkedSubEventId
+                          ? `Linked to ${
+                              input.subEventOptions.find((option) => option.id === opportunity.linkedSubEventId)?.label ?? "sub-event"
+                            }`
+                          : "Event-wide"}
+                      </span>
+                      <span className="events-chip">{deliverableCount} deliverable definition{deliverableCount === 1 ? "" : "s"}</span>
+                      {opportunity.isActive === false ? <span className="events-chip">Inactive</span> : null}
                     </div>
                   </div>
-                  <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(commitment.id)} type="button">Remove</button>
-                </div>
-                <div className="events-workspace__grid events-workspace__grid--sponsor">
-                  <Field label="Sponsor">
-                    <input className="field-control" onChange={(event) => input.onUpsert({ ...commitment, sponsorName: event.target.value })} value={commitment.sponsorName} />
-                  </Field>
-                  <Field label="Opportunity">
-                    <select className="field-control" onChange={(event) => input.onUpsert({ ...commitment, opportunityId: event.target.value, placement: input.opportunities.find((opportunity) => opportunity.id === event.target.value)?.placementType })} value={commitment.opportunityId}>
-                      <option value="">Select an opportunity</option>
-                      {input.opportunityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                    </select>
-                  </Field>
-                  <Field label="Sub-event override">
-                    <select className="field-control" onChange={(event) => input.onUpsert({ ...commitment, linkedSubEventId: event.target.value || undefined })} value={commitment.linkedSubEventId ?? ""}>
-                      <option value="">Use opportunity default</option>
-                      {input.subEventOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                    </select>
-                  </Field>
-                  <label className="events-workspace__toggle"><input checked={commitment.logoReceived} onChange={(event) => input.onUpsert({ ...commitment, logoReceived: event.target.checked })} type="checkbox" />Logo received</label>
-                  <label className="events-workspace__toggle"><input checked={commitment.isActive !== false} onChange={(event) => input.onUpsert({ ...commitment, isActive: event.target.checked })} type="checkbox" />Active commitment</label>
-                  <Field label="Notes" wide>
-                    <textarea className="field-control" onChange={(event) => input.onUpsert({ ...commitment, notes: event.target.value })} value={commitment.notes ?? ""} />
-                  </Field>
-                </div>
-                <div className="events-detail-card__actions">
-                  <div className="field-hint">{selectedOpportunity ? `${deliverableCount} deliverable rule${deliverableCount === 1 ? "" : "s"} will reconcile from this commitment.` : "Choose an opportunity to make downstream deliverables explicit."}</div>
-                  {deliverableCount > 0 ? (
+                  <div className="events-detail-card__actions">
                     <button
                       className="button-link button-link--inline-secondary"
                       onClick={() =>
-                        setExpandedDeliverablesByCommitment((current) => ({
+                        setExpandedPlacements((current) => ({
                           ...current,
-                          [commitment.id]: !isExpanded
+                          [opportunity.id]: !(current[opportunity.id] ?? input.opportunities.length <= 2)
                         }))
                       }
                       type="button"
                     >
-                      {isExpanded ? "Hide deliverables" : `Show deliverables (${deliverableCount})`}
+                      {(expandedPlacements[opportunity.id] ?? input.opportunities.length <= 2) ? "Collapse" : "Expand"}
                     </button>
-                  ) : null}
+                    <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(opportunity.id)} type="button">Remove</button>
+                  </div>
                 </div>
-                {isExpanded && deliverableCount > 0 ? (
-                  <div className="events-workspace__list">
-                    {derivedDeliverables.map((deliverable) => (
-                      <div className="events-workspace__preview-row" key={`${commitment.id}-${deliverable.deliverableName}`}>
-                        <div>
-                          <strong>{deliverable.deliverableName}</strong>
-                          {deliverable.subEventName ? <div className="field-hint">Sub-event: {deliverable.subEventName}</div> : null}
+                {(expandedPlacements[opportunity.id] ?? input.opportunities.length <= 2) ? (
+                  <div className="events-workspace__placement-card-body">
+                    <div className="events-workspace__stat-grid">
+                      <Stat label="Sponsors assigned" value={sponsorCount} />
+                      <Stat label="Deliverable definitions" value={deliverableCount} />
+                      <Stat label="Generated action items" value={rollup.generated} />
+                      <Stat label="Complete" value={rollup.complete} />
+                      <Stat label="Open" value={rollup.open} />
+                    </div>
+                    <div className="events-workspace__placement-structure">
+                      <div className="events-workspace__placement-definition">
+                        <div className="events-workspace__placement-definition-header">
+                          <div className="events-detail-card__section-title">Placement Structure</div>
+                          <div className="field-hint">Define where this sponsorship slot lives in the event.</div>
                         </div>
-                        <span className="events-chip">Derived</span>
+                        <div className="events-workspace__grid events-workspace__grid--placement">
+                          <Field label="Placement name">
+                            <input className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, label: event.target.value })} value={opportunity.label} />
+                          </Field>
+                          <Field label="Scope">
+                            <select
+                              className="field-control"
+                              onChange={(event) =>
+                                input.onUpsert({
+                                  ...opportunity,
+                                  linkedSubEventId: event.target.value === "sub-event" ? opportunity.linkedSubEventId ?? input.subEventOptions[0]?.id : undefined
+                                })
+                              }
+                              value={opportunity.linkedSubEventId ? "sub-event" : "event-wide"}
+                            >
+                              <option value="event-wide">Event-wide</option>
+                              <option value="sub-event">Linked to sub-event</option>
+                            </select>
+                          </Field>
+                          {opportunity.linkedSubEventId ? (
+                            <Field label="Linked sub-event">
+                              <select
+                                className="field-control"
+                                onChange={(event) => input.onUpsert({ ...opportunity, linkedSubEventId: event.target.value || undefined })}
+                                value={opportunity.linkedSubEventId}
+                              >
+                                {input.subEventOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                              </select>
+                            </Field>
+                          ) : null}
+                          <label className="events-workspace__toggle"><input checked={opportunity.isActive !== false} onChange={(event) => input.onUpsert({ ...opportunity, isActive: event.target.checked })} type="checkbox" />Active placement</label>
+                          <Field label="Notes" wide>
+                            <textarea className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, notes: event.target.value })} value={opportunity.notes ?? ""} />
+                          </Field>
+                        </div>
                       </div>
-                    ))}
+                      <div className="events-workspace__deliverables events-workspace__deliverables--placement">
+                        <div className="events-workspace__deliverables-header">
+                          <div>
+                            <div className="events-detail-card__section-title">Deliverables</div>
+                            <div className="field-hint">
+                              These rows define what this placement promises to any sponsor assigned to it.
+                            </div>
+                          </div>
+                          <button
+                            className="button-link button-link--inline-secondary"
+                            onClick={() => addDeliverable(opportunity)}
+                            type="button"
+                          >
+                            Add Line
+                          </button>
+                        </div>
+                        <div className="events-workspace__deliverables-grid-wrap">
+                          <table className="events-workspace__deliverables-grid">
+                            <thead>
+                              <tr>
+                                <th>Deliverable_Name</th>
+                                <th>Category</th>
+                                <th>Channel</th>
+                                <th>Timing_Type</th>
+                                <th>Offset_Days</th>
+                                <th>Fixed_Month</th>
+                                <th>Event_Day_Offset</th>
+                                <th>Requires_Logo</th>
+                                <th>Requires_Copy</th>
+                                <th>Requires_Approval</th>
+                                <th aria-label="Actions" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(opportunity.deliverables ?? []).length === 0 ? (
+                                <tr>
+                                  <td className="events-workspace__deliverables-empty" colSpan={11}>
+                                    No deliverable rows yet.
+                                  </td>
+                                </tr>
+                              ) : (
+                                (opportunity.deliverables ?? []).map((deliverable) => (
+                                  <tr key={deliverable.id}>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { deliverableName: event.target.value })}
+                                        value={deliverable.deliverableName}
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { category: event.target.value })}
+                                        value={deliverable.category}
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { channel: event.target.value })}
+                                        value={deliverable.channel}
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { timingType: event.target.value })}
+                                        value={deliverable.timingType}
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { offsetDays: event.target.value })}
+                                        value={deliverable.offsetDays}
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { fixedMonth: event.target.value })}
+                                        value={deliverable.fixedMonth}
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="field-control"
+                                        onChange={(event) => updateDeliverable(opportunity, deliverable.id, { eventDayOffset: event.target.value })}
+                                        value={deliverable.eventDayOffset}
+                                      />
+                                    </td>
+                                    <td>
+                                      <label className="events-workspace__deliverables-check">
+                                        <input
+                                          checked={deliverable.requiresLogo}
+                                          onChange={(event) => updateDeliverable(opportunity, deliverable.id, { requiresLogo: event.target.checked })}
+                                          type="checkbox"
+                                        />
+                                      </label>
+                                    </td>
+                                    <td>
+                                      <label className="events-workspace__deliverables-check">
+                                        <input
+                                          checked={deliverable.requiresCopy}
+                                          onChange={(event) => updateDeliverable(opportunity, deliverable.id, { requiresCopy: event.target.checked })}
+                                          type="checkbox"
+                                        />
+                                      </label>
+                                    </td>
+                                    <td>
+                                      <label className="events-workspace__deliverables-check">
+                                        <input
+                                          checked={deliverable.requiresApproval}
+                                          onChange={(event) => updateDeliverable(opportunity, deliverable.id, { requiresApproval: event.target.checked })}
+                                          type="checkbox"
+                                        />
+                                      </label>
+                                    </td>
+                                    <td>
+                                      <button
+                                        className="button-link button-link--inline-secondary"
+                                        onClick={() => removeDeliverable(opportunity, deliverable.id)}
+                                        type="button"
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -860,39 +1035,252 @@ function SponsorCommitmentsSection(input: {
   );
 }
 
+function SponsorCommitmentsSection(input: {
+  commitments: SponsorCommitment[];
+  onAdd: () => void;
+  onRemove: (commitmentId: string) => void;
+  onUpsert: (commitment: SponsorCommitment) => void;
+  opportunities: SponsorOpportunity[];
+  placementOptions: Array<{ id: string; label: string }>;
+  sponsorRollups: Map<string, FulfillmentRollup>;
+  subEventOptions: Array<{ id: string; label: string }>;
+  supportsSponsorSetup: boolean;
+}) {
+  const unassignedSponsors = input.commitments.filter((commitment) => !commitment.opportunityId).length;
+  const commitmentsMissingLogo = input.commitments.filter((commitment) => !commitment.logoReceived).length;
+
+  return (
+    <section className="events-detail-card__section" id="event-workspace-sponsors">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Sponsors</div>
+          <div className="events-selector-card__copy">
+            Sponsors attach to placements here. This section is only for entering sponsors, assigning them, and tracking setup status before fulfillment review.
+          </div>
+        </div>
+        {input.supportsSponsorSetup ? <button className="button-link button-link--inline-secondary" disabled={input.placementOptions.length === 0} onClick={input.onAdd} type="button">Add Sponsor</button> : null}
+      </div>
+      {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use placements or sponsors.</div> : input.commitments.length === 0 ? <div className="events-detail-card__empty">No sponsors yet.</div> : (
+        <div className="events-workspace__list">
+          <div className="events-workspace__stat-grid">
+            <Stat label="Total sponsors" value={input.commitments.length} />
+            <Stat label="Unassigned" value={unassignedSponsors} />
+            <Stat label="Missing logo" value={commitmentsMissingLogo} />
+          </div>
+          {input.commitments.map((commitment) => {
+            const selectedOpportunity = input.opportunities.find((opportunity) => opportunity.id === commitment.opportunityId) ?? null;
+            const assignedPlacementLabel = selectedOpportunity?.label?.trim() || "Placement not assigned";
+            const assignedPlacementScope =
+              selectedOpportunity?.linkedSubEventId
+                ? input.subEventOptions.find((option) => option.id === selectedOpportunity.linkedSubEventId)?.label ?? "Linked sub-event"
+                : selectedOpportunity
+                  ? "Event-wide"
+                  : null;
+            const rollup = input.sponsorRollups.get(commitment.id) ?? { generated: 0, complete: 0, open: 0 };
+            return (
+              <div className="events-workspace__sponsor-card" key={commitment.id}>
+                <div className="events-workspace__placement-card-header">
+                  <div className="events-workspace__placement-card-title-block">
+                    <strong>{commitment.sponsorName.trim() || "New sponsor"}</strong>
+                    <div className="events-workspace__placement-card-meta">
+                      <span className={selectedOpportunity ? "events-chip events-chip--accent" : "events-chip"}>
+                        {assignedPlacementLabel}
+                      </span>
+                      {assignedPlacementScope ? <span className="events-chip">{assignedPlacementScope}</span> : null}
+                      {commitment.isActive === false ? <span className="events-chip">Inactive</span> : null}
+                    </div>
+                  </div>
+                  <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(commitment.id)} type="button">Remove</button>
+                </div>
+                <div className="events-workspace__sponsor-card-body">
+                  <div className="events-workspace__sponsor-summary">
+                    <span className="events-chip events-chip--accent">{rollup.generated} action item{rollup.generated === 1 ? "" : "s"}</span>
+                    <span className="events-chip">{rollup.complete} complete</span>
+                    <span className="events-chip">{rollup.open} open</span>
+                  </div>
+                  <div className="events-workspace__sponsor-form">
+                    <Field label="Sponsor name">
+                      <input className="field-control" onChange={(event) => input.onUpsert({ ...commitment, sponsorName: event.target.value })} value={commitment.sponsorName} />
+                    </Field>
+                    <Field label="Assigned placement">
+                      <select className="field-control" onChange={(event) => input.onUpsert({ ...commitment, opportunityId: event.target.value, placement: input.opportunities.find((opportunity) => opportunity.id === event.target.value)?.placementType })} value={commitment.opportunityId}>
+                        <option value="">Choose a placement</option>
+                        {input.placementOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                      </select>
+                    </Field>
+                    <label className="events-workspace__toggle"><input checked={commitment.logoReceived} onChange={(event) => input.onUpsert({ ...commitment, logoReceived: event.target.checked })} type="checkbox" />Logo received</label>
+                    <label className="events-workspace__toggle"><input checked={commitment.isActive !== false} onChange={(event) => input.onUpsert({ ...commitment, isActive: event.target.checked })} type="checkbox" />Active sponsor</label>
+                    <Field label="Notes" wide>
+                      <textarea className="field-control" onChange={(event) => input.onUpsert({ ...commitment, notes: event.target.value })} value={commitment.notes ?? ""} />
+                    </Field>
+                  </div>
+                  <div className="field-hint">
+                    {selectedOpportunity
+                      ? `Assigned to ${assignedPlacementLabel}${assignedPlacementScope ? ` · ${assignedPlacementScope}` : ""}.`
+                      : "This sponsor record can be saved before assignment, but it needs a placement before fulfillment rows will appear."}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DeliverablesSection(input: {
-  onGenerate: () => void;
-  previewRows: SponsorFulfillmentGenerationResult["plans"];
-  sponsorGenerationPreview: SponsorFulfillmentGenerationResult | null;
+  approvedRowIds: Record<string, true>;
+  createdActionItemIdByRowId: Map<string, string>;
+  onApproveAllPending: () => void;
+  onApprovePlacement: (placementId: string) => void;
+  onApproveRow: (rowId: string) => void;
+  onApproveSponsor: (sponsorId: string) => void;
+  pendingRows: SponsorFulfillmentPreviewRow[];
+  previewRows: SponsorFulfillmentPreviewRow[];
+  rowsByPlacement: Array<{ placementId: string; placementName: string; rows: SponsorFulfillmentPreviewRow[] }>;
+  rowsBySponsor: Array<{ sponsorId: string; sponsorName: string; rows: SponsorFulfillmentPreviewRow[] }>;
   supportsSponsorSetup: boolean;
 }) {
   return (
-    <section className="events-detail-card__section" id="event-workspace-deliverables">
+    <section className="events-detail-card__section" id="event-workspace-fulfillment-preview-deliverables">
       <div className="events-detail-card__header">
         <div>
-          <div className="events-detail-card__section-title">Deliverables / Generated Work Preview</div>
-          <div className="events-selector-card__copy">This preview reads the event-owned sponsorship setup and shows what would be created, reused, or kept for review.</div>
+          <div className="events-detail-card__section-title">Fulfillment Preview</div>
+          <div className="events-selector-card__copy">
+            Preview rows are generated automatically from placement deliverables plus sponsor assignments. Review and approval happen here before the work becomes actionable.
+          </div>
         </div>
-        {input.supportsSponsorSetup ? <button className="topbar__button" onClick={input.onGenerate} type="button">Reconcile Sponsor Work</button> : null}
+        {input.supportsSponsorSetup ? (
+          <button
+            className="topbar__button"
+            disabled={input.pendingRows.length === 0}
+            onClick={input.onApproveAllPending}
+            type="button"
+          >
+            Approve All Pending
+          </button>
+        ) : null}
       </div>
-      {!input.sponsorGenerationPreview || input.previewRows.length === 0 ? <div className="events-detail-card__empty">No sponsor-driven deliverables are currently previewed for this event.</div> : (
+      {input.previewRows.length === 0 ? <div className="events-detail-card__empty">No sponsor-driven preview rows exist yet. Add placement deliverables and assign sponsors to placements to generate them.</div> : (
         <>
           <div className="events-workspace__stat-grid">
-            <Stat label="New actions" value={input.sponsorGenerationPreview.created.length} />
-            <Stat label="Existing actions reused" value={input.sponsorGenerationPreview.plans.filter((plan) => plan.existingActionItemId).length} />
-            <Stat label="Collateral matches" value={input.sponsorGenerationPreview.matchedExistingCollateralCount} />
-            <Stat label="Fallback collateral" value={input.sponsorGenerationPreview.fallbackCollateralToCreate.length} />
+            <Stat label="Total preview rows" value={input.previewRows.length} />
+            <Stat label="Pending review" value={input.pendingRows.length} />
+            <Stat label="Approved" value={input.previewRows.length - input.pendingRows.length} />
+            <Stat label="Sponsors in preview" value={input.rowsBySponsor.length} />
           </div>
-          <div className="events-workspace__preview-list">
-            {input.previewRows.map((plan) => (
-              <div className="events-workspace__preview-row" key={`${plan.sourceKey}-${plan.existingActionItemId ?? "new"}`}>
-                <div>
-                  <strong>{plan.actionItem.title}</strong>
-                  {(plan.collateralLink?.collateralItemName ?? plan.fallbackCollateral?.itemName) ? <div className="field-hint">Collateral: {plan.collateralLink?.collateralItemName ?? plan.fallbackCollateral?.itemName}</div> : null}
-                </div>
-                <span className="events-chip">{plan.existingActionItemId ? "Already in Action View" : "Will be created"}</span>
+          <div className="events-workspace__approval-groups">
+            <div className="events-workspace__approval-group">
+              <div className="events-detail-card__section-title">Approve By Sponsor</div>
+              <div className="events-workspace__approval-chip-list">
+                {input.rowsBySponsor.map((group) => {
+                  const pendingCount = group.rows.filter((row) => !input.approvedRowIds[row.id]).length;
+
+                  return (
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      disabled={pendingCount === 0}
+                      key={group.sponsorId}
+                      onClick={() => input.onApproveSponsor(group.sponsorId)}
+                      type="button"
+                    >
+                      {group.sponsorName || "Unnamed sponsor"} ({pendingCount})
+                    </button>
+                  );
+                })}
               </div>
-            ))}
+            </div>
+            <div className="events-workspace__approval-group">
+              <div className="events-detail-card__section-title">Approve By Placement</div>
+              <div className="events-workspace__approval-chip-list">
+                {input.rowsByPlacement.map((group) => {
+                  const pendingCount = group.rows.filter((row) => !input.approvedRowIds[row.id]).length;
+
+                  return (
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      disabled={pendingCount === 0}
+                      key={group.placementId}
+                      onClick={() => input.onApprovePlacement(group.placementId)}
+                      type="button"
+                    >
+                      {group.placementName} ({pendingCount})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="events-workspace__deliverables-grid-wrap">
+            <table className="events-workspace__deliverables-grid">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Sponsor</th>
+                  <th>Placement</th>
+                  <th>Deliverable_Name</th>
+                  <th>Category</th>
+                  <th>Channel</th>
+                  <th>Timing_Type</th>
+                  <th>Offset_Days</th>
+                  <th>Fixed_Month</th>
+                  <th>Event_Day_Offset</th>
+                  <th>Requires_Logo</th>
+                  <th>Requires_Copy</th>
+                  <th>Requires_Approval</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {input.previewRows.map((row) => {
+                  const isApproved = Boolean(input.approvedRowIds[row.id]);
+                  const createdActionItemId = input.createdActionItemIdByRowId.get(row.id) ?? null;
+                  const isCreated = Boolean(createdActionItemId);
+
+                  return (
+                    <tr
+                      className={
+                        isCreated
+                          ? "events-workspace__preview-row-status events-workspace__preview-row-status--created"
+                          : isApproved
+                            ? "events-workspace__preview-row-status events-workspace__preview-row-status--approved"
+                            : "events-workspace__preview-row-status events-workspace__preview-row-status--pending"
+                      }
+                      key={row.id}
+                    >
+                      <td>
+                        <span className={isCreated || isApproved ? "events-chip events-chip--active" : "events-chip"}>
+                          {isCreated ? "Created" : isApproved ? "Approved" : "Pending"}
+                        </span>
+                      </td>
+                      <td>{row.sponsorName}</td>
+                      <td>{row.placementName}</td>
+                      <td>{row.deliverableName || "Untitled deliverable"}</td>
+                      <td>{row.category || "-"}</td>
+                      <td>{row.channel || "-"}</td>
+                      <td>{row.timingType || "-"}</td>
+                      <td>{row.offsetDays || "-"}</td>
+                      <td>{row.fixedMonth || "-"}</td>
+                      <td>{row.eventDayOffset || "-"}</td>
+                      <td>{row.requiresLogo ? "Yes" : "No"}</td>
+                      <td>{row.requiresCopy ? "Yes" : "No"}</td>
+                      <td>{row.requiresApproval ? "Yes" : "No"}</td>
+                      <td>
+                        <button
+                          className="button-link button-link--inline-secondary"
+                          disabled={isCreated || isApproved}
+                          onClick={() => input.onApproveRow(row.id)}
+                          type="button"
+                        >
+                          {isCreated ? "Created in Action View" : isApproved ? "Approved" : "Approve"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </>
       )}
@@ -925,33 +1313,366 @@ function CollateralSection(input: {
 
 function ReviewSection(input: {
   actionItemCount: number;
-  actionViewHref: string;
-  onOpenInAction: (href: string) => void;
-  sponsorGenerationPreview: SponsorFulfillmentGenerationResult | null;
+  approvedCount: number;
+  createdCount: number;
+  pendingCount: number;
+  previewCount: number;
 }) {
-  const progressedCount = (input.sponsorGenerationPreview?.obsoleteActionItems.filter((item) => item.hasMeaningfulProgress).length ?? 0) + (input.sponsorGenerationPreview?.obsoleteCollateralItems.filter((item) => item.hasMeaningfulProgress).length ?? 0);
   return (
-    <section className="events-detail-card__section" id="event-workspace-review">
+    <section className="events-detail-card__section" id="event-workspace-fulfillment-preview-review">
       <div className="events-detail-card__header">
         <div>
-          <div className="events-detail-card__section-title">Review / Execution Preview</div>
-          <div className="events-selector-card__copy">Action View remains the execution cockpit. This section makes the handoff and review state easier to understand before Melissa leaves setup.</div>
+          <div className="events-detail-card__section-title">Review State</div>
+          <div className="events-selector-card__copy">
+            This section shows what is still pending review and what has already been turned into Action View work.
+          </div>
         </div>
-        <button className="button-link button-link--inline-secondary" onClick={() => input.onOpenInAction(input.actionViewHref)} type="button">Open Action View</button>
       </div>
-      <div className="events-workspace__review-callout">{getReviewCalloutText(input.sponsorGenerationPreview)}</div>
+      <div className="events-workspace__review-callout">
+        {input.pendingCount > 0
+          ? `${input.pendingCount} preview row${input.pendingCount === 1 ? "" : "s"} still need review before they can move into Action View.`
+          : input.createdCount > 0
+            ? `${input.createdCount} approved row${input.createdCount === 1 ? "" : "s"} have already created Action View items.`
+            : input.previewCount > 0
+              ? "All current preview rows have been approved in this event workspace."
+            : "No preview rows are available yet."}
+      </div>
       <div className="events-workspace__review-grid">
         <Stat label="Current action items" value={input.actionItemCount} />
-        <Stat label="Generated actions kept for review" value={input.sponsorGenerationPreview?.obsoleteActionItems.length ?? 0} />
-        <Stat label="Generated collateral kept for review" value={input.sponsorGenerationPreview?.obsoleteCollateralItems.length ?? 0} />
-        <Stat label="Preserved review items with progress" value={progressedCount} />
+        <Stat label="Preview rows" value={input.previewCount} />
+        <Stat label="Pending" value={input.pendingCount} />
+        <Stat label="Approved" value={input.approvedCount} />
+        <Stat label="Created in Action View" value={input.createdCount} />
       </div>
     </section>
   );
 }
 
+function FulfillmentPreviewSection(input: {
+  actionItemCount: number;
+  addItem: (item: NewActionItem) => void;
+  definitionLabel: string;
+  eventInstanceId: string;
+  items: ActionItem[];
+  opportunities: SponsorOpportunity[];
+  commitments: SponsorCommitment[];
+  supportsSponsorSetup: boolean;
+}) {
+  const previewRows = useMemo(
+    () => buildSponsorFulfillmentPreviewRows(input.opportunities, input.commitments),
+    [input.commitments, input.opportunities]
+  );
+  const createdActionItemIdByRowId = useMemo(
+    () =>
+      new Map(
+        previewRows.flatMap((row) => {
+          const existingItem =
+            input.items.find((item) => hasFulfillmentPreviewSourceMarker(item, row.sourceKey)) ?? null;
+
+          return existingItem ? [[row.id, existingItem.id] as const] : [];
+        })
+      ),
+    [input.items, previewRows]
+  );
+  const [approvedRowIds, setApprovedRowIds] = useState<Record<string, true>>({});
+
+  useEffect(() => {
+    setApprovedRowIds((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([rowId]) => previewRows.some((row) => row.id === rowId))
+      ) as Record<string, true>
+    );
+  }, [previewRows]);
+
+  const pendingRows = previewRows.filter((row) => !approvedRowIds[row.id] && !createdActionItemIdByRowId.has(row.id));
+  const approvedRows = previewRows.filter((row) => approvedRowIds[row.id] || createdActionItemIdByRowId.has(row.id));
+  const createdRows = previewRows.filter((row) => createdActionItemIdByRowId.has(row.id));
+  const rowsBySponsor = useMemo(
+    () =>
+      Array.from(
+        previewRows.reduce((map, row) => {
+          const current = map.get(row.sponsorId) ?? {
+            sponsorId: row.sponsorId,
+            sponsorName: row.sponsorName,
+            rows: [] as SponsorFulfillmentPreviewRow[]
+          };
+          current.rows.push(row);
+          map.set(row.sponsorId, current);
+          return map;
+        }, new Map<string, { sponsorId: string; sponsorName: string; rows: SponsorFulfillmentPreviewRow[] }>())
+      ).map(([, value]) => value),
+    [previewRows]
+  );
+  const rowsByPlacement = useMemo(
+    () =>
+      Array.from(
+        previewRows.reduce((map, row) => {
+          const current = map.get(row.placementId) ?? {
+            placementId: row.placementId,
+            placementName: row.placementName,
+            rows: [] as SponsorFulfillmentPreviewRow[]
+          };
+          current.rows.push(row);
+          map.set(row.placementId, current);
+          return map;
+        }, new Map<string, { placementId: string; placementName: string; rows: SponsorFulfillmentPreviewRow[] }>())
+      ).map(([, value]) => value),
+    [previewRows]
+  );
+
+  function approveRow(rowId: string) {
+    const row = previewRows.find((entry) => entry.id === rowId) ?? null;
+
+    if (!row) {
+      return;
+    }
+
+    if (!createdActionItemIdByRowId.has(row.id)) {
+      input.addItem(buildFulfillmentPreviewActionItem({
+        definitionLabel: input.definitionLabel,
+        eventInstanceId: input.eventInstanceId,
+        row
+      }));
+    }
+
+    setApprovedRowIds((current) => ({
+      ...current,
+      [rowId]: true
+    }));
+  }
+
+  function approveRows(rowIds: string[]) {
+    if (rowIds.length === 0) {
+      return;
+    }
+
+    rowIds.forEach((rowId) => {
+      const row = previewRows.find((entry) => entry.id === rowId) ?? null;
+
+      if (!row || createdActionItemIdByRowId.has(row.id)) {
+        return;
+      }
+
+      input.addItem(buildFulfillmentPreviewActionItem({
+        definitionLabel: input.definitionLabel,
+        eventInstanceId: input.eventInstanceId,
+        row
+      }));
+    });
+
+    setApprovedRowIds((current) => ({
+      ...current,
+      ...Object.fromEntries(rowIds.map((rowId) => [rowId, true] as const))
+    }));
+  }
+
+  return (
+    <div className="events-workspace__body">
+      <DeliverablesSection
+        approvedRowIds={approvedRowIds}
+        createdActionItemIdByRowId={createdActionItemIdByRowId}
+        onApproveAllPending={() => approveRows(pendingRows.map((row) => row.id))}
+        onApprovePlacement={(placementId) =>
+          approveRows(
+            pendingRows
+              .filter((row) => row.placementId === placementId)
+              .map((row) => row.id)
+          )
+        }
+        onApproveRow={approveRow}
+        onApproveSponsor={(sponsorId) =>
+          approveRows(
+            pendingRows
+              .filter((row) => row.sponsorId === sponsorId)
+              .map((row) => row.id)
+          )
+        }
+        pendingRows={pendingRows}
+        previewRows={previewRows}
+        rowsByPlacement={rowsByPlacement}
+        rowsBySponsor={rowsBySponsor}
+        supportsSponsorSetup={input.supportsSponsorSetup}
+      />
+      <ReviewSection
+        actionItemCount={input.actionItemCount}
+        approvedCount={approvedRows.length}
+        createdCount={createdRows.length}
+        pendingCount={pendingRows.length}
+        previewCount={previewRows.length}
+      />
+    </div>
+  );
+}
+
 function Field({ children, label, wide = false }: { children: ReactNode; label: string; wide?: boolean }) {
   return <div className={`field${wide ? " field--wide" : ""}`}><label>{label}</label>{children}</div>;
+}
+
+function createEmptyPlacementDeliverable(): SponsorOpportunityDeliverable {
+  return {
+    id: `placement-deliverable-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    deliverableName: "",
+    category: "",
+    channel: "",
+    timingType: "",
+    offsetDays: "",
+    fixedMonth: "",
+    eventDayOffset: "",
+    requiresLogo: false,
+    requiresCopy: false,
+    requiresApproval: false
+  };
+}
+
+function buildFulfillmentPreviewActionItem(input: {
+  definitionLabel: string;
+  eventInstanceId: string;
+  row: SponsorFulfillmentPreviewRow;
+}): NewActionItem {
+  const noteEntry = createActionNoteEntry(
+    [
+      `Generated from approved fulfillment preview for ${input.row.sponsorName}.`,
+      `Fulfillment preview source: ${input.row.sourceKey}.`,
+      `Placement: ${input.row.placementName}.`,
+      `Sponsor: ${input.row.sponsorName}.`,
+      input.row.deliverableName ? `Deliverable: ${input.row.deliverableName}.` : "",
+      input.row.category ? `Category: ${input.row.category}.` : "",
+      input.row.channel ? `Channel: ${input.row.channel}.` : "",
+      input.row.timingType ? `Timing type: ${input.row.timingType}.` : "",
+      input.row.offsetDays ? `Offset days: ${input.row.offsetDays}.` : "",
+      input.row.fixedMonth ? `Fixed month: ${input.row.fixedMonth}.` : "",
+      input.row.eventDayOffset ? `Event day offset: ${input.row.eventDayOffset}.` : "",
+      input.row.requiresLogo && !input.row.logoReceived ? "Waiting on sponsor logo." : "",
+      input.row.requiresCopy ? "Requires sponsor copy." : "",
+      input.row.requiresApproval ? "Requires approval." : "",
+      input.row.sponsorNotes ?? "",
+      input.row.placementNotes ?? ""
+    ]
+      .filter(Boolean)
+      .join(" "),
+    { author: LOCAL_FALLBACK_NOTE_AUTHOR }
+  );
+
+  return {
+    type: "Deliverable",
+    title: `${input.row.sponsorName} - ${input.row.deliverableName || "Fulfillment deliverable"}`,
+    workstream: input.definitionLabel,
+    eventInstanceId: input.eventInstanceId,
+    subEventId: input.row.linkedSubEventId,
+    operationalBucket: undefined,
+    issue: undefined,
+    dueDate: "",
+    owner: "",
+    status: input.row.requiresLogo && !input.row.logoReceived ? "Waiting" : "Not Started",
+    waitingOn: input.row.requiresLogo && !input.row.logoReceived ? "Sponsor logo" : "",
+    isBlocked: undefined,
+    blockedBy: "",
+    noteEntries: noteEntry ? [noteEntry] : []
+  };
+}
+
+function hasFulfillmentPreviewSourceMarker(item: Pick<ActionItem, "noteEntries">, sourceKey: string) {
+  return item.noteEntries.some((entry) => entry.text.includes(`Fulfillment preview source: ${sourceKey}.`));
+}
+
+function getFulfillmentPreviewSourceLink(item: Pick<ActionItem, "noteEntries">): FulfillmentPreviewSourceLink | null {
+  for (const entry of item.noteEntries) {
+    const markerStart = entry.text.indexOf("Fulfillment preview source: ");
+
+    if (markerStart < 0) {
+      continue;
+    }
+
+    const sourceStart = markerStart + "Fulfillment preview source: ".length;
+    const sourceEnd = entry.text.indexOf(".", sourceStart);
+
+    if (sourceEnd < 0) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(entry.text.slice(sourceStart, sourceEnd)) as Partial<FulfillmentPreviewSourceLink>;
+
+      if (
+        typeof parsed.eventInstanceId === "string" &&
+        typeof parsed.placementId === "string" &&
+        typeof parsed.sponsorId === "string" &&
+        typeof parsed.deliverableId === "string"
+      ) {
+        return {
+          eventInstanceId: parsed.eventInstanceId,
+          placementId: parsed.placementId,
+          sponsorId: parsed.sponsorId,
+          deliverableId: parsed.deliverableId
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function buildSponsorFulfillmentPreviewRows(
+  opportunities: SponsorOpportunity[],
+  commitments: SponsorCommitment[]
+): SponsorFulfillmentPreviewRow[] {
+  const opportunityById = new Map(opportunities.map((opportunity) => [opportunity.id, opportunity] as const));
+
+  return commitments.flatMap((commitment) => {
+    const sponsorName = commitment.sponsorName.trim();
+    const opportunity = opportunityById.get(commitment.opportunityId) ?? null;
+
+    if (!sponsorName || !opportunity || opportunity.isActive === false || commitment.isActive === false) {
+      return [];
+    }
+
+    return (opportunity.deliverables ?? []).map((deliverable) => ({
+      id: [
+        commitment.id,
+        opportunity.id,
+        deliverable.id,
+        sponsorName,
+        opportunity.label,
+        deliverable.deliverableName,
+        deliverable.category,
+        deliverable.channel,
+        deliverable.timingType,
+        deliverable.offsetDays,
+        deliverable.fixedMonth,
+        deliverable.eventDayOffset,
+        deliverable.requiresLogo ? "logo" : "no-logo",
+        deliverable.requiresCopy ? "copy" : "no-copy",
+        deliverable.requiresApproval ? "approval" : "no-approval"
+      ].join("::"),
+      sourceKey: JSON.stringify({
+        eventInstanceId: commitment.eventInstanceId,
+        placementId: opportunity.id,
+        sponsorId: commitment.id,
+        deliverableId: deliverable.id
+      }),
+      sponsorId: commitment.id,
+      sponsorName,
+      placementId: opportunity.id,
+      placementName: opportunity.label.trim() || "Unnamed placement",
+      linkedSubEventId: commitment.linkedSubEventId ?? opportunity.linkedSubEventId,
+      sponsorNotes: commitment.notes,
+      placementNotes: opportunity.notes,
+      logoReceived: commitment.logoReceived,
+      deliverableName: deliverable.deliverableName,
+      deliverableId: deliverable.id,
+      category: deliverable.category,
+      channel: deliverable.channel,
+      timingType: deliverable.timingType,
+      offsetDays: deliverable.offsetDays,
+      fixedMonth: deliverable.fixedMonth,
+      eventDayOffset: deliverable.eventDayOffset,
+      requiresLogo: deliverable.requiresLogo,
+      requiresCopy: deliverable.requiresCopy,
+      requiresApproval: deliverable.requiresApproval
+    }));
+  });
 }
 
 function getDateLabel(dateMode: EventOnboardingSelectedInstance["instance"]["dateMode"], index: number) {
