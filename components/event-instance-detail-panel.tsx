@@ -229,6 +229,17 @@ export function EventInstanceDetailPanel({
         </nav>
 
         <section className={`events-workspace__content${activeSectionId === "sub-events" ? " events-workspace__content--sub-events" : ""}`} aria-label={activeStep?.label ?? "Event workspace section"}>
+          <div className="events-workspace__section-header">
+            <div>
+              <div className="events-workspace__section-eyebrow">Selected Section</div>
+              <h3 className="events-workspace__section-title">{activeStep?.label ?? "Event workspace section"}</h3>
+              <div className="events-detail-card__meta">
+                <span>{instance.name}</span>
+                <span>{formatWorkspaceDateRange(instance.startDate, instance.endDate)}</span>
+                {instance.location ? <span>{instance.location}</span> : null}
+              </div>
+            </div>
+          </div>
           {activeSectionId === "details" ? (
             <EventDetailsSection detailsDraft={detailsDraft} instance={instance} onSave={saveEventDetails} setDetailsDraft={setDetailsDraft} />
           ) : null}
@@ -666,6 +677,18 @@ function getSubEventModeLabel(scheduleMode: EventSubEventScheduleMode) {
   return "Timed";
 }
 
+function formatWorkspaceDateRange(startDate: string, endDate: string) {
+  if (!startDate) {
+    return "Dates not set";
+  }
+
+  if (!endDate || startDate === endDate) {
+    return startDate;
+  }
+
+  return `${startDate} - ${endDate}`;
+}
+
 function SponsorOpportunitiesSection(input: {
   eventTypeId: string;
   onAdd: () => void;
@@ -735,6 +758,13 @@ function SponsorCommitmentsSection(input: {
   subEventOptions: Array<{ id: string; label: string }>;
   supportsSponsorSetup: boolean;
 }) {
+  const [expandedDeliverablesByCommitment, setExpandedDeliverablesByCommitment] = useState<Record<string, boolean>>({});
+  const totalDerivedDeliverables = input.commitments.reduce((total, commitment) => {
+    const selectedOpportunity = input.opportunities.find((opportunity) => opportunity.id === commitment.opportunityId) ?? null;
+    return total + (selectedOpportunity ? getSponsorPlacementDeliverables(selectedOpportunity.placementType, input.eventTypeId).length : 0);
+  }, 0);
+  const commitmentsMissingLogo = input.commitments.filter((commitment) => !commitment.logoReceived).length;
+
   return (
     <section className="events-detail-card__section" id="event-workspace-commitments">
       <div className="events-detail-card__header">
@@ -746,11 +776,29 @@ function SponsorCommitmentsSection(input: {
       </div>
       {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use sponsor commitments.</div> : input.commitments.length === 0 ? <div className="events-detail-card__empty">No sponsor commitments yet.</div> : (
         <div className="events-workspace__list">
+          <div className="events-workspace__stat-grid">
+            <Stat label="Total commitments" value={input.commitments.length} />
+            <Stat label="Derived deliverables" value={totalDerivedDeliverables} />
+            <Stat label="Missing logo" value={commitmentsMissingLogo} />
+          </div>
           {input.commitments.map((commitment) => {
             const selectedOpportunity = input.opportunities.find((opportunity) => opportunity.id === commitment.opportunityId) ?? null;
-            const deliverableCount = selectedOpportunity ? getSponsorPlacementDeliverables(selectedOpportunity.placementType, input.eventTypeId).length : 0;
+            const derivedDeliverables = selectedOpportunity
+              ? getSponsorPlacementDeliverables(selectedOpportunity.placementType, input.eventTypeId)
+              : [];
+            const deliverableCount = derivedDeliverables.length;
+            const isExpanded = expandedDeliverablesByCommitment[commitment.id] ?? false;
             return (
               <div className="events-workspace__list-row" key={commitment.id}>
+                <div className="events-detail-card__header">
+                  <div>
+                    <strong>{commitment.sponsorName.trim() || "New sponsor commitment"}</strong>
+                    <div className="field-hint">
+                      {selectedOpportunity ? selectedOpportunity.label : "Choose an opportunity to make downstream deliverables explicit."}
+                    </div>
+                  </div>
+                  <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(commitment.id)} type="button">Remove</button>
+                </div>
                 <div className="events-workspace__grid events-workspace__grid--sponsor">
                   <Field label="Sponsor">
                     <input className="field-control" onChange={(event) => input.onUpsert({ ...commitment, sponsorName: event.target.value })} value={commitment.sponsorName} />
@@ -775,8 +823,34 @@ function SponsorCommitmentsSection(input: {
                 </div>
                 <div className="events-detail-card__actions">
                   <div className="field-hint">{selectedOpportunity ? `${deliverableCount} deliverable rule${deliverableCount === 1 ? "" : "s"} will reconcile from this commitment.` : "Choose an opportunity to make downstream deliverables explicit."}</div>
-                  <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(commitment.id)} type="button">Remove</button>
+                  {deliverableCount > 0 ? (
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() =>
+                        setExpandedDeliverablesByCommitment((current) => ({
+                          ...current,
+                          [commitment.id]: !isExpanded
+                        }))
+                      }
+                      type="button"
+                    >
+                      {isExpanded ? "Hide deliverables" : `Show deliverables (${deliverableCount})`}
+                    </button>
+                  ) : null}
                 </div>
+                {isExpanded && deliverableCount > 0 ? (
+                  <div className="events-workspace__list">
+                    {derivedDeliverables.map((deliverable) => (
+                      <div className="events-workspace__preview-row" key={`${commitment.id}-${deliverable.deliverableName}`}>
+                        <div>
+                          <strong>{deliverable.deliverableName}</strong>
+                          {deliverable.subEventName ? <div className="field-hint">Sub-event: {deliverable.subEventName}</div> : null}
+                        </div>
+                        <span className="events-chip">Derived</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             );
           })}
