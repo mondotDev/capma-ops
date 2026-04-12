@@ -6,6 +6,7 @@ import {
   isDefaultSubEventNameForEventType,
   type EventTypeDefinition
 } from "@/lib/event-type-definitions";
+import { sortSubEventsForEventWorkspace } from "@/lib/events/sub-event-ordering";
 import type { ActionItem } from "@/lib/sample-data";
 
 export type EventOnboardingGroup = {
@@ -18,7 +19,9 @@ export type EventOnboardingSubEventView = {
   id: string;
   name: string;
   sortOrder: number;
+  scheduleMode: EventSubEvent["scheduleMode"];
   date: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   isDefault: boolean;
@@ -116,9 +119,9 @@ export function getEventOnboardingView(input: {
 
   const definition = getEventTypeDefinition(selectedInstance.eventTypeId);
   const selectedGroup = groups.find((group) => group.definition.key === selectedInstance.eventTypeId) ?? null;
-  const selectedSubEvents = [...input.eventSubEvents]
-    .filter((subEvent) => subEvent.eventInstanceId === selectedInstance.id)
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+  const selectedSubEvents = sortSubEventsForEventWorkspace(
+    input.eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === selectedInstance.id)
+  );
   const scheduleStatus = getScheduleStatus(selectedSubEvents);
   const subEventViews = selectedSubEvents.map((subEvent) => {
     const actionUsageCount = input.items.filter(
@@ -140,7 +143,9 @@ export function getEventOnboardingView(input: {
       id: subEvent.id,
       name: subEvent.name,
       sortOrder: subEvent.sortOrder,
+      scheduleMode: subEvent.scheduleMode,
       date: subEvent.date ?? "",
+      endDate: subEvent.endDate ?? "",
       startTime: subEvent.startTime ?? "",
       endTime: subEvent.endTime ?? "",
       isDefault,
@@ -151,7 +156,9 @@ export function getEventOnboardingView(input: {
       removeBlockReason
     } satisfies EventOnboardingSubEventView;
   });
-  const scheduledSubEvents = subEventViews.filter((subEvent) => !subEvent.isUnassigned);
+  const scheduledSubEvents = sortSubEventsForEventWorkspace(
+    subEventViews.filter((subEvent) => !subEvent.isUnassigned)
+  );
   const fallbackLane = subEventViews.find((subEvent) => subEvent.isUnassigned) ?? null;
   const setupSteps = getSetupSteps({
     instance: selectedInstance,
@@ -219,7 +226,9 @@ function getScheduleStatus(subEvents: EventSubEvent[]): EventOnboardingScheduleS
     return "none";
   }
 
-  const scheduledCount = schedulableSubEvents.filter((subEvent) => Boolean(subEvent.date)).length;
+  const scheduledCount = schedulableSubEvents.filter((subEvent) =>
+    subEvent.scheduleMode === "multi_day" ? Boolean(subEvent.date && subEvent.endDate) : Boolean(subEvent.date)
+  ).length;
 
   if (scheduledCount === 0) {
     return "none";
@@ -264,8 +273,8 @@ function getSetupSteps(input: {
         input.scheduleStatus === "scheduled"
           ? "Sub-event dates are confirmed."
           : input.scheduleStatus === "partial"
-            ? "Next step: finish adding dates and times for the remaining sub-events."
-            : "Next step: add dates and times for this event's sub-events."
+            ? "Next step: finish adding schedule details for the remaining sub-events."
+            : "Next step: add schedule details for this event's sub-events."
     },
     {
       key: "collateral",

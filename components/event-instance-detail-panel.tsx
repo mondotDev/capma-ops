@@ -1,951 +1,891 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { UpdateEventInstanceInput, UpsertEventSubEventInput } from "@/components/app-state";
-import { type EventOnboardingSelectedInstance } from "@/lib/events/event-onboarding";
-import { getDefaultDatesForEventDateMode, validateEventInstanceCreationInput } from "@/lib/event-type-definitions";
-import { formatShortDate } from "@/lib/ops-utils";
+import { sortSubEventsForEventWorkspace } from "@/lib/events/sub-event-ordering";
+import type { EventOnboardingSelectedInstance } from "@/lib/events/event-onboarding";
+import type { EventSubEventScheduleMode } from "@/lib/event-instances";
+import { deriveEventDateRange } from "@/lib/event-instances";
 import {
-  createSponsorPlacementDraft,
-  getSponsorFulfillmentTaskTitle,
+  createSponsorCommitmentDraft,
+  createSponsorOpportunityDraft,
+  ensureSponsorshipSetupForEventInstance,
+  getSponsorCommitmentOpportunityOptions,
   getSponsorPlacementDeliverables,
   getSponsorPlacementLabel,
-  getSponsorPlacementOptions,
-  type SponsorPlacement
+  type SponsorCommitment,
+  type SponsorFulfillmentGenerationResult,
+  type SponsorOpportunity,
+  type SponsorshipSetup
 } from "@/lib/sponsor-fulfillment";
-import type { EventDateMode } from "@/lib/event-instances";
 
-type EventInstanceDetailPanelProps = {
-  selectedInstance: EventOnboardingSelectedInstance | null;
+type Props = {
+  selectedInstance: EventOnboardingSelectedInstance;
   isActive: boolean;
-  onClose: () => void;
-  onOpenInCollateral: (instanceId: string) => void;
-  onSetActive: (instanceId: string) => void;
-  onUpdateInstance: (instanceId: string, updates: UpdateEventInstanceInput) => boolean;
-  onUpsertSubEvent: (instanceId: string, input: UpsertEventSubEventInput) => string | null;
-  onRemoveSubEvent: (instanceId: string, subEventId: string) => boolean;
-  sponsorPlacements: SponsorPlacement[];
-  onUpsertSponsorPlacement: (instanceId: string, placement: SponsorPlacement) => void;
-  onRemoveSponsorPlacement: (instanceId: string, placementId: string) => void;
+  actionItemCount: number;
+  actionViewHref: string;
+  collateralItemCount: number;
   onGenerateSponsorFulfillment: (instanceId: string) => {
     createdActions: number;
     updatedActions: number;
     matchedCollateral: number;
     createdCollateral: number;
     skipped: number;
+    obsoleteActions: number;
+    obsoleteCollateral: number;
+    progressedObsoleteActions: number;
+    progressedObsoleteCollateral: number;
   };
+  onOpenInAction: (href: string) => void;
+  onOpenInCollateral: (instanceId: string) => void;
+  onRemoveSubEvent: (instanceId: string, subEventId: string) => boolean;
+  onRemoveSponsorCommitment: (instanceId: string, commitmentId: string) => void;
+  onRemoveSponsorOpportunity: (instanceId: string, opportunityId: string) => boolean;
+  onSetActive: (instanceId: string) => void;
+  onUpdateInstance: (instanceId: string, updates: UpdateEventInstanceInput) => boolean;
+  onUpsertSponsorCommitment: (instanceId: string, commitment: SponsorCommitment) => void;
+  onUpsertSponsorOpportunity: (instanceId: string, opportunity: SponsorOpportunity) => void;
+  onUpsertSubEvent: (instanceId: string, input: UpsertEventSubEventInput) => string | null;
+  sponsorGenerationPreview: SponsorFulfillmentGenerationResult | null;
+  sponsorshipSetup: SponsorshipSetup | null;
 };
 
-type DetailFormState = {
-  instanceName: string;
-  dateMode: EventDateMode;
-  dates: string[];
-  location: string;
-  notes: string;
+type DetailsDraft = { name: string; location: string; notes: string; dates: string[] };
+type WorkspaceSectionId = (typeof WORKSPACE_SECTIONS)[number]["id"];
+type WorkspaceStep = {
+  sectionId: WorkspaceSectionId;
+  label: string;
+  badge: string;
+  status: "done" | "next" | "attention";
+  copy: string;
 };
+
+const WORKSPACE_SECTIONS = [
+  { id: "details", label: "Event details" },
+  { id: "sub-events", label: "Sub-events" },
+  { id: "opportunities", label: "Sponsor opportunities" },
+  { id: "commitments", label: "Sponsor commitments" },
+  { id: "deliverables", label: "Generated work preview" },
+  { id: "collateral", label: "Collateral" },
+  { id: "review", label: "Review / execution preview" }
+] as const;
 
 export function EventInstanceDetailPanel({
   selectedInstance,
   isActive,
-  onClose,
+  actionItemCount,
+  actionViewHref,
+  collateralItemCount,
+  onGenerateSponsorFulfillment,
+  onOpenInAction,
   onOpenInCollateral,
+  onRemoveSubEvent,
+  onRemoveSponsorCommitment,
+  onRemoveSponsorOpportunity,
   onSetActive,
   onUpdateInstance,
+  onUpsertSponsorCommitment,
+  onUpsertSponsorOpportunity,
   onUpsertSubEvent,
-  onRemoveSubEvent,
-  sponsorPlacements,
-  onUpsertSponsorPlacement,
-  onRemoveSponsorPlacement,
-  onGenerateSponsorFulfillment
-}: EventInstanceDetailPanelProps) {
-  const [formState, setFormState] = useState<DetailFormState | null>(null);
-  const [subEventDrafts, setSubEventDrafts] = useState<Record<string, string>>({});
-  const [subEventDateDrafts, setSubEventDateDrafts] = useState<Record<string, string>>({});
-  const [subEventStartTimeDrafts, setSubEventStartTimeDrafts] = useState<Record<string, string>>({});
-  const [subEventEndTimeDrafts, setSubEventEndTimeDrafts] = useState<Record<string, string>>({});
-  const [newSubEventName, setNewSubEventName] = useState("");
-  const [newSubEventDate, setNewSubEventDate] = useState("");
-  const [newSubEventStartTime, setNewSubEventStartTime] = useState("");
-  const [newSubEventEndTime, setNewSubEventEndTime] = useState("");
+  sponsorGenerationPreview,
+  sponsorshipSetup
+}: Props) {
+  const { definition, eventFamilyName, fallbackLane, instance, scheduleStatus, scheduledSubEvents } = selectedInstance;
+  const supportsSponsorSetup = definition?.supportsSponsorSetup !== false;
+  const orderedScheduledSubEvents = useMemo(
+    () => sortSubEventsForEventWorkspace(scheduledSubEvents),
+    [scheduledSubEvents]
+  );
+  const resolvedSetup = useMemo(
+    () => ensureSponsorshipSetupForEventInstance(instance.id, instance.eventTypeId, sponsorshipSetup),
+    [instance.eventTypeId, instance.id, sponsorshipSetup]
+  );
+  const opportunityOptions = useMemo(() => getSponsorCommitmentOpportunityOptions(resolvedSetup), [resolvedSetup]);
+  const subEventOptions = useMemo(
+    () =>
+      [
+        ...orderedScheduledSubEvents.map((subEvent) => ({ id: subEvent.id, label: subEvent.name })),
+        ...(fallbackLane ? [{ id: fallbackLane.id, label: fallbackLane.name }] : [])
+      ],
+    [fallbackLane, orderedScheduledSubEvents]
+  );
+  const [detailsDraft, setDetailsDraft] = useState<DetailsDraft>(() => createDetailsDraft(instance));
+  const [newSubEventDraft, setNewSubEventDraft] = useState<UpsertEventSubEventInput>(createEmptySubEventDraft());
   const [feedback, setFeedback] = useState("");
-  const newSubEventNameRef = useRef<HTMLInputElement | null>(null);
+  const [activeSectionId, setActiveSectionId] = useState<WorkspaceSectionId>("details");
 
-  useEffect(() => {
-    if (!selectedInstance) {
-      setFormState(null);
-      setSubEventDrafts({});
-      setSubEventDateDrafts({});
-      setSubEventStartTimeDrafts({});
-      setSubEventEndTimeDrafts({});
-      setFeedback("");
-      setNewSubEventName("");
-      setNewSubEventDate("");
-      setNewSubEventStartTime("");
-      setNewSubEventEndTime("");
-      return;
-    }
+  useEffect(() => setDetailsDraft(createDetailsDraft(instance)), [instance]);
+  useEffect(() => setActiveSectionId("details"), [instance.id]);
 
-    setFormState({
-      instanceName: selectedInstance.instance.name,
-      dateMode: selectedInstance.instance.dateMode,
-      dates: normalizeEditableDates(selectedInstance.instance.dateMode, selectedInstance.instance.dates),
-      location: selectedInstance.instance.location ?? "",
-      notes: selectedInstance.instance.notes ?? ""
-    });
-    const editableSubEvents = selectedInstance.fallbackLane
-      ? [...selectedInstance.scheduledSubEvents, selectedInstance.fallbackLane]
-      : selectedInstance.scheduledSubEvents;
-    setSubEventDrafts(
-      Object.fromEntries(editableSubEvents.map((subEvent) => [subEvent.id, subEvent.name]))
-    );
-    setSubEventDateDrafts(
-      Object.fromEntries(
-        editableSubEvents.map((subEvent) => [subEvent.id, "date" in subEvent ? subEvent.date : ""])
-      )
-    );
-    setSubEventStartTimeDrafts(
-      Object.fromEntries(
-        editableSubEvents.map((subEvent) => [subEvent.id, "startTime" in subEvent ? subEvent.startTime : ""])
-      )
-    );
-    setSubEventEndTimeDrafts(
-      Object.fromEntries(
-        editableSubEvents.map((subEvent) => [subEvent.id, "endTime" in subEvent ? subEvent.endTime : ""])
-      )
-    );
-    setFeedback("");
-    setNewSubEventName("");
-    setNewSubEventDate(getDefaultNewSubEventDate(selectedInstance.instance));
-    setNewSubEventStartTime("");
-    setNewSubEventEndTime("");
-  }, [selectedInstance]);
+  const steps = useMemo(
+    () => buildSteps(instance.name, instance.startDate, scheduleStatus, resolvedSetup, sponsorGenerationPreview),
+    [instance.name, instance.startDate, resolvedSetup, scheduleStatus, sponsorGenerationPreview]
+  );
+  const previewRows = (sponsorGenerationPreview?.plans ?? []).slice(0, 8);
+  const activeStep = steps.find((step) => step.sectionId === activeSectionId) ?? steps[0];
 
-  const validation = useMemo(() => {
-    if (!selectedInstance || !formState) {
-      return false;
-    }
-
-    return validateEventInstanceCreationInput({
-      eventTypeId: selectedInstance.instance.eventTypeId,
-      instanceName: formState.instanceName,
-      dateMode: formState.dateMode,
-      dates: formState.dates
-    });
-  }, [formState, selectedInstance]);
-
-  if (!selectedInstance || !formState) {
-    return null;
-  }
-
-  const { instance, definition, eventFamilyName, scheduleStatus } = selectedInstance;
-  const supportsSponsorSetup = definition?.supportsSponsorSetup ?? false;
-  const sponsorPlacementOptions = supportsSponsorSetup
-    ? getSponsorPlacementOptions(instance.eventTypeId)
-    : [];
-  const {
-    fallbackLane,
-    isCollateralReady,
-    nextStepGuidance,
-    scheduledSubEvents,
-    setupSteps
-  } = selectedInstance;
-
-  function handleSaveDetails() {
+  function saveEventDetails() {
+    const cleanedDates = detailsDraft.dates.map((date) => date.trim()).filter(Boolean);
+    const nextDates =
+      instance.dateMode === "single" ? cleanedDates.slice(0, 1) : instance.dateMode === "range" ? [cleanedDates[0] ?? "", cleanedDates[1] ?? ""] : cleanedDates;
+    const nextRange = deriveEventDateRange(instance.dateMode, nextDates);
     const didUpdate = onUpdateInstance(instance.id, {
-      instanceName: formState.instanceName,
-      dateMode: formState.dateMode,
-      dates: formState.dates,
-      location: formState.location,
-      notes: formState.notes
+      instanceName: detailsDraft.name,
+      location: detailsDraft.location,
+      notes: detailsDraft.notes,
+      dates: nextRange.dates
     });
-
-    setFeedback(
-      didUpdate
-        ? `${formState.instanceName.trim()} updated.`
-        : "Event details could not be saved. Check the name and dates, then try again."
-    );
+    setFeedback(didUpdate ? "Event details updated." : "Event details need a name and valid date values before they can be saved.");
   }
 
-  function handleSaveSubEventName(subEventId: string) {
-    const nextName = subEventDrafts[subEventId] ?? "";
-    const didSave = onUpsertSubEvent(instance.id, {
-      id: subEventId,
-      name: nextName,
-      date: subEventDateDrafts[subEventId] ?? "",
-      startTime: subEventStartTimeDrafts[subEventId] ?? "",
-      endTime: subEventEndTimeDrafts[subEventId] ?? ""
-    });
-    setFeedback(
-      didSave
-        ? "Sub-event updated."
-        : "That sub-event name could not be saved. Use a unique non-empty name."
-    );
-  }
-
-  function handleAddSubEvent() {
-    const addedId = onUpsertSubEvent(instance.id, {
-      name: newSubEventName,
-      date: newSubEventDate,
-      startTime: newSubEventStartTime,
-      endTime: newSubEventEndTime
-    });
-    setFeedback(
-      addedId
-        ? `Added ${newSubEventName.trim()}.`
-        : "That sub-event could not be added. Use a unique non-empty name."
-    );
-    if (addedId) {
-      setNewSubEventName("");
-      setNewSubEventDate(getDefaultNewSubEventDate(instance));
-      setNewSubEventStartTime("");
-      setNewSubEventEndTime("");
-      setTimeout(() => newSubEventNameRef.current?.focus(), 0);
-    }
-  }
-
-  function handleRemoveSubEvent(subEventId: string) {
-    const didRemove = onRemoveSubEvent(instance.id, subEventId);
-    setFeedback(
-      didRemove
-        ? "Sub-event removed."
-        : "This sub-event could not be removed because it is scaffolded or already in use."
-    );
-  }
-
-  function handleAddSponsorPlacement() {
-    onUpsertSponsorPlacement(instance.id, createSponsorPlacementDraft(instance.id, instance.eventTypeId));
-    setFeedback("Sponsor placement added.");
-  }
-
-  function handleSponsorPlacementChange(
-    placementId: string,
-    field: keyof Pick<SponsorPlacement, "sponsorName" | "placement" | "linkedSubEventId" | "logoReceived" | "notes" | "isActive">,
-    value: string | boolean | undefined
-  ) {
-    const placement = sponsorPlacements.find((entry) => entry.id === placementId);
-
-    if (!placement) {
+  function addSubEvent() {
+    const nextId = onUpsertSubEvent(instance.id, newSubEventDraft);
+    if (!nextId) {
+      setFeedback("Sub-event could not be added. Check for a unique name and valid schedule details.");
       return;
     }
-
-    onUpsertSponsorPlacement(instance.id, {
-      ...placement,
-      [field]: value
-    });
+    setNewSubEventDraft(createEmptySubEventDraft());
+    setFeedback("Sub-event added.");
   }
 
-  function handleGenerateSponsorWork() {
+  function generateSponsorWork() {
     const result = onGenerateSponsorFulfillment(instance.id);
+    const staleCount = result.obsoleteActions + result.obsoleteCollateral;
+    const progressCount = result.progressedObsoleteActions + result.progressedObsoleteCollateral;
+    setFeedback(
+      [
+        result.createdActions > 0 ? `${result.createdActions} new action item${result.createdActions === 1 ? "" : "s"}` : "",
+        result.updatedActions > 0 ? `${result.updatedActions} action item${result.updatedActions === 1 ? "" : "s"} refreshed` : "",
+        result.createdCollateral > 0 ? `${result.createdCollateral} fallback collateral item${result.createdCollateral === 1 ? "" : "s"}` : "",
+        result.matchedCollateral > 0 ? `${result.matchedCollateral} collateral match${result.matchedCollateral === 1 ? "" : "es"}` : "",
+        result.skipped > 0 ? `${result.skipped} skipped duplicate or incomplete row${result.skipped === 1 ? "" : "s"}` : "",
+        staleCount > 0 ? `${staleCount} generated item${staleCount === 1 ? "" : "s"} kept for review` : "",
+        progressCount > 0 ? `${progressCount} preserved review item${progressCount === 1 ? "" : "s"} already had progress` : ""
+      ].filter(Boolean).join(", ") || "No new sponsor work was needed."
+    );
+  }
 
-    if (
-      result.createdActions === 0 &&
-      result.updatedActions === 0 &&
-      result.createdCollateral === 0 &&
-      result.matchedCollateral === 0 &&
-      result.skipped === 0
-    ) {
-      setFeedback("No sponsor work was generated yet. Add at least one active sponsor placement first.");
-      return;
-    }
-
-    const parts = [];
-
-    if (result.createdActions > 0) {
-      parts.push(
-        `${result.createdActions} sponsor action item${result.createdActions === 1 ? "" : "s"} created in Action View`
-      );
-    }
-
-    if (result.updatedActions > 0) {
-      parts.push(
-        `${result.updatedActions} existing sponsor action item${result.updatedActions === 1 ? "" : "s"} linked to collateral`
-      );
-    }
-
-    if (result.matchedCollateral > 0) {
-      parts.push(
-        `${result.matchedCollateral} deliverable${result.matchedCollateral === 1 ? "" : "s"} matched existing collateral`
-      );
-    }
-
-    if (result.createdCollateral > 0) {
-      parts.push(
-        `${result.createdCollateral} fallback collateral item${result.createdCollateral === 1 ? "" : "s"} created`
-      );
-    }
-
-    if (result.skipped > 0) {
-      parts.push(
-        `${result.skipped} deliverable${result.skipped === 1 ? "" : "s"} skipped because matching action work already exists or setup is incomplete`
-      );
-    }
-
-    setFeedback(parts.join(". ") + ".");
+  function selectSection(sectionId: WorkspaceSectionId) {
+    setActiveSectionId(sectionId);
   }
 
   return (
-    <aside aria-label="Event setup details" className="drawer drawer--events">
-      <div className="drawer__sticky events-drawer__sticky">
-        <div className="events-drawer__eyebrow">Event Setup</div>
-        <div className="events-drawer__header">
-          <div className="events-drawer__header-text">
-            <div className="events-drawer__title-row">
-              <h2 className="drawer__title events-drawer__title">{instance.name}</h2>
-              <button
-                aria-label="Close event setup"
-                className="drawer-close"
-                onClick={onClose}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <div className="events-detail-card__meta">
-              <span>{definition?.label ?? instance.eventTypeId}</span>
-              <span>{eventFamilyName}</span>
-              <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
-              <span>{formatScheduleStatus(scheduleStatus)}</span>
-            </div>
-          </div>
-          <div className="events-detail-card__actions">
-            {!isActive ? (
-              <button
-                className="button-link button-link--inline-secondary"
-                onClick={() => onSetActive(instance.id)}
-                type="button"
-              >
-                Make Active
-              </button>
-            ) : (
-              <span className="events-chip events-chip--active">Active Instance</span>
-            )}
-            <button
-              className="topbar__button"
-              onClick={() => onOpenInCollateral(instance.id)}
-              type="button"
-            >
-              {isCollateralReady ? "Open in Collateral" : "Open in Collateral Anyway"}
-            </button>
+    <section className="card card--secondary events-workspace" aria-label="Event workspace">
+      <div className="events-workspace__header">
+        <div>
+          <div className="events-workspace__eyebrow">Event Workspace</div>
+          <h2 className="collateral-page__title">{instance.name}</h2>
+          <div className="events-detail-card__meta">
+            <span>{eventFamilyName}</span>
+            <span>{definition?.label ?? instance.eventTypeId}</span>
+            <span>{instance.startDate}</span>
+            {instance.location ? <span>{instance.location}</span> : null}
+            <span>{scheduleStatus === "scheduled" ? "Schedule confirmed" : scheduleStatus === "partial" ? "Schedule in progress" : "Schedule still needed"}</span>
           </div>
         </div>
-        <div className="events-drawer__subtitle">
-          {nextStepGuidance}
+        <div className="events-detail-card__actions">
+          <button className={isActive ? "button-link button-link--inline-secondary" : "topbar__button"} onClick={() => onSetActive(instance.id)} type="button">
+            {isActive ? "Active Event" : "Make Active"}
+          </button>
+          <button className="button-link button-link--inline-secondary" onClick={() => onOpenInCollateral(instance.id)} type="button">
+            Open in Collateral
+          </button>
+          <button className="button-link button-link--inline-secondary" onClick={() => onOpenInAction(actionViewHref)} type="button">
+            Open in Action View
+          </button>
         </div>
       </div>
-
-      <div className="events-drawer__body">
-        <section className="card card--secondary events-detail-card events-detail-card--drawer">
-          <div className="events-detail-card__header">
-            <div>
-              <div className="card__title">Instance Details</div>
-            </div>
-          </div>
-
-      {definition?.description ? (
-        <div className="events-detail-card__description">{definition.description}</div>
-      ) : null}
 
       {feedback ? (
         <div className="collateral-setup-banner" role="status">
           <span>{feedback}</span>
-          <button className="button-link button-link--inline-secondary" onClick={() => setFeedback("")} type="button">
-            Dismiss
-          </button>
+          <button className="button-link button-link--inline-secondary" onClick={() => setFeedback("")} type="button">Dismiss</button>
         </div>
       ) : null}
 
-      <div className="events-detail-card__section events-detail-card__section--progress">
-        <div className="events-detail-card__section-title">Setup Progress</div>
-        <div className="events-setup-progress">
-          {setupSteps.map((step) => (
-            <div className={`events-setup-progress__step events-setup-progress__step--${step.status}`} key={step.key}>
-              <div className="events-setup-progress__step-top">
-                <span className="events-setup-progress__label">{step.label}</span>
-                <span className={`events-setup-progress__status events-setup-progress__status--${step.status}`}>
-                  {formatSetupStepStatus(step.status)}
-                </span>
-              </div>
-              <div className="field__hint">{step.guidance}</div>
-            </div>
-          ))}
-        </div>
-        <div className="collateral-setup-banner" role="status">
-          <span>{nextStepGuidance}</span>
-        </div>
+      <div className="events-workspace__compact-summary">
+        <Stat value={resolvedSetup.opportunities.length} label="Opportunities" />
+        <Stat value={resolvedSetup.commitments.length} label="Commitments" />
+        <Stat value={actionItemCount} label="Action items" />
+        <Stat value={collateralItemCount} label="Collateral items" />
       </div>
 
-      <div className="events-detail-card__section">
-        <div className="events-detail-card__section-title">Instance Setup</div>
-        <div className="quick-add-grid">
-          <div className="field">
-            <label htmlFor="events-detail-name">Instance Name</label>
-            <input
-              className="field-control"
-              id="events-detail-name"
-              onChange={(event) => setFormState((current) => current ? { ...current, instanceName: event.target.value } : current)}
-              value={formState.instanceName}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="events-detail-mode">Date Mode</label>
-            <select
-              className="field-control"
-              id="events-detail-mode"
-              onChange={(event) =>
-                setFormState((current) =>
-                  current
-                    ? {
-                        ...current,
-                        dateMode: event.target.value as EventDateMode,
-                        dates: normalizeEditableDates(event.target.value as EventDateMode, current.dates)
-                      }
-                    : current
-                )
-              }
-              value={formState.dateMode}
+      <div className={`events-workspace__shell${activeSectionId === "sub-events" ? " events-workspace__shell--sub-events" : ""}`}>
+        <nav className="events-workspace__primary-nav" aria-label="Event workspace sections">
+          {steps.map((step) => (
+            <button
+              className={`events-workspace__nav-item${activeSectionId === step.sectionId ? " events-workspace__nav-item--active" : ""}`}
+              key={step.sectionId}
+              onClick={() => selectSection(step.sectionId)}
+              type="button"
             >
-              <option value="single">Single day</option>
-              <option value="range">Date range</option>
-              <option value="multiple">Multiple dates</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="events-detail-location">Location</label>
-            <input
-              className="field-control"
-              id="events-detail-location"
-              onChange={(event) => setFormState((current) => current ? { ...current, location: event.target.value } : current)}
-              placeholder="Optional"
-              value={formState.location}
-            />
-          </div>
-          {formState.dateMode === "single" ? (
-            <div className="field">
-              <label htmlFor="events-detail-single-date">Date</label>
-              <input
-                className="field-control"
-                id="events-detail-single-date"
-                onChange={(event) => setFormState((current) => current ? { ...current, dates: [event.target.value] } : current)}
-                type="date"
-                value={formState.dates[0] ?? ""}
-              />
-            </div>
-          ) : null}
-          {formState.dateMode === "range" ? (
-            <div className="field field--wide collateral-instance-range">
-              <div className="field">
-                <label htmlFor="events-detail-start-date">Start Date</label>
-                <input
-                  className="field-control"
-                  id="events-detail-start-date"
-                  onChange={(event) =>
-                    setFormState((current) =>
-                      current ? { ...current, dates: [event.target.value, current.dates[1] ?? ""] } : current
-                    )
-                  }
-                  type="date"
-                  value={formState.dates[0] ?? ""}
-                />
+              <div className="events-workspace__nav-item-top">
+                <strong>{step.label}</strong>
+                <span className={`events-chip${activeSectionId === step.sectionId ? " events-chip--workspace-active" : ""}`}>{step.badge}</span>
               </div>
-              <div className="field">
-                <label htmlFor="events-detail-end-date">End Date</label>
-                <input
-                  className="field-control"
-                  id="events-detail-end-date"
-                  onChange={(event) =>
-                    setFormState((current) =>
-                      current ? { ...current, dates: [current.dates[0] ?? "", event.target.value] } : current
-                    )
-                  }
-                  type="date"
-                  value={formState.dates[1] ?? ""}
-                />
-              </div>
-            </div>
-          ) : null}
-          {formState.dateMode === "multiple" ? (
-            <div className="field field--wide">
-              <label>Dates</label>
-              <div className="quick-add-array-field">
-                {formState.dates.map((date, index) => (
-                  <div className="quick-add-array-field__row" key={`events-detail-date-${index}`}>
-                    <input
-                      className="field-control"
-                      onChange={(event) =>
-                        setFormState((current) =>
-                          current
-                            ? {
-                                ...current,
-                                dates: current.dates.map((entry, entryIndex) =>
-                                  entryIndex === index ? event.target.value : entry
-                                )
-                              }
-                            : current
-                        )
-                      }
-                      type="date"
-                      value={date}
-                    />
-                    <button
-                      className="button-link button-link--inline-secondary"
-                      onClick={() =>
-                        setFormState((current) =>
-                          current
-                            ? {
-                                ...current,
-                                dates:
-                                  current.dates.length > 1
-                                    ? current.dates.filter((_, entryIndex) => entryIndex !== index)
-                                    : [""]
-                              }
-                            : current
-                        )
-                      }
-                      type="button"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                <button
-                  className="button-link button-link--inline-secondary"
-                  onClick={() =>
-                    setFormState((current) =>
-                      current
-                        ? {
-                            ...current,
-                            dates: [...current.dates, ""]
-                          }
-                        : current
-                    )
-                  }
-                  type="button"
-                >
-                  Add Date
-                </button>
-              </div>
-            </div>
-          ) : null}
-          <div className="field field--wide">
-            <label htmlFor="events-detail-notes">Notes</label>
-            <textarea
-              className="field-control field-control--textarea"
-              id="events-detail-notes"
-              onChange={(event) => setFormState((current) => current ? { ...current, notes: event.target.value } : current)}
-              rows={4}
-              value={formState.notes}
-            />
-          </div>
-        </div>
-        <div className="quick-add-actions">
-          <button className="topbar__button" disabled={!validation} onClick={handleSaveDetails} type="button">
-            Save Details
-          </button>
-        </div>
-      </div>
-
-      <div className="events-detail-card__section">
-        <div className="events-detail-card__section-title">Sub-Events</div>
-        <div className="field__hint">
-          These are the sub-events for this instance. Default rows came from the event type, and you can add more rows here for this specific event as needed.
-        </div>
-        <div className="events-sub-events">
-          {scheduledSubEvents.map((subEvent) => (
-            <div className="events-sub-events__row" key={subEvent.id}>
-              <div className="events-sub-events__main">
-                <div className="events-sub-events__top">
-                  <input
-                    className="field-control"
-                    disabled={subEvent.isUnassigned}
-                    onChange={(event) =>
-                      setSubEventDrafts((current) => ({
-                        ...current,
-                        [subEvent.id]: event.target.value
-                      }))
-                    }
-                    value={subEventDrafts[subEvent.id] ?? subEvent.name}
-                  />
-                  <div className="events-sub-events__actions">
-                    {!subEvent.isUnassigned ? (
-                      <button
-                        className="button-link button-link--inline-secondary"
-                        onClick={() => handleSaveSubEventName(subEvent.id)}
-                        type="button"
-                      >
-                        Save
-                      </button>
-                    ) : null}
-                    <button
-                      className="button-link button-link--inline-secondary"
-                      disabled={!subEvent.canRemove}
-                      onClick={() => handleRemoveSubEvent(subEvent.id)}
-                      type="button"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-                <div className="events-sub-events__schedule events-sub-events__schedule--compact">
-                  <div className="field">
-                    <label htmlFor={`sub-event-date-${subEvent.id}`}>Date</label>
-                    <input
-                      className="field-control"
-                      id={`sub-event-date-${subEvent.id}`}
-                      onChange={(event) =>
-                        setSubEventDateDrafts((current) => ({
-                          ...current,
-                          [subEvent.id]: event.target.value
-                        }))
-                      }
-                      type="date"
-                      value={subEventDateDrafts[subEvent.id] ?? subEvent.date}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`sub-event-start-${subEvent.id}`}>Start</label>
-                    <input
-                      className="field-control"
-                      id={`sub-event-start-${subEvent.id}`}
-                      onChange={(event) =>
-                        setSubEventStartTimeDrafts((current) => ({
-                          ...current,
-                          [subEvent.id]: event.target.value
-                        }))
-                      }
-                      type="time"
-                      value={subEventStartTimeDrafts[subEvent.id] ?? subEvent.startTime}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`sub-event-end-${subEvent.id}`}>End</label>
-                    <input
-                      className="field-control"
-                      id={`sub-event-end-${subEvent.id}`}
-                      onChange={(event) =>
-                        setSubEventEndTimeDrafts((current) => ({
-                          ...current,
-                          [subEvent.id]: event.target.value
-                        }))
-                      }
-                      type="time"
-                      value={subEventEndTimeDrafts[subEvent.id] ?? subEvent.endTime}
-                    />
-                  </div>
-                </div>
-                <div className="events-sub-events__meta">
-                  {subEvent.isDefault ? <span className="events-chip">Included by event type</span> : null}
-                  {subEvent.actionUsageCount > 0 ? (
-                    <span className="events-chip">{subEvent.actionUsageCount} action item{subEvent.actionUsageCount === 1 ? "" : "s"}</span>
-                  ) : null}
-                  {subEvent.collateralUsageCount > 0 ? (
-                    <span className="events-chip">{subEvent.collateralUsageCount} collateral item{subEvent.collateralUsageCount === 1 ? "" : "s"}</span>
-                  ) : null}
-                </div>
-                {subEvent.removeBlockReason ? (
-                  <div className="field__hint">{subEvent.removeBlockReason}</div>
-                ) : null}
-              </div>
-            </div>
+              <div className="events-workspace__nav-copy">{step.copy}</div>
+            </button>
           ))}
+        </nav>
 
-          <div className="events-sub-events__row events-sub-events__row--draft">
-            <div className="events-sub-events__main">
-              <div className="events-sub-events__top">
-                <input
-                  ref={newSubEventNameRef}
-                  className="field-control"
-                  onChange={(event) => setNewSubEventName(event.target.value)}
-                  placeholder="Add another sub-event"
-                  value={newSubEventName}
-                />
-                <div className="events-sub-events__actions">
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    disabled={!newSubEventName.trim()}
-                    onClick={handleAddSubEvent}
-                    type="button"
-                  >
-                    Save
-                  </button>
-                  <button
-                    className="button-link button-link--inline-secondary"
-                    disabled={
-                      !newSubEventName.trim() &&
-                      !newSubEventDate &&
-                      !newSubEventStartTime &&
-                      !newSubEventEndTime
-                    }
-                    onClick={() => {
-                      setNewSubEventName("");
-                      setNewSubEventDate(getDefaultNewSubEventDate(instance));
-                      setNewSubEventStartTime("");
-                      setNewSubEventEndTime("");
-                      newSubEventNameRef.current?.focus();
-                    }}
-                    type="button"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-              <div className="events-sub-events__schedule events-sub-events__schedule--compact">
-                <div className="field">
-                  <label htmlFor="events-new-sub-event-date">Date</label>
-                  <input
-                    className="field-control"
-                    id="events-new-sub-event-date"
-                    onChange={(event) => setNewSubEventDate(event.target.value)}
-                    type="date"
-                    value={newSubEventDate}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="events-new-sub-event-start">Start</label>
-                  <input
-                    className="field-control"
-                    id="events-new-sub-event-start"
-                    onChange={(event) => setNewSubEventStartTime(event.target.value)}
-                    type="time"
-                    value={newSubEventStartTime}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="events-new-sub-event-end">End</label>
-                  <input
-                    className="field-control"
-                    id="events-new-sub-event-end"
-                    onChange={(event) => setNewSubEventEndTime(event.target.value)}
-                    type="time"
-                    value={newSubEventEndTime}
-                  />
-                </div>
-              </div>
-              <div className="events-sub-events__meta">
-                <span className="events-chip">New for this instance</span>
-              </div>
-              <div className="field__hint">
-                Save a new row here, then keep going. After each save, a fresh blank row stays ready for the next sub-event.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {fallbackLane ? (
-          <div className="events-fallback-lane">
-            <div className="events-fallback-lane__header">
-              <div>
-                <div className="events-detail-card__section-title">Catch-All Lane</div>
-                <div className="field__hint">
-                  Keep this fallback lane in place so new work has a temporary place to land before you assign it to a planned or one-off sub-event.
-                </div>
-              </div>
-              <span className="events-chip">Fallback lane</span>
-            </div>
-            <div className="events-sub-events__meta">
-              <span className="events-chip">{fallbackLane.name}</span>
-              {fallbackLane.actionUsageCount > 0 ? (
-                <span className="events-chip">{fallbackLane.actionUsageCount} action item{fallbackLane.actionUsageCount === 1 ? "" : "s"}</span>
-              ) : null}
-              {fallbackLane.collateralUsageCount > 0 ? (
-                <span className="events-chip">{fallbackLane.collateralUsageCount} collateral item{fallbackLane.collateralUsageCount === 1 ? "" : "s"}</span>
-              ) : null}
-            </div>
-            {fallbackLane.removeBlockReason ? (
-              <div className="field__hint">{fallbackLane.removeBlockReason}</div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      {supportsSponsorSetup ? (
-        <div className="events-detail-card__section">
-          <div className="events-detail-card__section-title">Sponsor Placements</div>
-          <div className="field__hint">
-            Add sponsor placements for this event instance, then generate sponsor execution work into Action View. Physical deliverables will reuse matching collateral when it already exists.
-          </div>
-          <div className="sponsor-setup__rows sponsor-setup__rows--events">
-            {sponsorPlacements.length > 0 ? (
-              sponsorPlacements.map((placement) => {
-                const deliverables = getSponsorPlacementDeliverables(placement.placement, instance.eventTypeId);
-                return (
-                  <div className="sponsor-setup__row sponsor-setup__row--events" key={placement.id}>
-                    <div className="field">
-                      <label htmlFor={`events-sponsor-name-${placement.id}`}>Sponsor</label>
-                      <input
-                        className="field-control"
-                        id={`events-sponsor-name-${placement.id}`}
-                        onChange={(event) => handleSponsorPlacementChange(placement.id, "sponsorName", event.target.value)}
-                        placeholder="Sponsor name"
-                        value={placement.sponsorName}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`events-sponsor-placement-${placement.id}`}>Placement</label>
-                      <select
-                        className="field-control"
-                        id={`events-sponsor-placement-${placement.id}`}
-                        onChange={(event) => handleSponsorPlacementChange(placement.id, "placement", event.target.value)}
-                        value={placement.placement}
-                      >
-                        {sponsorPlacementOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`events-sponsor-linked-sub-event-${placement.id}`}>Linked Sub-Event</label>
-                      <select
-                        className="field-control"
-                        id={`events-sponsor-linked-sub-event-${placement.id}`}
-                        onChange={(event) =>
-                          handleSponsorPlacementChange(
-                            placement.id,
-                            "linkedSubEventId",
-                            event.target.value || undefined
-                          )
-                        }
-                        value={placement.linkedSubEventId ?? ""}
-                      >
-                        <option value="">Event-wide / no linked sub-event</option>
-                        {scheduledSubEvents.map((subEvent) => (
-                          <option key={subEvent.id} value={subEvent.id}>
-                            {subEvent.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field field--wide">
-                      <label className="checkbox-field" htmlFor={`events-sponsor-logo-${placement.id}`}>
-                        <input
-                          checked={placement.logoReceived}
-                          id={`events-sponsor-logo-${placement.id}`}
-                          onChange={(event) => handleSponsorPlacementChange(placement.id, "logoReceived", event.target.checked)}
-                          type="checkbox"
-                        />
-                        <span>{placement.logoReceived ? "Logo received" : "Still waiting on sponsor logo"}</span>
-                      </label>
-                      <label className="checkbox-field" htmlFor={`events-sponsor-active-${placement.id}`}>
-                        <input
-                          checked={placement.isActive}
-                          id={`events-sponsor-active-${placement.id}`}
-                          onChange={(event) => handleSponsorPlacementChange(placement.id, "isActive", event.target.checked)}
-                          type="checkbox"
-                        />
-                        <span>{placement.isActive ? "Active placement" : "Inactive placement"}</span>
-                      </label>
-                    </div>
-                    <div className="field field--wide">
-                      <label htmlFor={`events-sponsor-notes-${placement.id}`}>Notes</label>
-                      <textarea
-                        className="field-control"
-                        id={`events-sponsor-notes-${placement.id}`}
-                        onChange={(event) => handleSponsorPlacementChange(placement.id, "notes", event.target.value)}
-                        placeholder={`Optional context for ${getSponsorPlacementLabel(placement.placement, instance.eventTypeId).toLowerCase()}`}
-                        rows={2}
-                        value={placement.notes ?? ""}
-                      />
-                      {placement.sponsorName.trim() ? (
-                        <div className="field__hint">
-                          Generates {deliverables.length} sponsor item{deliverables.length === 1 ? "" : "s"}, including{" "}
-                          {deliverables
-                            .slice(0, 2)
-                            .map((deliverable) =>
-                              getSponsorFulfillmentTaskTitle({
-                                sponsorName: placement.sponsorName.trim(),
-                                deliverableName: deliverable.deliverableName
-                              })
-                            )
-                            .join(" • ")}
-                          {deliverables.length > 2 ? ` + ${deliverables.length - 2} more` : ""}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="sponsor-setup__actions">
-                      <button
-                        className="button-link button-link--inline-secondary"
-                        onClick={() => onRemoveSponsorPlacement(instance.id, placement.id)}
-                        type="button"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="sponsor-setup__empty">No sponsor placements set up yet for this event instance.</div>
-            )}
-          </div>
-          <div className="events-detail-card__section-actions sponsor-setup__footer sponsor-setup__footer--events">
-            <button className="button-link button-link--inline-secondary" onClick={handleAddSponsorPlacement} type="button">
-              Add Placement
-            </button>
-            <button className="topbar__button" onClick={handleGenerateSponsorWork} type="button">
-              Generate Sponsor Work
-            </button>
-          </div>
-        </div>
-      ) : null}
+        <section className={`events-workspace__content${activeSectionId === "sub-events" ? " events-workspace__content--sub-events" : ""}`} aria-label={activeStep?.label ?? "Event workspace section"}>
+          {activeSectionId === "details" ? (
+            <EventDetailsSection detailsDraft={detailsDraft} instance={instance} onSave={saveEventDetails} setDetailsDraft={setDetailsDraft} />
+          ) : null}
+          {activeSectionId === "sub-events" ? (
+            <SubEventsSection
+              fallbackLane={fallbackLane}
+              instanceId={instance.id}
+              newSubEventDraft={newSubEventDraft}
+              onAdd={addSubEvent}
+              onChangeDraft={setNewSubEventDraft}
+              onRemoveWithFeedback={(subEventId) => setFeedback(onRemoveSubEvent(instance.id, subEventId) ? "Sub-event removed." : "That sub-event is already in use, so it was kept in place.")}
+              onUpsert={onUpsertSubEvent}
+              scheduledSubEvents={orderedScheduledSubEvents}
+            />
+          ) : null}
+          {activeSectionId === "opportunities" ? (
+            <SponsorOpportunitiesSection
+              eventTypeId={instance.eventTypeId}
+              onAdd={() => {
+                onUpsertSponsorOpportunity(instance.id, createSponsorOpportunityDraft(instance.id, instance.eventTypeId));
+                setFeedback("Sponsor opportunity added.");
+              }}
+              onRemove={(opportunityId) =>
+                setFeedback(onRemoveSponsorOpportunity(instance.id, opportunityId) ? "Sponsor opportunity removed." : "That opportunity still has commitments attached, so it was kept.")
+              }
+              onUpsert={(opportunity) => onUpsertSponsorOpportunity(instance.id, opportunity)}
+              opportunities={resolvedSetup.opportunities}
+              subEventOptions={subEventOptions}
+              supportsSponsorSetup={supportsSponsorSetup}
+            />
+          ) : null}
+          {activeSectionId === "commitments" ? (
+            <SponsorCommitmentsSection
+              commitments={resolvedSetup.commitments}
+              eventTypeId={instance.eventTypeId}
+              onAdd={() => {
+                onUpsertSponsorCommitment(instance.id, createSponsorCommitmentDraft(instance.id, resolvedSetup));
+                setFeedback("Sponsor commitment added.");
+              }}
+              onRemove={(commitmentId) => {
+                onRemoveSponsorCommitment(instance.id, commitmentId);
+                setFeedback("Sponsor commitment removed.");
+              }}
+              onUpsert={(commitment) => onUpsertSponsorCommitment(instance.id, commitment)}
+              opportunities={resolvedSetup.opportunities}
+              opportunityOptions={opportunityOptions}
+              subEventOptions={subEventOptions}
+              supportsSponsorSetup={supportsSponsorSetup}
+            />
+          ) : null}
+          {activeSectionId === "deliverables" ? (
+            <DeliverablesSection onGenerate={generateSponsorWork} previewRows={previewRows} sponsorGenerationPreview={sponsorGenerationPreview} supportsSponsorSetup={supportsSponsorSetup} />
+          ) : null}
+          {activeSectionId === "collateral" ? (
+            <CollateralSection collateralItemCount={collateralItemCount} onOpenInCollateral={() => onOpenInCollateral(instance.id)} sponsorGenerationPreview={sponsorGenerationPreview} />
+          ) : null}
+          {activeSectionId === "review" ? (
+            <ReviewSection actionItemCount={actionItemCount} actionViewHref={actionViewHref} onOpenInAction={onOpenInAction} sponsorGenerationPreview={sponsorGenerationPreview} />
+          ) : null}
         </section>
       </div>
-    </aside>
+    </section>
   );
 }
 
-function normalizeEditableDates(dateMode: EventDateMode, dates: string[]) {
-  if (dateMode === "multiple") {
-    return dates.length > 0 ? [...dates] : [""];
+function Stat({ label, value }: { label: string; value: number }) {
+  return <div className="events-workspace__stat"><strong>{value}</strong><span>{label}</span></div>;
+}
+
+function createDetailsDraft(instance: EventOnboardingSelectedInstance["instance"]): DetailsDraft {
+  return {
+    name: instance.name,
+    location: instance.location ?? "",
+    notes: instance.notes ?? "",
+    dates: instance.dateMode === "single" ? [instance.startDate] : instance.dateMode === "range" ? [instance.startDate, instance.endDate] : instance.dates.length > 0 ? [...instance.dates] : [instance.startDate, instance.endDate].filter(Boolean)
+  };
+}
+
+function buildSteps(name: string, startDate: string, scheduleStatus: EventOnboardingSelectedInstance["scheduleStatus"], setup: SponsorshipSetup, preview: SponsorFulfillmentGenerationResult | null): WorkspaceStep[] {
+  const hasPreview = (preview?.plans.length ?? 0) > 0;
+  const hasReview = (preview?.obsoleteActionItems.length ?? 0) + (preview?.obsoleteCollateralItems.length ?? 0) > 0;
+  return [
+    { sectionId: "details", label: "Event details", badge: name.trim() && startDate ? "Ready" : "Needs attention", status: name.trim() && startDate ? "done" : "attention", copy: name.trim() && startDate ? "Core details are in place and stay editable." : "Start by confirming the event name, dates, and location." },
+    { sectionId: "sub-events", label: "Sub-events", badge: scheduleStatus === "scheduled" ? "Ready" : "Next", status: scheduleStatus === "scheduled" ? "done" : "next", copy: scheduleStatus === "scheduled" ? "Sub-event scheduling is ready for downstream work." : "Confirm dates and times so downstream work lands in the right places." },
+    { sectionId: "opportunities", label: "Sponsor opportunities", badge: setup.opportunities.length > 0 ? "Ready" : "Next", status: setup.opportunities.length > 0 ? "done" : "next", copy: setup.opportunities.length > 0 ? `${setup.opportunities.length} opportunity row${setup.opportunities.length === 1 ? "" : "s"} currently define this event's sponsor setup.` : "Add the event-specific sponsor opportunities Melissa is actually working from." },
+    { sectionId: "commitments", label: "Sponsor commitments", badge: setup.commitments.length > 0 ? "Ready" : "Next", status: setup.commitments.length > 0 ? "done" : "next", copy: setup.commitments.length > 0 ? `${setup.commitments.length} commitment${setup.commitments.length === 1 ? "" : "s"} can drive downstream work.` : "Add commitments progressively as sponsors close." },
+    { sectionId: "deliverables", label: "Generated work review", badge: hasReview ? "Review" : hasPreview ? "Ready" : "Next", status: hasReview ? "attention" : hasPreview ? "done" : "next", copy: hasReview ? "Some prior generated work is being preserved for review instead of deleted." : hasPreview ? "A sponsor-driven preview is ready for reconciliation." : "Once sponsor setup is in place, review what will flow into Action View and Collateral." }
+  ];
+}
+
+function getReviewCalloutText(preview: SponsorFulfillmentGenerationResult | null) {
+  if (!preview) {
+    return "No sponsor generation preview is available yet.";
+  }
+  const obsoleteCount = preview.obsoleteActionItems.length + preview.obsoleteCollateralItems.length;
+  const progressCount = preview.obsoleteActionItems.filter((item) => item.hasMeaningfulProgress).length + preview.obsoleteCollateralItems.filter((item) => item.hasMeaningfulProgress).length;
+  if (obsoleteCount === 0) {
+    return "No stale generated sponsor work is currently waiting for review.";
+  }
+  return progressCount === 0 ? `${obsoleteCount} generated item${obsoleteCount === 1 ? "" : "s"} would be preserved for review.` : `${obsoleteCount} generated item${obsoleteCount === 1 ? "" : "s"} would be preserved for review, including ${progressCount} item${progressCount === 1 ? "" : "s"} that already have progress.`;
+}
+
+function EventDetailsSection(input: {
+  detailsDraft: DetailsDraft;
+  instance: EventOnboardingSelectedInstance["instance"];
+  onSave: () => void;
+  setDetailsDraft: Dispatch<SetStateAction<DetailsDraft>>;
+}) {
+  return (
+    <section className="events-detail-card__section" id="event-workspace-details">
+      <div className="events-detail-card__section-title">Event Details</div>
+      <div className="events-workspace__grid events-workspace__grid--details">
+        <Field label="Event name">
+          <input className="field-control" onChange={(event) => input.setDetailsDraft((current) => ({ ...current, name: event.target.value }))} value={input.detailsDraft.name} />
+        </Field>
+        <Field label="Location">
+          <input className="field-control" onChange={(event) => input.setDetailsDraft((current) => ({ ...current, location: event.target.value }))} value={input.detailsDraft.location} />
+        </Field>
+        {input.detailsDraft.dates.map((dateValue, index) => (
+          <Field key={index} label={getDateLabel(input.instance.dateMode, index)}>
+            <input
+              className="field-control"
+              onChange={(event) =>
+                input.setDetailsDraft((current) => ({
+                  ...current,
+                  dates: current.dates.map((entry, entryIndex) => (entryIndex === index ? event.target.value : entry))
+                }))
+              }
+              type="date"
+              value={dateValue}
+            />
+          </Field>
+        ))}
+        {input.instance.dateMode === "multiple" ? (
+          <button className="button-link button-link--inline-secondary" onClick={() => input.setDetailsDraft((current) => ({ ...current, dates: [...current.dates, ""] }))} type="button">
+            Add date
+          </button>
+        ) : null}
+        <Field label="Notes" wide>
+          <textarea className="field-control" onChange={(event) => input.setDetailsDraft((current) => ({ ...current, notes: event.target.value }))} value={input.detailsDraft.notes} />
+        </Field>
+      </div>
+      <div className="events-detail-card__actions">
+        <button className="topbar__button" onClick={input.onSave} type="button">Save Event Details</button>
+      </div>
+    </section>
+  );
+}
+
+function SubEventsSection(input: {
+  fallbackLane: EventOnboardingSelectedInstance["fallbackLane"];
+  instanceId: string;
+  newSubEventDraft: UpsertEventSubEventInput;
+  onAdd: () => void;
+  onChangeDraft: Dispatch<SetStateAction<UpsertEventSubEventInput>>;
+  onRemoveWithFeedback: (subEventId: string) => void;
+  onUpsert: (instanceId: string, upsert: UpsertEventSubEventInput) => string | null;
+  scheduledSubEvents: EventOnboardingSelectedInstance["scheduledSubEvents"];
+}) {
+  const [pendingRemovalSubEvent, setPendingRemovalSubEvent] = useState<EventOnboardingSelectedInstance["scheduledSubEvents"][number] | null>(null);
+  const linkedItemCount =
+    (pendingRemovalSubEvent?.actionUsageCount ?? 0) + (pendingRemovalSubEvent?.collateralUsageCount ?? 0);
+
+  return (
+    <section className="events-detail-card__section" id="event-workspace-sub-events">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Sub-Events</div>
+          <div className="events-selector-card__copy">Keep the schedule revisitable here rather than pushing setup back into downstream surfaces.</div>
+        </div>
+      </div>
+      <div className="events-sub-events">
+        {input.scheduledSubEvents.map((subEvent) => (
+          <div className="events-sub-events__row" key={subEvent.id}>
+            <div className="events-sub-events__main">
+              <div className="events-sub-events__header">
+                <div className="events-sub-events__name-field">
+                  <Field label="Name">
+                    <input className="field-control" onChange={(event) => input.onUpsert(input.instanceId, { id: subEvent.id, name: event.target.value, sortOrder: subEvent.sortOrder, date: subEvent.date, startTime: subEvent.startTime, endTime: subEvent.endTime })} value={subEvent.name} />
+                  </Field>
+                </div>
+                <div className="events-sub-events__actions">
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => setPendingRemovalSubEvent(subEvent)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+              <div className="events-sub-events__schedule-wrap">
+                <div className="events-sub-events__schedule-top">
+                  <div className="events-sub-events__schedule-label">Schedule</div>
+                  <Field label="Mode">
+                    <select
+                      className="field-control"
+                      onChange={(event) =>
+                        input.onUpsert(input.instanceId, buildSubEventUpsertPayload(subEvent, { scheduleMode: event.target.value as EventSubEventScheduleMode }))
+                      }
+                      value={subEvent.scheduleMode}
+                    >
+                      <option value="timed">Timed</option>
+                      <option value="all_day">All day</option>
+                      <option value="multi_day">Multi-day</option>
+                    </select>
+                  </Field>
+                </div>
+                <SubEventScheduleFields
+                  draft={{
+                    scheduleMode: subEvent.scheduleMode,
+                    date: subEvent.date,
+                    endDate: subEvent.endDate,
+                    startTime: subEvent.startTime,
+                    endTime: subEvent.endTime
+                  }}
+                  onChange={(updates) => input.onUpsert(input.instanceId, buildSubEventUpsertPayload(subEvent, updates))}
+                />
+              </div>
+              <div className="events-sub-events__meta">
+                <span>{getSubEventModeLabel(subEvent.scheduleMode ?? "timed")}</span>
+                <span>{subEvent.actionUsageCount} action link{subEvent.actionUsageCount === 1 ? "" : "s"}</span>
+                <span>{subEvent.collateralUsageCount} collateral link{subEvent.collateralUsageCount === 1 ? "" : "s"}</span>
+                {subEvent.isDefault ? <span>Starter sub-event</span> : null}
+              </div>
+            </div>
+            {subEvent.removeBlockReason ? <div className="events-sub-events__helper field-hint">{subEvent.removeBlockReason}</div> : null}
+          </div>
+        ))}
+        {input.fallbackLane ? (
+          <div className="events-fallback-lane">
+            <div className="events-fallback-lane__header">
+              <strong>{input.fallbackLane.name}</strong>
+              <span className="events-chip">Fallback lane</span>
+            </div>
+            <div className="field-hint">{input.fallbackLane.actionUsageCount} action links and {input.fallbackLane.collateralUsageCount} collateral links currently land here.</div>
+            {input.fallbackLane.removeBlockReason ? <div className="field-hint">{input.fallbackLane.removeBlockReason}</div> : null}
+          </div>
+        ) : null}
+        <div className="events-sub-events__row events-sub-events__row--draft">
+          <div className="events-sub-events__header">
+            <div className="events-sub-events__name-field">
+              <Field label="Add sub-event">
+                <input className="field-control" onChange={(event) => input.onChangeDraft((current) => ({ ...current, name: event.target.value }))} value={input.newSubEventDraft.name ?? ""} />
+              </Field>
+            </div>
+          </div>
+          <div className="events-sub-events__schedule-wrap">
+            <div className="events-sub-events__schedule-top">
+              <div className="events-sub-events__schedule-label">Schedule</div>
+              <Field label="Mode">
+                <select className="field-control" onChange={(event) => input.onChangeDraft((current) => applySubEventScheduleMode(current, event.target.value as EventSubEventScheduleMode))} value={input.newSubEventDraft.scheduleMode ?? "timed"}>
+                  <option value="timed">Timed</option>
+                  <option value="all_day">All day</option>
+                  <option value="multi_day">Multi-day</option>
+                </select>
+              </Field>
+            </div>
+            <SubEventScheduleFields draft={input.newSubEventDraft} onChange={(updates) => input.onChangeDraft((current) => ({ ...current, ...updates }))} />
+          </div>
+          <div className="events-detail-card__actions">
+            <button className="button-link button-link--inline-secondary" onClick={input.onAdd} type="button">Add Sub-Event</button>
+          </div>
+        </div>
+      </div>
+      {pendingRemovalSubEvent ? (
+        <div className="modal-layer" role="presentation">
+          <button
+            aria-label="Cancel sub-event removal"
+            className="modal-backdrop"
+            onClick={() => setPendingRemovalSubEvent(null)}
+            type="button"
+          />
+          <section
+            aria-labelledby="sub-event-remove-title"
+            aria-modal="true"
+            className="quick-add-modal"
+            role="dialog"
+          >
+            <div className="quick-add-modal__header">
+              <div>
+                <h2 className="quick-add-modal__title" id="sub-event-remove-title">
+                  Remove {pendingRemovalSubEvent.name}?
+                </h2>
+                <p className="quick-add-modal__subtitle">
+                  This is a destructive change to the event setup and cannot be triggered with one click anymore.
+                </p>
+              </div>
+            </div>
+            <div className={`confirm-delete${linkedItemCount > 0 ? "" : " confirm-delete--neutral"}`}>
+              <div className="confirm-delete__title">
+                {linkedItemCount > 0 ? "This sub-event has downstream links." : "Confirm sub-event removal."}
+              </div>
+              <div className="confirm-delete__copy">
+                <strong>{pendingRemovalSubEvent.name}</strong> will be removed from this event instance.
+                {linkedItemCount > 0
+                  ? ` It currently has ${pendingRemovalSubEvent.actionUsageCount} action link${pendingRemovalSubEvent.actionUsageCount === 1 ? "" : "s"} and ${pendingRemovalSubEvent.collateralUsageCount} collateral link${pendingRemovalSubEvent.collateralUsageCount === 1 ? "" : "s"}.`
+                  : " No downstream links are currently attached."}
+                {pendingRemovalSubEvent.removeBlockReason ? ` ${pendingRemovalSubEvent.removeBlockReason}` : ""}
+              </div>
+              <div className="confirm-delete__actions">
+                <button className="button-link button-link--inline-secondary" onClick={() => setPendingRemovalSubEvent(null)} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="button-danger"
+                  onClick={() => {
+                    input.onRemoveWithFeedback(pendingRemovalSubEvent.id);
+                    setPendingRemovalSubEvent(null);
+                  }}
+                  type="button"
+                >
+                  Remove Sub-Event
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SubEventScheduleFields(input: {
+  draft: Pick<UpsertEventSubEventInput, "scheduleMode" | "date" | "endDate" | "startTime" | "endTime">;
+  onChange: (updates: Partial<UpsertEventSubEventInput>) => void;
+}) {
+  const scheduleMode = input.draft.scheduleMode ?? "timed";
+
+  if (scheduleMode === "multi_day") {
+    return (
+      <div className="events-sub-events__schedule events-sub-events__schedule--multi-day">
+        <Field label="Start date">
+          <input className="field-control" onChange={(event) => input.onChange({ date: event.target.value })} type="date" value={input.draft.date ?? ""} />
+        </Field>
+        <Field label="End date">
+          <input className="field-control" onChange={(event) => input.onChange({ endDate: event.target.value })} type="date" value={input.draft.endDate ?? ""} />
+        </Field>
+      </div>
+    );
   }
 
+  if (scheduleMode === "all_day") {
+    return (
+      <div className="events-sub-events__schedule events-sub-events__schedule--all-day">
+        <Field label="Date">
+          <input className="field-control" onChange={(event) => input.onChange({ date: event.target.value })} type="date" value={input.draft.date ?? ""} />
+        </Field>
+      </div>
+    );
+  }
+
+  return (
+    <div className="events-sub-events__schedule">
+      <Field label="Date">
+        <input className="field-control" onChange={(event) => input.onChange({ date: event.target.value })} type="date" value={input.draft.date ?? ""} />
+      </Field>
+      <Field label="Start">
+        <input className="field-control" onChange={(event) => input.onChange({ startTime: event.target.value })} type="time" value={input.draft.startTime ?? ""} />
+      </Field>
+      <Field label="End">
+        <input className="field-control" onChange={(event) => input.onChange({ endTime: event.target.value })} type="time" value={input.draft.endTime ?? ""} />
+      </Field>
+    </div>
+  );
+}
+
+function buildSubEventUpsertPayload(
+  subEvent: EventOnboardingSelectedInstance["scheduledSubEvents"][number],
+  updates: Partial<UpsertEventSubEventInput>
+): UpsertEventSubEventInput {
+  return {
+    id: subEvent.id,
+    name: updates.name ?? subEvent.name,
+    sortOrder: updates.sortOrder ?? subEvent.sortOrder,
+    scheduleMode: updates.scheduleMode ?? subEvent.scheduleMode,
+    date: updates.date ?? subEvent.date,
+    endDate: updates.endDate ?? subEvent.endDate,
+    startTime: updates.startTime ?? subEvent.startTime,
+    endTime: updates.endTime ?? subEvent.endTime
+  };
+}
+
+function applySubEventScheduleMode(
+  draft: UpsertEventSubEventInput,
+  scheduleMode: EventSubEventScheduleMode
+): UpsertEventSubEventInput {
+  if (scheduleMode === "multi_day") {
+    return {
+      ...draft,
+      scheduleMode,
+      endDate: draft.endDate ?? draft.date ?? "",
+      startTime: "",
+      endTime: ""
+    };
+  }
+
+  if (scheduleMode === "all_day") {
+    return {
+      ...draft,
+      scheduleMode,
+      endDate: "",
+      startTime: "",
+      endTime: ""
+    };
+  }
+
+  return {
+    ...draft,
+    scheduleMode,
+    endDate: ""
+  };
+}
+
+function createEmptySubEventDraft(): UpsertEventSubEventInput {
+  return {
+    name: "",
+    scheduleMode: "timed",
+    date: "",
+    endDate: "",
+    startTime: "",
+    endTime: ""
+  };
+}
+
+function getSubEventModeLabel(scheduleMode: EventSubEventScheduleMode) {
+  if (scheduleMode === "multi_day") {
+    return "Multi-day";
+  }
+
+  if (scheduleMode === "all_day") {
+    return "All day";
+  }
+
+  return "Timed";
+}
+
+function SponsorOpportunitiesSection(input: {
+  eventTypeId: string;
+  onAdd: () => void;
+  onRemove: (opportunityId: string) => void;
+  onUpsert: (opportunity: SponsorOpportunity) => void;
+  opportunities: SponsorOpportunity[];
+  subEventOptions: Array<{ id: string; label: string }>;
+  supportsSponsorSetup: boolean;
+}) {
+  const placementOptions = useMemo(
+    () => Array.from(new Set(input.opportunities.map((opportunity) => opportunity.placementType))),
+    [input.opportunities]
+  );
+  return (
+    <section className="events-detail-card__section" id="event-workspace-opportunities">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Sponsor Opportunities</div>
+          <div className="events-selector-card__copy">The event instance owns this list now. Keep it current as opportunities are added, changed, or paused.</div>
+        </div>
+        {input.supportsSponsorSetup ? <button className="button-link button-link--inline-secondary" onClick={input.onAdd} type="button">Add Opportunity</button> : null}
+      </div>
+      {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use sponsor setup.</div> : input.opportunities.length === 0 ? <div className="events-detail-card__empty">No sponsor opportunities yet.</div> : (
+        <div className="events-workspace__list">
+          {input.opportunities.map((opportunity) => (
+            <div className="events-workspace__list-row" key={opportunity.id}>
+              <div className="events-workspace__grid events-workspace__grid--sponsor">
+                <Field label="Opportunity label">
+                  <input className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, label: event.target.value })} value={opportunity.label} />
+                </Field>
+                <Field label="Placement type">
+                  <select className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, placementType: event.target.value, label: opportunity.label || getSponsorPlacementLabel(event.target.value, input.eventTypeId) })} value={opportunity.placementType}>
+                    {placementOptions.map((placementType) => <option key={placementType} value={placementType}>{getSponsorPlacementLabel(placementType, input.eventTypeId)}</option>)}
+                  </select>
+                </Field>
+                <Field label="Linked sub-event">
+                  <select className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, linkedSubEventId: event.target.value || undefined })} value={opportunity.linkedSubEventId ?? ""}>
+                    <option value="">No sub-event link</option>
+                    {input.subEventOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                </Field>
+                <label className="events-workspace__toggle"><input checked={opportunity.isActive !== false} onChange={(event) => input.onUpsert({ ...opportunity, isActive: event.target.checked })} type="checkbox" />Active opportunity</label>
+                <Field label="Notes" wide>
+                  <textarea className="field-control" onChange={(event) => input.onUpsert({ ...opportunity, notes: event.target.value })} value={opportunity.notes ?? ""} />
+                </Field>
+              </div>
+              <div className="events-detail-card__actions">
+                <div className="field-hint">{getSponsorPlacementDeliverables(opportunity.placementType, input.eventTypeId).length} deliverable rule{getSponsorPlacementDeliverables(opportunity.placementType, input.eventTypeId).length === 1 ? "" : "s"} flow from this type.</div>
+                <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(opportunity.id)} type="button">Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SponsorCommitmentsSection(input: {
+  commitments: SponsorCommitment[];
+  eventTypeId: string;
+  onAdd: () => void;
+  onRemove: (commitmentId: string) => void;
+  onUpsert: (commitment: SponsorCommitment) => void;
+  opportunities: SponsorOpportunity[];
+  opportunityOptions: Array<{ id: string; label: string }>;
+  subEventOptions: Array<{ id: string; label: string }>;
+  supportsSponsorSetup: boolean;
+}) {
+  return (
+    <section className="events-detail-card__section" id="event-workspace-commitments">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Sponsor Commitments</div>
+          <div className="events-selector-card__copy">Add sponsors as they close. Late additions should only create newly needed downstream work.</div>
+        </div>
+        {input.supportsSponsorSetup ? <button className="button-link button-link--inline-secondary" disabled={input.opportunityOptions.length === 0} onClick={input.onAdd} type="button">Add Commitment</button> : null}
+      </div>
+      {!input.supportsSponsorSetup ? <div className="events-detail-card__empty">This event type does not currently use sponsor commitments.</div> : input.commitments.length === 0 ? <div className="events-detail-card__empty">No sponsor commitments yet.</div> : (
+        <div className="events-workspace__list">
+          {input.commitments.map((commitment) => {
+            const selectedOpportunity = input.opportunities.find((opportunity) => opportunity.id === commitment.opportunityId) ?? null;
+            const deliverableCount = selectedOpportunity ? getSponsorPlacementDeliverables(selectedOpportunity.placementType, input.eventTypeId).length : 0;
+            return (
+              <div className="events-workspace__list-row" key={commitment.id}>
+                <div className="events-workspace__grid events-workspace__grid--sponsor">
+                  <Field label="Sponsor">
+                    <input className="field-control" onChange={(event) => input.onUpsert({ ...commitment, sponsorName: event.target.value })} value={commitment.sponsorName} />
+                  </Field>
+                  <Field label="Opportunity">
+                    <select className="field-control" onChange={(event) => input.onUpsert({ ...commitment, opportunityId: event.target.value, placement: input.opportunities.find((opportunity) => opportunity.id === event.target.value)?.placementType })} value={commitment.opportunityId}>
+                      <option value="">Select an opportunity</option>
+                      {input.opportunityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Sub-event override">
+                    <select className="field-control" onChange={(event) => input.onUpsert({ ...commitment, linkedSubEventId: event.target.value || undefined })} value={commitment.linkedSubEventId ?? ""}>
+                      <option value="">Use opportunity default</option>
+                      {input.subEventOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </Field>
+                  <label className="events-workspace__toggle"><input checked={commitment.logoReceived} onChange={(event) => input.onUpsert({ ...commitment, logoReceived: event.target.checked })} type="checkbox" />Logo received</label>
+                  <label className="events-workspace__toggle"><input checked={commitment.isActive !== false} onChange={(event) => input.onUpsert({ ...commitment, isActive: event.target.checked })} type="checkbox" />Active commitment</label>
+                  <Field label="Notes" wide>
+                    <textarea className="field-control" onChange={(event) => input.onUpsert({ ...commitment, notes: event.target.value })} value={commitment.notes ?? ""} />
+                  </Field>
+                </div>
+                <div className="events-detail-card__actions">
+                  <div className="field-hint">{selectedOpportunity ? `${deliverableCount} deliverable rule${deliverableCount === 1 ? "" : "s"} will reconcile from this commitment.` : "Choose an opportunity to make downstream deliverables explicit."}</div>
+                  <button className="button-link button-link--inline-secondary" onClick={() => input.onRemove(commitment.id)} type="button">Remove</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DeliverablesSection(input: {
+  onGenerate: () => void;
+  previewRows: SponsorFulfillmentGenerationResult["plans"];
+  sponsorGenerationPreview: SponsorFulfillmentGenerationResult | null;
+  supportsSponsorSetup: boolean;
+}) {
+  return (
+    <section className="events-detail-card__section" id="event-workspace-deliverables">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Deliverables / Generated Work Preview</div>
+          <div className="events-selector-card__copy">This preview reads the event-owned sponsorship setup and shows what would be created, reused, or kept for review.</div>
+        </div>
+        {input.supportsSponsorSetup ? <button className="topbar__button" onClick={input.onGenerate} type="button">Reconcile Sponsor Work</button> : null}
+      </div>
+      {!input.sponsorGenerationPreview || input.previewRows.length === 0 ? <div className="events-detail-card__empty">No sponsor-driven deliverables are currently previewed for this event.</div> : (
+        <>
+          <div className="events-workspace__stat-grid">
+            <Stat label="New actions" value={input.sponsorGenerationPreview.created.length} />
+            <Stat label="Existing actions reused" value={input.sponsorGenerationPreview.plans.filter((plan) => plan.existingActionItemId).length} />
+            <Stat label="Collateral matches" value={input.sponsorGenerationPreview.matchedExistingCollateralCount} />
+            <Stat label="Fallback collateral" value={input.sponsorGenerationPreview.fallbackCollateralToCreate.length} />
+          </div>
+          <div className="events-workspace__preview-list">
+            {input.previewRows.map((plan) => (
+              <div className="events-workspace__preview-row" key={`${plan.sourceKey}-${plan.existingActionItemId ?? "new"}`}>
+                <div>
+                  <strong>{plan.actionItem.title}</strong>
+                  {(plan.collateralLink?.collateralItemName ?? plan.fallbackCollateral?.itemName) ? <div className="field-hint">Collateral: {plan.collateralLink?.collateralItemName ?? plan.fallbackCollateral?.itemName}</div> : null}
+                </div>
+                <span className="events-chip">{plan.existingActionItemId ? "Already in Action View" : "Will be created"}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function CollateralSection(input: {
+  collateralItemCount: number;
+  onOpenInCollateral: () => void;
+  sponsorGenerationPreview: SponsorFulfillmentGenerationResult | null;
+}) {
+  return (
+    <section className="events-detail-card__section" id="event-workspace-collateral">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Collateral</div>
+          <div className="events-selector-card__copy">Collateral remains the downstream production workspace. This section only shows the impact of current setup.</div>
+        </div>
+        <button className="button-link button-link--inline-secondary" onClick={input.onOpenInCollateral} type="button">Open Collateral Workspace</button>
+      </div>
+      <div className="events-workspace__stat-grid">
+        <Stat label="Current collateral items" value={input.collateralItemCount} />
+        <Stat label="Will match existing" value={input.sponsorGenerationPreview?.matchedExistingCollateralCount ?? 0} />
+        <Stat label="Fallback collateral to create" value={input.sponsorGenerationPreview?.fallbackCollateralToCreate.length ?? 0} />
+      </div>
+    </section>
+  );
+}
+
+function ReviewSection(input: {
+  actionItemCount: number;
+  actionViewHref: string;
+  onOpenInAction: (href: string) => void;
+  sponsorGenerationPreview: SponsorFulfillmentGenerationResult | null;
+}) {
+  const progressedCount = (input.sponsorGenerationPreview?.obsoleteActionItems.filter((item) => item.hasMeaningfulProgress).length ?? 0) + (input.sponsorGenerationPreview?.obsoleteCollateralItems.filter((item) => item.hasMeaningfulProgress).length ?? 0);
+  return (
+    <section className="events-detail-card__section" id="event-workspace-review">
+      <div className="events-detail-card__header">
+        <div>
+          <div className="events-detail-card__section-title">Review / Execution Preview</div>
+          <div className="events-selector-card__copy">Action View remains the execution cockpit. This section makes the handoff and review state easier to understand before Melissa leaves setup.</div>
+        </div>
+        <button className="button-link button-link--inline-secondary" onClick={() => input.onOpenInAction(input.actionViewHref)} type="button">Open Action View</button>
+      </div>
+      <div className="events-workspace__review-callout">{getReviewCalloutText(input.sponsorGenerationPreview)}</div>
+      <div className="events-workspace__review-grid">
+        <Stat label="Current action items" value={input.actionItemCount} />
+        <Stat label="Generated actions kept for review" value={input.sponsorGenerationPreview?.obsoleteActionItems.length ?? 0} />
+        <Stat label="Generated collateral kept for review" value={input.sponsorGenerationPreview?.obsoleteCollateralItems.length ?? 0} />
+        <Stat label="Preserved review items with progress" value={progressedCount} />
+      </div>
+    </section>
+  );
+}
+
+function Field({ children, label, wide = false }: { children: ReactNode; label: string; wide?: boolean }) {
+  return <div className={`field${wide ? " field--wide" : ""}`}><label>{label}</label>{children}</div>;
+}
+
+function getDateLabel(dateMode: EventOnboardingSelectedInstance["instance"]["dateMode"], index: number) {
+  if (dateMode === "single") {
+    return "Event date";
+  }
   if (dateMode === "range") {
-    return dates.length >= 2
-      ? [dates[0] ?? "", dates[1] ?? ""]
-      : dates.length === 1
-        ? [dates[0] ?? "", dates[0] ?? ""]
-        : getDefaultDatesForEventDateMode("range");
+    return index === 0 ? "Start date" : "End date";
   }
-
-  return [dates[0] ?? ""];
-}
-
-function formatEventDateRange(startDate: string, endDate: string) {
-  if (!startDate) {
-    return "";
-  }
-
-  if (!endDate || startDate === endDate) {
-    return formatShortDate(startDate);
-  }
-
-  return `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`;
-}
-
-function formatScheduleStatus(status: "none" | "partial" | "scheduled") {
-  if (status === "scheduled") {
-    return "Sub-events scheduled";
-  }
-
-  if (status === "partial") {
-    return "Sub-events partially scheduled";
-  }
-
-  return "Sub-event schedule still needed";
-}
-
-function formatSetupStepStatus(status: "needs_attention" | "ready_next" | "done") {
-  if (status === "done") {
-    return "Done";
-  }
-
-  if (status === "ready_next") {
-    return "Ready next";
-  }
-
-  return "Needs attention";
-}
-
-function getDefaultNewSubEventDate(instance: { dates: string[]; startDate: string }) {
-  return instance.dates.find((date) => Boolean(date)) ?? instance.startDate ?? "";
+  return `Date ${index + 1}`;
 }

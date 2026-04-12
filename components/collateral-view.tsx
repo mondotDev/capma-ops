@@ -43,6 +43,7 @@ import {
 } from "@/lib/ops-utils";
 import {
   buildSponsorFulfillmentGenerationResult,
+  ensureSponsorshipSetupForEventInstance,
   getSponsorCollateralPromotionDefaults,
   getSponsorPlacementLabel,
   supportsSponsorSetupForEventType
@@ -80,7 +81,7 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
-  const { defaultOwnerForNewItems, items, sponsorPlacementsByInstance } = useAppStateValues();
+  const { defaultOwnerForNewItems, items, sponsorshipSetupByInstance } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -144,7 +145,14 @@ export function CollateralView({
   const currentEventProgram = workspaceBundle.currentEventProgram;
   const defaultTemplatePack = workspaceBundle.defaultTemplatePack;
   const isSelectedEventProgramSupported = workspaceBundle.isSelectedEventProgramSupported;
-  const sponsorPlacements = sponsorPlacementsByInstance[resolvedActiveEventInstanceId] ?? [];
+  const sponsorshipSetup =
+    selectedEventInstance
+      ? ensureSponsorshipSetupForEventInstance(
+          resolvedActiveEventInstanceId,
+          selectedEventInstance.eventTypeId,
+          sponsorshipSetupByInstance[resolvedActiveEventInstanceId]
+        )
+      : null;
   const supportsSponsorSetup = selectedEventInstance
     ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
     : false;
@@ -155,9 +163,10 @@ export function CollateralView({
       return null;
     }
 
-    const readyCount = sponsorPlacements.filter((placement) => placement.sponsorName.trim().length > 0).length;
+    const readyCount =
+      sponsorshipSetup?.commitments.filter((commitment) => commitment.sponsorName.trim().length > 0).length ?? 0;
     const generationResult = buildSponsorFulfillmentGenerationResult({
-      placements: sponsorPlacements,
+      sponsorshipSetup: sponsorshipSetup ?? { opportunities: [], commitments: [] },
       eventInstance: selectedEventInstance,
       existingItems: items,
       defaultOwner: defaultOwnerForNewItems,
@@ -174,7 +183,7 @@ export function CollateralView({
     defaultOwnerForNewItems,
     items,
     selectedEventInstance,
-    sponsorPlacements,
+    sponsorshipSetup,
     supportsSponsorSetup,
     workspaceBundle.instanceSubEvents
   ]);
@@ -1274,9 +1283,9 @@ export function CollateralView({
           {sponsorGenerationPreview ? (
             <div className="sponsor-setup__summary" role="status">
               <span>
-                {sponsorPlacements.length > 0
-                  ? `${sponsorPlacements.length} sponsor placement${sponsorPlacements.length === 1 ? "" : "s"} configured for this instance`
-                  : "No sponsor placements configured for this instance yet"}
+                {sponsorshipSetup && sponsorshipSetup.commitments.length > 0
+                  ? `${sponsorshipSetup.commitments.length} sponsor commitment${sponsorshipSetup.commitments.length === 1 ? "" : "s"} configured for this instance`
+                  : "No sponsor commitments configured for this instance yet"}
               </span>
               {sponsorGenerationPreview.actionItemsToCreate > 0 ? (
                 <span>

@@ -28,7 +28,7 @@ class LocalAppStateRepository implements AppStateRepository {
       state.issueStatuses,
       state.collateralItems,
       state.collateralProfiles,
-      state.sponsorPlacementsByInstance,
+      state.sponsorshipSetupByInstance,
       state.activeEventInstanceId,
       state.defaultOwnerForNewItems,
       state.eventFamilies,
@@ -55,7 +55,7 @@ class LocalAppStateRepository implements AppStateRepository {
       issueStatuses: parsedState.issueStatuses,
       collateralItems: parsedState.collateralItems,
       collateralProfiles: parsedState.collateralProfiles,
-      sponsorPlacementsByInstance: parsedState.sponsorPlacementsByInstance,
+      sponsorshipSetupByInstance: parsedState.sponsorshipSetupByInstance,
       activeEventInstanceId: parsedState.activeEventInstanceId,
       defaultOwnerForNewItems: parsedState.defaultOwnerForNewItems,
       eventFamilies: parsedState.eventFamilies,
@@ -82,7 +82,7 @@ class LocalAppStateRepository implements AppStateRepository {
       ...result,
       state: {
         ...result.state,
-        sponsorPlacementsByInstance: result.state.sponsorPlacementsByInstance ?? {},
+        sponsorshipSetupByInstance: result.state.sponsorshipSetupByInstance ?? {},
         items: nativeActionItemMutator.normalizeLoaded(
           migratePersistedItems(result.state.items, {
             legacySampleItemIds: LEGACY_SAMPLE_ITEM_IDS,

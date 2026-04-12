@@ -13,42 +13,44 @@ import {
 import { formatShortDate } from "@/lib/ops-utils";
 import { getEventOnboardingView } from "@/lib/events/event-onboarding";
 import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
+import {
+  buildSponsorFulfillmentGenerationResult,
+  ensureSponsorshipSetupForEventInstance
+} from "@/lib/sponsor-fulfillment";
 
 export function EventsView() {
   const router = useRouter();
   const {
     activeEventInstanceId,
     collateralItems,
+    defaultOwnerForNewItems,
     eventFamilies,
     eventInstances,
     eventSubEvents,
     eventTypes,
     items,
-    sponsorPlacementsByInstance
+    sponsorshipSetupByInstance
   } = useAppStateValues();
   const {
     applyDefaultTemplateToInstance,
     createEventInstance,
     generateSponsorFulfillmentItems,
     removeEventSubEvent,
-    removeSponsorPlacement,
+    removeSponsorCommitment,
+    removeSponsorOpportunity,
     setActiveEventInstanceId,
     updateEventInstance,
     upsertEventSubEvent,
-    upsertSponsorPlacement
+    upsertSponsorCommitment,
+    upsertSponsorOpportunity
   } = useAppActions();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(activeEventInstanceId);
-  const [hasDismissedDrawer, setHasDismissedDrawer] = useState(false);
 
   useEffect(() => {
     if (selectedInstanceId && eventInstances.some((instance) => instance.id === selectedInstanceId)) {
-      return;
-    }
-
-    if (selectedInstanceId === null && hasDismissedDrawer) {
       return;
     }
 
@@ -59,7 +61,7 @@ export function EventsView() {
 
     const firstInstance = [...eventInstances].sort((left, right) => left.startDate.localeCompare(right.startDate))[0];
     setSelectedInstanceId(firstInstance?.id ?? null);
-  }, [activeEventInstanceId, eventInstances, hasDismissedDrawer, selectedInstanceId]);
+  }, [activeEventInstanceId, eventInstances, selectedInstanceId]);
 
   const onboardingView = useMemo(
     () =>
@@ -74,6 +76,28 @@ export function EventsView() {
       }),
     [collateralItems, eventFamilies, eventInstances, eventSubEvents, eventTypes, items, selectedInstanceId]
   );
+  const selectedWorkspaceInstance = onboardingView.selectedInstance;
+  const selectedSponsorshipSetup = selectedWorkspaceInstance
+    ? ensureSponsorshipSetupForEventInstance(
+        selectedWorkspaceInstance.instance.id,
+        selectedWorkspaceInstance.instance.eventTypeId,
+        sponsorshipSetupByInstance[selectedWorkspaceInstance.instance.id] ?? null
+      )
+    : null;
+  const selectedSponsorGenerationPreview = useMemo(() => {
+    if (!selectedWorkspaceInstance || !selectedSponsorshipSetup) {
+      return null;
+    }
+
+    return buildSponsorFulfillmentGenerationResult({
+      sponsorshipSetup: selectedSponsorshipSetup,
+      eventInstance: selectedWorkspaceInstance.instance,
+      existingItems: items,
+      existingCollateralItems: collateralItems,
+      defaultOwner: defaultOwnerForNewItems,
+      eventSubEvents
+    });
+  }, [collateralItems, defaultOwnerForNewItems, eventSubEvents, items, selectedSponsorshipSetup, selectedWorkspaceInstance]);
   const pendingTemplateInstance =
     pendingTemplateInstanceId
       ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
@@ -82,7 +106,6 @@ export function EventsView() {
   function handleCreateEventInstance(input: CreateEventInstanceInput) {
     const nextId = createEventInstance(input);
     setIsCreateOpen(false);
-    setHasDismissedDrawer(false);
     setSelectedInstanceId(nextId);
     setFeedback(`${input.instanceName} created and set as the active event instance.`);
 
@@ -117,13 +140,7 @@ export function EventsView() {
   }
 
   function handleSelectInstance(instanceId: string) {
-    setHasDismissedDrawer(false);
     setSelectedInstanceId(instanceId);
-  }
-
-  function handleCloseDrawer() {
-    setHasDismissedDrawer(true);
-    setSelectedInstanceId(null);
   }
 
   return (
@@ -132,7 +149,7 @@ export function EventsView() {
         <div>
           <h1 className="collateral-page__title">Events</h1>
           <p className="collateral-page__subtitle">
-            Start event setup here: create or select an instance, confirm its sub-event schedule, then hand off into Collateral when production work is ready to begin.
+            Use Events as the revisitable builder workspace: shape the event, add sponsors progressively, and review what will flow into Action View and Collateral before handing work off.
           </p>
         </div>
         <div className="events-page__actions">
@@ -152,12 +169,12 @@ export function EventsView() {
       ) : null}
 
       <div className="events-page__grid">
-        <div className="events-page__main">
+        <div className="events-page__aside">
           <section className="card card--secondary events-selector-card">
             <div className="events-selector-card__header">
-              <div className="card__title">Choose an Event Instance</div>
+              <div className="card__title">Event Instances</div>
               <div className="events-selector-card__copy">
-                Pick an instance to review its setup and confirm sub-event scheduling before moving into Collateral.
+                Pick an instance to open its builder workspace. Melissa can come back here throughout the event lifecycle to revise setup, sponsors, and downstream review.
               </div>
             </div>
           {onboardingView.groups.map((group) => (
@@ -191,7 +208,7 @@ export function EventsView() {
               {group.instances.length > 0 ? (
                 <div className="events-instance-list">
                   {group.instances.map((instance) => {
-                    const isSelected = instance.id === onboardingView.selectedInstance?.instance.id;
+                    const isSelected = instance.id === selectedWorkspaceInstance?.instance.id;
                     const scheduleStatus = getInstanceScheduleStatus(instance.id, eventSubEvents);
                     const subEventCount = getInstanceSubEventCount(instance.id, eventSubEvents);
                     return (
@@ -232,29 +249,25 @@ export function EventsView() {
           ))}
           </section>
         </div>
-      </div>
-
-      {onboardingView.selectedInstance ? (
-        <>
-          <button
-            aria-label="Close event setup drawer"
-            className="drawer-backdrop"
-            onClick={handleCloseDrawer}
-            type="button"
-          />
+        <div className="events-page__main">
+          {selectedWorkspaceInstance ? (
           <EventInstanceDetailPanel
-            isActive={onboardingView.selectedInstance.instance.id === activeEventInstanceId}
-            onClose={handleCloseDrawer}
+            actionItemCount={items.filter((item) => item.eventInstanceId === selectedWorkspaceInstance.instance.id).length}
+            actionViewHref={`/action?focus=sponsor&eventGroup=${encodeURIComponent(selectedWorkspaceInstance.instance.name)}`}
+            collateralItemCount={collateralItems.filter((item) => item.eventInstanceId === selectedWorkspaceInstance.instance.id).length}
+            isActive={selectedWorkspaceInstance.instance.id === activeEventInstanceId}
+            onOpenInAction={(href) => router.push(href)}
             onOpenInCollateral={handleOpenInCollateral}
             onRemoveSubEvent={removeEventSubEvent}
             onSetActive={(instanceId) => {
               setActiveEventInstanceId(instanceId);
-              setHasDismissedDrawer(false);
               setFeedback("Active event context updated.");
             }}
             onGenerateSponsorFulfillment={generateSponsorFulfillmentItems}
-            onRemoveSponsorPlacement={removeSponsorPlacement}
-            onUpsertSponsorPlacement={upsertSponsorPlacement}
+            onRemoveSponsorCommitment={removeSponsorCommitment}
+            onRemoveSponsorOpportunity={removeSponsorOpportunity}
+            onUpsertSponsorCommitment={upsertSponsorCommitment}
+            onUpsertSponsorOpportunity={upsertSponsorOpportunity}
             onUpdateInstance={(instanceId, updates) => {
               const didUpdate = updateEventInstance(instanceId, updates);
               if (didUpdate) {
@@ -269,11 +282,20 @@ export function EventsView() {
               }
               return nextId;
             }}
-            selectedInstance={onboardingView.selectedInstance}
-            sponsorPlacements={sponsorPlacementsByInstance[onboardingView.selectedInstance.instance.id] ?? []}
+            selectedInstance={selectedWorkspaceInstance}
+            sponsorGenerationPreview={selectedSponsorGenerationPreview}
+            sponsorshipSetup={selectedSponsorshipSetup}
           />
-        </>
-      ) : null}
+          ) : (
+            <section className="card card--secondary events-builder-empty">
+              <div className="empty-state__title">Select an event to open its workspace</div>
+              <div className="empty-state__copy">
+                Melissa can create a new event instance or choose an existing one from the left to continue setup, sponsor edits, and downstream review.
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
 
       <EventInstanceCreateModal
         availableEventTypeDefinitions={onboardingView.groups.map((group) => group.definition)}

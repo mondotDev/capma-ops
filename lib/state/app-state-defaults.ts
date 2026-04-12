@@ -11,7 +11,7 @@ import {
   initialEventTypes
 } from "@/lib/event-instances";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
-import type { SponsorPlacementsByInstance } from "@/lib/sponsor-fulfillment";
+import type { SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
 import { initialActionItems } from "@/lib/sample-data";
 import {
   DEFAULT_OWNER,
@@ -43,7 +43,7 @@ export function createDefaultCollateralProfiles(): CollateralProfilesByInstance 
   };
 }
 
-export function createDefaultSponsorPlacementsByInstance(): SponsorPlacementsByInstance {
+export function createDefaultSponsorshipSetupByInstance(): SponsorshipSetupByInstance {
   return {};
 }
 
@@ -77,7 +77,7 @@ export function createDefaultAppStateData(): AppStateData {
     issueStatuses: {},
     collateralItems: createDefaultCollateralItems(),
     collateralProfiles: createDefaultCollateralProfiles(),
-    sponsorPlacementsByInstance: createDefaultSponsorPlacementsByInstance(),
+    sponsorshipSetupByInstance: createDefaultSponsorshipSetupByInstance(),
     activeEventInstanceId: getDefaultActiveEventInstanceId(),
     defaultOwnerForNewItems: getDefaultOwnerForNewItems(),
     eventFamilies: createDefaultEventFamilies(),

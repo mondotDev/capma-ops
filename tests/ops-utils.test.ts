@@ -4258,6 +4258,53 @@ test("event sub-event editing adds manual rows, renames existing rows, and block
     "2026-04-23"
   );
 
+  const allDayUpdate = upsertEventSubEventState({
+    currentEventSubEvents: initialEventSubEvents,
+    instanceId: "legislative-day-2026",
+    upsert: {
+      id: "leg-day-thursday-breakfast",
+      name: "Thursday Breakfast",
+      scheduleMode: "all_day",
+      date: "2026-04-23",
+      startTime: "07:30",
+      endTime: "09:00"
+    }
+  });
+
+  assert.equal(
+    allDayUpdate?.nextEventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.scheduleMode,
+    "all_day"
+  );
+  assert.equal(
+    allDayUpdate?.nextEventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.startTime,
+    undefined
+  );
+
+  const multiDayAdded = upsertEventSubEventState({
+    currentEventSubEvents: initialEventSubEvents,
+    instanceId: "legislative-day-2026",
+    upsert: {
+      name: "Expo Hall",
+      scheduleMode: "multi_day",
+      date: "2026-04-21",
+      endDate: "2026-04-23",
+      startTime: "08:00"
+    }
+  });
+
+  assert.equal(
+    multiDayAdded?.nextEventSubEvents.find((subEvent) => subEvent.name === "Expo Hall")?.scheduleMode,
+    "multi_day"
+  );
+  assert.equal(
+    multiDayAdded?.nextEventSubEvents.find((subEvent) => subEvent.name === "Expo Hall")?.endDate,
+    "2026-04-23"
+  );
+  assert.equal(
+    multiDayAdded?.nextEventSubEvents.find((subEvent) => subEvent.name === "Expo Hall")?.startTime,
+    undefined
+  );
+
   const duplicate = upsertEventSubEventState({
     currentEventSubEvents: initialEventSubEvents,
     instanceId: "legislative-day-2026",
@@ -4267,6 +4314,28 @@ test("event sub-event editing adds manual rows, renames existing rows, and block
   });
 
   assert.equal(duplicate, null);
+});
+
+test("event sub-event normalization infers schedule mode for legacy umbrella and range records", () => {
+  const normalized = normalizeEventSubEvents([
+    {
+      id: "legacy-multi-event",
+      eventInstanceId: "legislative-day-2026",
+      name: "Multi-Event/All Days",
+      sortOrder: 10
+    },
+    {
+      id: "legacy-expo-hall",
+      eventInstanceId: "legislative-day-2026",
+      name: "Expo Hall",
+      sortOrder: 20,
+      date: "2026-04-21",
+      endDate: "2026-04-23"
+    }
+  ]).subEvents;
+
+  assert.equal(normalized.find((subEvent) => subEvent.id === "legacy-multi-event")?.scheduleMode, "multi_day");
+  assert.equal(normalized.find((subEvent) => subEvent.id === "legacy-expo-hall")?.scheduleMode, "multi_day");
 });
 
 test("event sub-event removal blocks scaffolded or in-use rows and allows safe manual cleanup", () => {
@@ -4368,7 +4437,7 @@ test("event onboarding view exposes selected instance detail and sub-event safet
   assert.equal(view.selectedInstance?.setupSteps[1]?.status, "ready_next");
   assert.equal(
     view.selectedInstance?.nextStepGuidance,
-    "Next step: finish adding dates and times for the remaining sub-events."
+    "Next step: finish adding schedule details for the remaining sub-events."
   );
 });
 
@@ -4652,6 +4721,78 @@ test("sponsor generation plans fallback collateral when no production target exi
   assert.equal(generation.fallbackCollateralToCreate.length, 1);
   assert.equal(generation.fallbackCollateralToCreate[0]?.itemName, "Golf Hole Signs");
   assert.equal(generation.fallbackCollateralToCreate[0]?.subEventId, "leg-day-golf-tournament");
+});
+
+test("sponsor generation reports obsolete generated action and fallback collateral without deleting them", () => {
+  const generation = buildSponsorFulfillmentGenerationResult({
+    sponsorshipSetup: {
+      opportunities: [
+        {
+          id: "current-opportunity",
+          eventInstanceId: "legislative-day-2026",
+          label: "Thursday Briefing Breakfast",
+          placementType: "Thursday Briefing Breakfast",
+          isActive: true
+        }
+      ],
+      commitments: [
+        {
+          id: "current-commitment",
+          eventInstanceId: "legislative-day-2026",
+          sponsorName: "Acme Pest",
+          opportunityId: "current-opportunity",
+          logoReceived: true,
+          isActive: true
+        }
+      ]
+    },
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [
+      createItem({
+        id: "obsolete-sponsor-action",
+        title: "Acme Pest - Legacy Deliverable",
+        type: "Deliverable",
+        workstream: "Legislative Day",
+        eventInstanceId: "legislative-day-2026",
+        status: "In Progress",
+        noteEntries: [
+          createActionNoteEntry(
+            'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","opportunityId":"retired-opportunity","placementType":"Premier","deliverableName":"Legacy Deliverable"}. Placement: Premier.'
+          )!
+        ]
+      })
+    ],
+    existingCollateralItems: [
+      {
+        id: "obsolete-fallback-collateral",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-thursday-breakfast",
+        itemName: "Legacy Sponsor Sign",
+        status: "In Design",
+        owner: "Melissa",
+        blockedBy: "",
+        dueDate: "2026-04-20",
+        printer: "",
+        quantity: "",
+        updateType: "Net New",
+        noteEntries: [
+          createActionNoteEntry(
+            'Generated as fallback collateral for sponsor setup on Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","opportunityId":"retired-opportunity","placementType":"Premier","deliverableName":"Legacy Sign"}.'
+          )!
+        ],
+        lastUpdated: "2026-04-01"
+      }
+    ],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.equal(generation.obsoleteActionItems.length, 1);
+  assert.equal(generation.obsoleteActionItems[0]?.id, "obsolete-sponsor-action");
+  assert.equal(generation.obsoleteActionItems[0]?.hasMeaningfulProgress, true);
+  assert.equal(generation.obsoleteCollateralItems.length, 1);
+  assert.equal(generation.obsoleteCollateralItems[0]?.id, "obsolete-fallback-collateral");
+  assert.equal(generation.obsoleteCollateralItems[0]?.hasMeaningfulProgress, true);
 });
 
 test("sponsor collateral promotion defaults detect physical deliverables and map clear sub-events", () => {

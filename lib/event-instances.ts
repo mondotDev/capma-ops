@@ -25,12 +25,16 @@ export type EventInstance = {
   notes?: string;
 };
 
+export type EventSubEventScheduleMode = "timed" | "all_day" | "multi_day";
+
 export type EventSubEvent = {
   id: string;
   eventInstanceId: string;
   name: string;
   sortOrder: number;
+  scheduleMode?: EventSubEventScheduleMode;
   date?: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
 };
@@ -43,6 +47,10 @@ type NormalizedEventSubEventsResult = {
 const KNOWN_SUB_EVENT_NAME_ALIASES: Record<string, string> = {
   "wed night reception": "Wednesday Reception",
   "wednesday night reception": "Wednesday Reception"
+};
+
+const DEFAULT_SUB_EVENT_SCHEDULE_MODE_BY_NAME: Record<string, EventSubEventScheduleMode> = {
+  "multi-event/all days": "multi_day"
 };
 
 export const LEGISLATIVE_DAY_2026_INSTANCE_ID = "legislative-day-2026";
@@ -129,7 +137,7 @@ const rawInitialEventSubEvents: EventSubEvent[] = [
   { id: "leg-day-golf-registration", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Golf Registration", sortOrder: 20 },
   { id: "leg-day-golf-tournament", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Golf Tournament", sortOrder: 30 },
   { id: "leg-day-legislative-visits", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Legislative Visits", sortOrder: 40 },
-  { id: "leg-day-multi-event", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Multi-Event/All Days", sortOrder: 50 },
+  { id: "leg-day-multi-event", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Multi-Event/All Days", sortOrder: 50, scheduleMode: "multi_day" },
   { id: "leg-day-thursday-breakfast", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Thursday Breakfast", sortOrder: 60 },
   { id: "leg-day-thursday-luncheon", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Thursday Luncheon", sortOrder: 70 },
   { id: "leg-day-wednesday-board", eventInstanceId: LEGISLATIVE_DAY_2026_INSTANCE_ID, name: "Wednesday Board Meeting", sortOrder: 80 },
@@ -157,7 +165,8 @@ export function createUnassignedSubEvent(eventInstanceId: string): EventSubEvent
     id: getUnassignedSubEventId(eventInstanceId),
     eventInstanceId,
     name: "Unassigned",
-    sortOrder: 9_999
+    sortOrder: 9_999,
+    scheduleMode: "timed"
   };
 }
 
@@ -270,7 +279,12 @@ export function normalizeEventSubEvents(subEvents: EventSubEvent[]): NormalizedE
     grouped.get(groupKey)!.push({
       ...subEvent,
       name: normalizedName,
+      scheduleMode: normalizeSubEventScheduleMode(subEvent.scheduleMode, normalizedName, subEvent),
       date: typeof subEvent.date === "string" && subEvent.date.length > 0 ? subEvent.date : undefined,
+      endDate:
+        typeof subEvent.endDate === "string" && subEvent.endDate.length > 0
+          ? subEvent.endDate
+          : undefined,
       startTime:
         typeof subEvent.startTime === "string" && subEvent.startTime.length > 0
           ? subEvent.startTime
@@ -300,7 +314,9 @@ export function normalizeEventSubEvents(subEvents: EventSubEvent[]): NormalizedE
       return {
         ...canonicalRecord,
         name: canonicalName,
+        scheduleMode: canonicalRecord.scheduleMode,
         date: canonicalRecord.date,
+        endDate: canonicalRecord.endDate,
         startTime: canonicalRecord.startTime,
         endTime: canonicalRecord.endTime
       };
@@ -315,6 +331,23 @@ export function normalizeEventSubEvents(subEvents: EventSubEvent[]): NormalizedE
     canonicalIdByOriginalId,
     subEvents: normalizedSubEvents
   };
+}
+
+export function normalizeSubEventScheduleMode(
+  value: unknown,
+  subEventName?: string,
+  existingFields?: Pick<Partial<EventSubEvent>, "date" | "endDate" | "startTime" | "endTime">
+): EventSubEventScheduleMode {
+  if (value === "timed" || value === "all_day" || value === "multi_day") {
+    return value;
+  }
+
+  if (existingFields?.date && existingFields.endDate && existingFields.endDate !== existingFields.date) {
+    return "multi_day";
+  }
+
+  const normalizedName = normalizeSubEventName(subEventName ?? "");
+  return DEFAULT_SUB_EVENT_SCHEDULE_MODE_BY_NAME[normalizedName.toLowerCase()] ?? "timed";
 }
 
 export function resolveActiveEventInstanceId(

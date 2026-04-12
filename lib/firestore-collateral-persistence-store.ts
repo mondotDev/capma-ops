@@ -2,6 +2,7 @@ import { doc, getDoc, setDoc, type Firestore } from "firebase/firestore";
 import { normalizeCollateralItem, type CollateralItem, type LegDayCollateralProfile } from "@/lib/collateral-data";
 import {
   normalizeEventInstance,
+  normalizeSubEventScheduleMode,
   type EventInstance,
   type EventSubEvent
 } from "@/lib/event-instances";
@@ -13,9 +14,11 @@ import {
 } from "@/lib/collateral-persisted-state";
 import type { ActionNoteEntry } from "@/lib/sample-data";
 import {
-  normalizeSponsorPlacement,
-  type SponsorPlacement,
-  type SponsorPlacementsByInstance
+  normalizeSponsorCommitment,
+  normalizeSponsorOpportunity,
+  type SponsorCommitment,
+  type SponsorOpportunity,
+  type SponsorshipSetupByInstance
 } from "@/lib/sponsor-fulfillment";
 
 export const COLLATERAL_STATE_COLLECTION = "appStateSlices";
@@ -58,16 +61,27 @@ type FirestoreEventSubEventDocument = {
   eventInstanceId: string;
   name: string;
   sortOrder: number;
+  scheduleMode?: EventSubEvent["scheduleMode"];
+  date?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 type FirestoreLegDayCollateralProfileDocument = LegDayCollateralProfile;
 
-type FirestoreSponsorPlacementDocument = SponsorPlacement;
+type FirestoreSponsorOpportunityDocument = SponsorOpportunity;
+type FirestoreSponsorCommitmentDocument = SponsorCommitment;
+type FirestoreSponsorshipSetupDocument = {
+  opportunities: FirestoreSponsorOpportunityDocument[];
+  commitments: FirestoreSponsorCommitmentDocument[];
+};
 
 type FirestoreCollateralStateDocument = {
   collateralItems: FirestoreCollateralItemDocument[];
   collateralProfiles: Record<string, FirestoreLegDayCollateralProfileDocument>;
-  sponsorPlacementsByInstance?: Record<string, FirestoreSponsorPlacementDocument[]>;
+  sponsorshipSetupByInstance?: Record<string, FirestoreSponsorshipSetupDocument>;
+  sponsorPlacementsByInstance?: Record<string, FirestoreSponsorCommitmentDocument[]>;
   eventInstances: FirestoreEventInstanceDocument[];
   eventSubEvents: FirestoreEventSubEventDocument[];
   updatedAt?: string;
@@ -158,10 +172,13 @@ export function mapPersistedCollateralStateToFirestoreDocument(
     collateralProfiles: Object.fromEntries(
       Object.entries(state.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
     ),
-    sponsorPlacementsByInstance: Object.fromEntries(
-      Object.entries(state.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+    sponsorshipSetupByInstance: Object.fromEntries(
+      Object.entries(state.sponsorshipSetupByInstance ?? {}).map(([instanceId, setup]) => [
         instanceId,
-        placements.map((placement) => ({ ...placement }))
+        {
+          opportunities: setup.opportunities.map((opportunity) => ({ ...opportunity })),
+          commitments: setup.commitments.map((commitment) => ({ ...commitment }))
+        }
       ])
     ),
     eventInstances: state.eventInstances.map((instance) => ({ ...instance })),
@@ -186,8 +203,8 @@ export function parseFirestoreCollateralStateDocument(value: unknown): Firestore
     !Array.isArray(document.eventSubEvents) ||
     !document.eventSubEvents.every(isFirestoreEventSubEventDocument) ||
     !isCollateralProfileMap(document.collateralProfiles) ||
-    !isSponsorPlacementsMap(
-      document.sponsorPlacementsByInstance ?? {},
+    !isSponsorshipSetupMap(
+      document.sponsorshipSetupByInstance ?? {},
       document.eventInstances,
       document.eventSubEvents
     )
@@ -209,12 +226,16 @@ export function parseFirestoreCollateralStateDocument(value: unknown): Firestore
     collateralProfiles: Object.fromEntries(
       Object.entries(document.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
     ),
-    sponsorPlacementsByInstance: Object.fromEntries(
-      Object.entries(document.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+    sponsorshipSetupByInstance: Object.fromEntries(
+      Object.entries(document.sponsorshipSetupByInstance ?? {}).map(([instanceId, setup]) => [
         instanceId,
-        placements.map((placement) => ({ ...placement }))
+        {
+          opportunities: setup.opportunities.map((opportunity) => ({ ...opportunity })),
+          commitments: setup.commitments.map((commitment) => ({ ...commitment }))
+        }
       ])
     ),
+    sponsorPlacementsByInstance: document.sponsorPlacementsByInstance,
     eventInstances: document.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: document.eventSubEvents.map((subEvent) => ({ ...subEvent })),
     schemaVersion: document.schemaVersion,
@@ -230,12 +251,16 @@ function mapPersistedCollateralStateDocument(
     collateralProfiles: Object.fromEntries(
       Object.entries(document.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
     ),
-    sponsorPlacementsByInstance: Object.fromEntries(
-      Object.entries(document.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+    sponsorshipSetupByInstance: Object.fromEntries(
+      Object.entries(document.sponsorshipSetupByInstance ?? {}).map(([instanceId, setup]) => [
         instanceId,
-        placements.map((placement) => ({ ...placement }))
+        {
+          opportunities: setup.opportunities.map((opportunity) => ({ ...opportunity })),
+          commitments: setup.commitments.map((commitment) => ({ ...commitment }))
+        }
       ])
     ),
+    sponsorPlacementsByInstance: document.sponsorPlacementsByInstance,
     eventInstances: document.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: document.eventSubEvents.map((subEvent) => ({ ...subEvent }))
   };
@@ -405,7 +430,12 @@ function isFirestoreEventSubEventDocument(value: unknown): value is FirestoreEve
     typeof subEvent.id === "string" &&
     typeof subEvent.eventInstanceId === "string" &&
     typeof subEvent.name === "string" &&
-    typeof subEvent.sortOrder === "number"
+    typeof subEvent.sortOrder === "number" &&
+    (subEvent.scheduleMode === undefined || normalizeSubEventScheduleMode(subEvent.scheduleMode, subEvent.name) !== null) &&
+    (subEvent.date === undefined || typeof subEvent.date === "string") &&
+    (subEvent.endDate === undefined || typeof subEvent.endDate === "string") &&
+    (subEvent.startTime === undefined || typeof subEvent.startTime === "string") &&
+    (subEvent.endTime === undefined || typeof subEvent.endTime === "string")
   );
 }
 
@@ -417,25 +447,45 @@ function isCollateralProfileMap(value: unknown): value is Record<string, Firesto
   return Object.values(value).every(isLegDayCollateralProfileDocument);
 }
 
-function isSponsorPlacementsMap(
+function isSponsorshipSetupMap(
   value: unknown,
   eventInstances: FirestoreEventInstanceDocument[],
   eventSubEvents: FirestoreEventSubEventDocument[]
-): value is Record<string, FirestoreSponsorPlacementDocument[]> {
+): value is Record<string, FirestoreSponsorshipSetupDocument> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
 
-  return Object.entries(value).every(([instanceId, placements]) => {
-    if (!eventInstances.some((instance) => instance.id === instanceId) || !Array.isArray(placements)) {
+  return Object.entries(value).every(([instanceId, setup]) => {
+    if (
+      !eventInstances.some((instance) => instance.id === instanceId) ||
+      !setup ||
+      typeof setup !== "object" ||
+      !Array.isArray((setup as FirestoreSponsorshipSetupDocument).opportunities) ||
+      !Array.isArray((setup as FirestoreSponsorshipSetupDocument).commitments)
+    ) {
       return false;
     }
 
-    return placements.every((placement) =>
-      normalizeSponsorPlacement(placement as Partial<SponsorPlacement>, {
-        eventInstances,
-        eventSubEvents
-      }) !== null
+    const sponsorshipSetup = setup as FirestoreSponsorshipSetupDocument;
+    const opportunities = sponsorshipSetup.opportunities
+      .map((opportunity) =>
+        normalizeSponsorOpportunity(opportunity as Partial<SponsorOpportunity>, {
+          eventInstances,
+          eventSubEvents
+        })
+      )
+      .filter((opportunity): opportunity is SponsorOpportunity => opportunity !== null);
+
+    return (
+      opportunities.length === sponsorshipSetup.opportunities.length &&
+      sponsorshipSetup.commitments.every((commitment) =>
+        normalizeSponsorCommitment(commitment as Partial<SponsorCommitment>, {
+          eventInstances,
+          eventSubEvents,
+          opportunities
+        }) !== null
+      )
     );
   });
 }

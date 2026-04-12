@@ -11,7 +11,36 @@ import type { ActionItem } from "@/lib/sample-data";
 
 export type SponsorPlacementType = string;
 
-export type SponsorPlacement = {
+export type SponsorOpportunity = {
+  id: string;
+  eventInstanceId: string;
+  label: string;
+  placementType: SponsorPlacementType;
+  linkedSubEventId?: string;
+  isActive?: boolean;
+  notes?: string;
+};
+
+export type SponsorCommitment = {
+  id: string;
+  eventInstanceId: string;
+  sponsorName: string;
+  opportunityId: string;
+  placement?: SponsorPlacementType;
+  linkedSubEventId?: string;
+  isActive?: boolean;
+  logoReceived: boolean;
+  notes?: string;
+};
+
+export type SponsorshipSetup = {
+  opportunities: SponsorOpportunity[];
+  commitments: SponsorCommitment[];
+};
+
+export type SponsorshipSetupByInstance = Record<string, SponsorshipSetup>;
+
+export type LegacySponsorPlacement = {
   id: string;
   eventInstanceId: string;
   sponsorName: string;
@@ -22,14 +51,14 @@ export type SponsorPlacement = {
   notes?: string;
 };
 
-export type SponsorPlacementsByInstance = Record<string, SponsorPlacement[]>;
-
 export type SponsorFulfillmentGenerationResult = {
   plans: SponsorFulfillmentGenerationPlan[];
   created: NewActionItemInput[];
   skipped: number;
   matchedExistingCollateralCount: number;
   fallbackCollateralToCreate: SponsorFallbackCollateralPlan[];
+  obsoleteActionItems: SponsorGeneratedWorkReviewRecord[];
+  obsoleteCollateralItems: SponsorGeneratedWorkReviewRecord[];
 };
 
 export type SponsorFallbackCollateralPlan = {
@@ -56,6 +85,12 @@ export type SponsorFulfillmentGenerationPlan = {
   fallbackCollateral: SponsorFallbackCollateralPlan | null;
 };
 
+export type SponsorGeneratedWorkReviewRecord = {
+  id: string;
+  sourceKey: string;
+  hasMeaningfulProgress: boolean;
+};
+
 export type SponsorCollateralPromotionDefaults = {
   eventInstanceId: string;
   sponsorName: string;
@@ -72,8 +107,6 @@ const NEWS_BRIEF_MONTH_NAMES = {
   4: "April"
 } as const;
 
-export const SPONSOR_PLACEMENT_OPTIONS = getSponsorPlacementOptions(DEFAULT_SPONSOR_EVENT_TYPE_ID);
-
 export function getSponsorPlacementOptions(eventTypeId: string) {
   return (getSponsorModelDefinitionForEventType(eventTypeId)?.placements ?? []).map((placement) => ({
     id: placement.id,
@@ -81,18 +114,70 @@ export function getSponsorPlacementOptions(eventTypeId: string) {
   }));
 }
 
+export function getDefaultSponsorOpportunitiesForEventInstance(eventInstanceId: string, eventTypeId: string) {
+  return getSponsorPlacementOptions(eventTypeId).map((placement, index) => ({
+    id: `${eventInstanceId}-opportunity-${slugify(placement.id) || index + 1}`,
+    eventInstanceId,
+    label: placement.label,
+    placementType: placement.id,
+    linkedSubEventId: undefined,
+    isActive: true,
+    notes: undefined
+  })) satisfies SponsorOpportunity[];
+}
+
+export function createDefaultSponsorshipSetupForEventInstance(eventInstanceId: string, eventTypeId: string): SponsorshipSetup {
+  return {
+    opportunities: getDefaultSponsorOpportunitiesForEventInstance(eventInstanceId, eventTypeId),
+    commitments: []
+  };
+}
+
+export function ensureSponsorshipSetupForEventInstance(
+  eventInstanceId: string,
+  eventTypeId: string,
+  currentSetup?: SponsorshipSetup | null
+) {
+  if (currentSetup) {
+    return {
+      opportunities: currentSetup.opportunities.map((opportunity) => ({ ...opportunity })),
+      commitments: currentSetup.commitments.map((commitment) => ({ ...commitment }))
+    } satisfies SponsorshipSetup;
+  }
+
+  return createDefaultSponsorshipSetupForEventInstance(eventInstanceId, eventTypeId);
+}
+
 export function supportsSponsorSetupForEventType(eventTypeId: string) {
   return getSponsorModelDefinitionForEventType(eventTypeId) !== null;
 }
 
-export function createSponsorPlacementDraft(eventInstanceId: string, eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID): SponsorPlacement {
+export function createSponsorOpportunityDraft(
+  eventInstanceId: string,
+  eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID
+): SponsorOpportunity {
   const placementOptions = getSponsorPlacementOptions(eventTypeId);
 
   return {
-    id: `sponsor-placement-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `sponsor-opportunity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    eventInstanceId,
+    label: placementOptions[0]?.label ?? "",
+    placementType: placementOptions[0]?.id ?? "",
+    linkedSubEventId: undefined,
+    isActive: true,
+    notes: ""
+  };
+}
+
+export function createSponsorCommitmentDraft(
+  eventInstanceId: string,
+  sponsorshipSetup: SponsorshipSetup
+): SponsorCommitment {
+  return {
+    id: `sponsor-commitment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     eventInstanceId,
     sponsorName: "",
-    placement: placementOptions[0]?.id ?? "",
+    opportunityId: sponsorshipSetup.opportunities[0]?.id ?? "",
     linkedSubEventId: undefined,
     isActive: true,
     logoReceived: false,
@@ -100,32 +185,80 @@ export function createSponsorPlacementDraft(eventInstanceId: string, eventTypeId
   };
 }
 
-export function normalizeSponsorPlacement(
-  value: Partial<SponsorPlacement> & { placementType?: string },
+export function getSponsorCommitmentOpportunityOptions(setup: SponsorshipSetup) {
+  return setup.opportunities
+    .filter((opportunity) => opportunity.isActive !== false)
+    .map((opportunity) => ({
+      id: opportunity.id,
+      label: opportunity.label
+    }));
+}
+
+export function normalizeSponsorOpportunity(
+  value: Partial<SponsorOpportunity> & { placement?: string; placementType?: string },
   input: {
     eventInstances: EventInstance[];
     eventSubEvents?: EventSubEvent[];
   }
-): SponsorPlacement | null {
-  const placementValue =
-    typeof value.placement === "string"
-      ? value.placement
-      : typeof value.placementType === "string"
-        ? value.placementType
+): SponsorOpportunity | null {
+  const placementType =
+    typeof value.placementType === "string"
+      ? value.placementType
+      : typeof value.placement === "string"
+        ? value.placement
         : undefined;
 
   if (
     typeof value.id !== "string" ||
     typeof value.eventInstanceId !== "string" ||
-    typeof value.sponsorName !== "string" ||
-    typeof placementValue !== "string"
+    typeof value.label !== "string" ||
+    typeof placementType !== "string"
   ) {
     return null;
   }
 
   const eventInstance = input.eventInstances.find((instance) => instance.id === value.eventInstanceId) ?? null;
 
-  if (!eventInstance || !isSponsorPlacementType(eventInstance.eventTypeId, placementValue)) {
+  if (!eventInstance || !isSponsorPlacementType(eventInstance.eventTypeId, placementType)) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    eventInstanceId: value.eventInstanceId,
+    label: value.label.trim(),
+    placementType,
+    linkedSubEventId: normalizeLinkedSubEventId(value.linkedSubEventId, value.eventInstanceId, input.eventSubEvents ?? []),
+    isActive: normalizeIsActiveValue(value.isActive),
+    notes: typeof value.notes === "string" && value.notes.trim() ? value.notes.trim() : undefined
+  };
+}
+
+export function normalizeSponsorCommitment(
+  value: Partial<SponsorCommitment> & { placement?: string; placementType?: string; placementId?: string },
+  input: {
+    eventInstances: EventInstance[];
+    eventSubEvents?: EventSubEvent[];
+    opportunities: SponsorOpportunity[];
+  }
+): SponsorCommitment | null {
+  if (
+    typeof value.id !== "string" ||
+    typeof value.eventInstanceId !== "string" ||
+    typeof value.sponsorName !== "string"
+  ) {
+    return null;
+  }
+
+  const eventInstance = input.eventInstances.find((instance) => instance.id === value.eventInstanceId) ?? null;
+
+  if (!eventInstance) {
+    return null;
+  }
+
+  const opportunityId = resolveOpportunityId(value, input.opportunities);
+
+  if (!opportunityId) {
     return null;
   }
 
@@ -133,7 +266,8 @@ export function normalizeSponsorPlacement(
     id: value.id,
     eventInstanceId: value.eventInstanceId,
     sponsorName: value.sponsorName.trim(),
-    placement: placementValue,
+    opportunityId,
+    placement: input.opportunities.find((opportunity) => opportunity.id === opportunityId)?.placementType,
     linkedSubEventId: normalizeLinkedSubEventId(value.linkedSubEventId, value.eventInstanceId, input.eventSubEvents ?? []),
     isActive: normalizeIsActiveValue(value.isActive),
     logoReceived: normalizeLogoReceivedValue(value.logoReceived),
@@ -141,37 +275,126 @@ export function normalizeSponsorPlacement(
   };
 }
 
-export function normalizeSponsorPlacementsByInstance(
-  placementsByInstance: SponsorPlacementsByInstance | undefined,
+export function normalizeSponsorPlacement(
+  value: Partial<SponsorCommitment> & { placement?: string; placementType?: string; placementId?: string },
   input: {
     eventInstances: EventInstance[];
     eventSubEvents?: EventSubEvent[];
+    opportunities?: SponsorOpportunity[];
   }
-): SponsorPlacementsByInstance {
-  if (!placementsByInstance || typeof placementsByInstance !== "object" || Array.isArray(placementsByInstance)) {
-    return {};
+) {
+  const opportunities =
+    input.opportunities ??
+    input.eventInstances.flatMap((eventInstance) =>
+      getDefaultSponsorOpportunitiesForEventInstance(eventInstance.id, eventInstance.eventTypeId)
+    );
+
+  return normalizeSponsorCommitment(value, {
+    eventInstances: input.eventInstances,
+    eventSubEvents: input.eventSubEvents,
+    opportunities
+  });
+}
+
+export function normalizeSponsorshipSetupByInstance(
+  sponsorshipSetupByInstance: SponsorshipSetupByInstance | undefined,
+  input: {
+    eventInstances: EventInstance[];
+    eventSubEvents?: EventSubEvent[];
+    legacyPlacementsByInstance?: Record<string, unknown[]>;
+  }
+): SponsorshipSetupByInstance {
+  const eventSubEvents = input.eventSubEvents ?? [];
+  const legacyPlacementsByInstance = input.legacyPlacementsByInstance ?? {};
+  const nextState: SponsorshipSetupByInstance = {};
+
+  for (const eventInstance of input.eventInstances) {
+    const rawSetup = sponsorshipSetupByInstance?.[eventInstance.id];
+    const starterOpportunities = createDefaultSponsorshipSetupForEventInstance(
+      eventInstance.id,
+      eventInstance.eventTypeId
+    ).opportunities;
+    const synthesizedOpportunities = new Map<string, SponsorOpportunity>();
+
+    const normalizedOpportunities =
+      rawSetup?.opportunities
+        ?.map((opportunity) => normalizeSponsorOpportunity(opportunity, { eventInstances: input.eventInstances, eventSubEvents }))
+        .filter((opportunity): opportunity is SponsorOpportunity => opportunity !== null) ?? [];
+
+    for (const opportunity of normalizedOpportunities.length > 0 ? normalizedOpportunities : starterOpportunities) {
+      synthesizedOpportunities.set(opportunity.id, { ...opportunity });
+    }
+
+    for (const legacyPlacementValue of legacyPlacementsByInstance[eventInstance.id] ?? []) {
+      const legacyPlacement = legacyPlacementValue as LegacySponsorPlacement;
+      const placementType = legacyPlacement.placement;
+      const existingOpportunity = Array.from(synthesizedOpportunities.values()).find(
+        (opportunity) => opportunity.placementType === placementType
+      );
+
+      if (existingOpportunity) {
+        continue;
+      }
+
+      const nextId = `${eventInstance.id}-opportunity-${slugify(placementType)}-legacy`;
+      synthesizedOpportunities.set(nextId, {
+        id: nextId,
+        eventInstanceId: eventInstance.id,
+        label: getSponsorPlacementLabel(placementType, eventInstance.eventTypeId),
+        placementType,
+        linkedSubEventId: normalizeLinkedSubEventId(legacyPlacement.linkedSubEventId, eventInstance.id, eventSubEvents),
+        isActive: true,
+        notes: undefined
+      });
+    }
+
+    const opportunities = Array.from(synthesizedOpportunities.values());
+    const normalizedCommitments: SponsorCommitment[] = [];
+
+    for (const commitment of rawSetup?.commitments ?? []) {
+      const normalizedCommitment = normalizeSponsorCommitment(commitment, {
+        eventInstances: input.eventInstances,
+        eventSubEvents,
+        opportunities
+      });
+
+      if (normalizedCommitment) {
+        normalizedCommitments.push(normalizedCommitment);
+      }
+    }
+
+    for (const legacyPlacementValue of legacyPlacementsByInstance[eventInstance.id] ?? []) {
+      const legacyPlacement = legacyPlacementValue as LegacySponsorPlacement;
+      const normalizedCommitment = normalizeSponsorCommitment(
+        {
+          ...legacyPlacement,
+          opportunityId: undefined
+        },
+        {
+          eventInstances: input.eventInstances,
+          eventSubEvents,
+          opportunities
+        }
+      );
+
+      if (normalizedCommitment && !normalizedCommitments.some((entry) => entry.id === normalizedCommitment.id)) {
+        normalizedCommitments.push(normalizedCommitment);
+      }
+    }
+
+    if (opportunities.length > 0 || normalizedCommitments.length > 0) {
+      nextState[eventInstance.id] = {
+        opportunities,
+        commitments: normalizedCommitments
+      };
+    }
   }
 
-  return Object.fromEntries(
-    Object.entries(placementsByInstance)
-      .filter(([instanceId]) => input.eventInstances.some((instance) => instance.id === instanceId))
-      .map(([instanceId, placements]) => [
-        instanceId,
-        Array.isArray(placements)
-          ? placements
-              .map((placement) =>
-                placement && typeof placement === "object"
-                  ? normalizeSponsorPlacement(placement as Partial<SponsorPlacement> & { placementType?: string }, input)
-                  : null
-              )
-              .filter((placement): placement is SponsorPlacement => placement !== null)
-          : []
-      ])
-  );
+  return nextState;
 }
 
 export function getSponsorPlacementLabel(type: SponsorPlacementType, eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID) {
-  return getSponsorPlacementOptions(eventTypeId).find((option) => option.id === type)?.label ?? "Sponsor placement";
+  return getSponsorPlacementOptions(eventTypeId).find((option) => option.id === type)?.label ?? "Sponsor opportunity";
 }
 
 export function getSponsorPlacementDeliverables(placement: SponsorPlacementType, eventTypeId = DEFAULT_SPONSOR_EVENT_TYPE_ID) {
@@ -205,7 +428,7 @@ export function getSponsorCollateralPromotionDefaults(input: {
     return {
       eventInstanceId: input.item.eventInstanceId,
       sponsorName: source.sponsorName,
-      placement: source.placement,
+      placement: source.placementType,
       deliverableName: source.deliverableName,
       collateralItemName: linkedCollateral.collateralItemName,
       subEventId: linkedCollateral.subEventId,
@@ -213,7 +436,7 @@ export function getSponsorCollateralPromotionDefaults(input: {
     } satisfies SponsorCollateralPromotionDefaults;
   }
 
-  const rule = getSponsorCollateralPromotionRule(source.placement, source.deliverableName);
+  const rule = getSponsorCollateralPromotionRule(source.placementType, source.deliverableName);
   if (!rule) {
     return null;
   }
@@ -230,7 +453,7 @@ export function getSponsorCollateralPromotionDefaults(input: {
   return {
     eventInstanceId: input.item.eventInstanceId,
     sponsorName: source.sponsorName,
-    placement: source.placement,
+    placement: source.placementType,
     deliverableName: source.deliverableName,
     collateralItemName: resolvedTarget.collateralItemName,
     subEventId: resolvedTarget.subEventId,
@@ -239,59 +462,86 @@ export function getSponsorCollateralPromotionDefaults(input: {
 }
 
 export function buildSponsorFulfillmentGenerationResult(input: {
-  placements: SponsorPlacement[];
+  sponsorshipSetup?: SponsorshipSetup;
+  placements?: LegacySponsorPlacement[];
   eventInstance: EventInstance;
   existingItems: ActionItem[];
   existingCollateralItems?: CollateralItem[];
   defaultOwner: string;
   eventSubEvents?: EventSubEvent[];
 }): SponsorFulfillmentGenerationResult {
+  const sponsorshipSetup =
+    input.sponsorshipSetup ??
+    normalizeSponsorshipSetupByInstance(
+      {
+        [input.eventInstance.id]: {
+          opportunities: [],
+          commitments: []
+        }
+      },
+      {
+        eventInstances: [input.eventInstance],
+        eventSubEvents: input.eventSubEvents,
+        legacyPlacementsByInstance: input.placements ? { [input.eventInstance.id]: input.placements } : {}
+      }
+    )[input.eventInstance.id] ??
+    createDefaultSponsorshipSetupForEventInstance(input.eventInstance.id, input.eventInstance.eventTypeId);
   const sponsorModel = getSponsorModelDefinitionForEventType(input.eventInstance.eventTypeId);
 
   if (!sponsorModel) {
     return {
       plans: [],
       created: [],
-      skipped: input.placements.length,
+      skipped: sponsorshipSetup.commitments.length,
       matchedExistingCollateralCount: 0,
-      fallbackCollateralToCreate: []
+      fallbackCollateralToCreate: [],
+      obsoleteActionItems: [],
+      obsoleteCollateralItems: []
     };
   }
 
-  const seenPlacementKeys = new Set<string>();
+  const opportunityById = new Map(
+    sponsorshipSetup.opportunities.map((opportunity) => [opportunity.id, opportunity] as const)
+  );
+  const seenCommitmentKeys = new Set<string>();
   const plannedFallbackCollateralKeys = new Set<string>();
   const plans: SponsorFulfillmentGenerationPlan[] = [];
   const created: NewActionItemInput[] = [];
   let skipped = 0;
   let matchedExistingCollateralCount = 0;
   const fallbackCollateralToCreate: SponsorFallbackCollateralPlan[] = [];
+  const activeSourceKeys = new Set<string>();
+  const activeFallbackSourceKeys = new Set<string>();
 
-  for (const placement of input.placements) {
-    const normalizedSponsorName = placement.sponsorName.trim();
+  for (const commitment of sponsorshipSetup.commitments) {
+    const normalizedSponsorName = commitment.sponsorName.trim();
+    const opportunity = opportunityById.get(commitment.opportunityId) ?? null;
 
-    if (placement.isActive === false || !normalizedSponsorName) {
+    if (!opportunity || opportunity.isActive === false || commitment.isActive === false || !normalizedSponsorName) {
       skipped += 1;
       continue;
     }
 
-    const placementKey = serializeSponsorPlacementKey(placement);
-    if (seenPlacementKeys.has(placementKey)) {
+    const commitmentKey = serializeSponsorCommitmentKey(commitment, opportunity);
+    if (seenCommitmentKeys.has(commitmentKey)) {
       skipped += 1;
       continue;
     }
 
-    seenPlacementKeys.add(placementKey);
+    seenCommitmentKeys.add(commitmentKey);
 
-    const deliverables = getSponsorPlacementDeliverables(placement.placement, input.eventInstance.eventTypeId);
+    const deliverables = getSponsorPlacementDeliverables(opportunity.placementType, input.eventInstance.eventTypeId);
     if (deliverables.length === 0) {
       skipped += 1;
       continue;
     }
 
     for (const deliverable of deliverables) {
-      const sourceKey = getSponsorFulfillmentSourceKey(placement, deliverable.deliverableName);
+      const sourceKey = getSponsorFulfillmentSourceKey(commitment, opportunity, deliverable.deliverableName);
+      activeSourceKeys.add(sourceKey);
       const collateralPlan = buildSponsorCollateralPlan({
-        placement,
+        commitment,
+        opportunity,
         deliverable,
         eventInstance: input.eventInstance,
         defaultOwner: input.defaultOwner,
@@ -300,7 +550,8 @@ export function buildSponsorFulfillmentGenerationResult(input: {
         plannedFallbackCollateralKeys
       });
       const generatedTask = createSponsorFulfillmentTask({
-        placement,
+        commitment,
+        opportunity,
         deliverable,
         eventInstance: input.eventInstance,
         defaultOwner: input.defaultOwner,
@@ -309,7 +560,7 @@ export function buildSponsorFulfillmentGenerationResult(input: {
       });
       const existingActionItem =
         input.existingItems.find((item) =>
-          matchesSponsorFulfillmentTask(item, generatedTask, placement, deliverable, input.eventInstance)
+          matchesSponsorFulfillmentTask(item, generatedTask, commitment, opportunity, deliverable, input.eventInstance)
         ) ?? null;
 
       if (existingActionItem) {
@@ -337,22 +588,81 @@ export function buildSponsorFulfillmentGenerationResult(input: {
       }
 
       if (collateralPlan?.fallbackCollateral) {
+        activeFallbackSourceKeys.add(collateralPlan.fallbackCollateral.sourceKey);
         fallbackCollateralToCreate.push(collateralPlan.fallbackCollateral);
       }
     }
   }
+
+  const retainedExistingActionIds = new Set(
+    plans
+      .map((plan) => plan.existingActionItemId)
+      .filter((existingActionItemId): existingActionItemId is string => typeof existingActionItemId === "string")
+  );
+  const obsoleteActionItems = input.existingItems
+    .filter((item) => item.eventInstanceId === input.eventInstance.id)
+    .reduce<SponsorGeneratedWorkReviewRecord[]>((records, item) => {
+      if (retainedExistingActionIds.has(item.id)) {
+        return records;
+      }
+
+      const parsedSource = parseSponsorFulfillmentSourceFromNoteEntries(item.noteEntries);
+      if (!parsedSource) {
+        return records;
+      }
+
+      const normalizedSourceKey = getNormalizedParsedSponsorSourceKey(parsedSource);
+      if (normalizedSourceKey && activeSourceKeys.has(normalizedSourceKey)) {
+        return records;
+      }
+
+      records.push({
+        id: item.id,
+        sourceKey: normalizedSourceKey ?? parsedSource.rawSourceKey,
+        hasMeaningfulProgress: hasMeaningfulActionProgress(item)
+      });
+      return records;
+    }, []);
+  const obsoleteCollateralItems = (input.existingCollateralItems ?? []).reduce<SponsorGeneratedWorkReviewRecord[]>(
+    (records, item) => {
+      if (item.eventInstanceId !== input.eventInstance.id) {
+        return records;
+      }
+
+      const parsedSource = parseSponsorFulfillmentSourceFromNoteEntries(item.noteEntries);
+      if (!parsedSource) {
+        return records;
+      }
+
+      const normalizedSourceKey = getNormalizedParsedSponsorSourceKey(parsedSource);
+      if (normalizedSourceKey && activeFallbackSourceKeys.has(normalizedSourceKey)) {
+        return records;
+      }
+
+      records.push({
+        id: item.id,
+        sourceKey: normalizedSourceKey ?? parsedSource.rawSourceKey,
+        hasMeaningfulProgress: hasMeaningfulCollateralProgress(item)
+      });
+      return records;
+    },
+    []
+  );
 
   return {
     plans,
     created,
     skipped,
     matchedExistingCollateralCount,
-    fallbackCollateralToCreate
+    fallbackCollateralToCreate,
+    obsoleteActionItems,
+    obsoleteCollateralItems
   };
 }
 
 function createSponsorFulfillmentTask(input: {
-  placement: SponsorPlacement;
+  commitment: SponsorCommitment;
+  opportunity: SponsorOpportunity;
   deliverable: SponsorDeliverableRule;
   eventInstance: EventInstance;
   defaultOwner: string;
@@ -360,25 +670,39 @@ function createSponsorFulfillmentTask(input: {
   collateralLink: SponsorCollateralLink | null;
 }): NewActionItemInput {
   const title = getSponsorFulfillmentTaskTitle({
-    sponsorName: input.placement.sponsorName.trim(),
+    sponsorName: input.commitment.sponsorName.trim(),
     deliverableName: input.deliverable.deliverableName
   });
-  const sourceKey = getSponsorFulfillmentSourceKey(input.placement, input.deliverable.deliverableName);
+  const sourceKey = getSponsorFulfillmentSourceKey(
+    input.commitment,
+    input.opportunity,
+    input.deliverable.deliverableName
+  );
   const noteParts = [
     `Generated from sponsor setup for ${input.eventInstance.name}.`,
     `Sponsor radar source: ${sourceKey}.`,
-    `Placement: ${getSponsorPlacementLabel(input.placement.placement, input.eventInstance.eventTypeId)}.`,
+    `Opportunity: ${input.opportunity.label}.`,
+    `Placement: ${getSponsorPlacementLabel(input.opportunity.placementType, input.eventInstance.eventTypeId)}.`,
     input.collateralLink ? `Sponsor collateral link: ${serializeSponsorCollateralLink(input.collateralLink)}.` : "",
-    !input.placement.logoReceived && input.deliverable.requiresLogo ? "Waiting on sponsor logo." : "",
+    !input.commitment.logoReceived && input.deliverable.requiresLogo ? "Waiting on sponsor logo." : "",
     input.deliverable.requiresCopy ? "This deliverable also needs sponsor copy or approval." : "",
-    input.placement.notes?.trim() ?? ""
+    input.commitment.notes?.trim() ?? "",
+    input.opportunity.notes?.trim() ?? ""
   ].filter(Boolean);
   const initialNote = createActionNoteEntry(noteParts.join(" "), {
     author: LOCAL_FALLBACK_NOTE_AUTHOR
   });
-  const dueDate = resolveSponsorDeliverableDueDate(input.deliverable, input.eventInstance, input.eventSubEvents, input.placement.linkedSubEventId);
+  const effectiveLinkedSubEventId = input.commitment.linkedSubEventId ?? input.opportunity.linkedSubEventId;
+  const dueDate = resolveSponsorDeliverableDueDate(
+    input.deliverable,
+    input.eventInstance,
+    input.eventSubEvents,
+    effectiveLinkedSubEventId
+  );
   const issue = input.deliverable.issue ?? getIssueForSponsorDeliverable(input.deliverable, input.eventInstance);
-  const eventTypeLabel = getEventTypeDefinitions().find((definition) => definition.key === input.eventInstance.eventTypeId)?.label ?? input.eventInstance.eventTypeId;
+  const eventTypeLabel =
+    getEventTypeDefinitions().find((definition) => definition.key === input.eventInstance.eventTypeId)?.label ??
+    input.eventInstance.eventTypeId;
 
   return {
     type: "Deliverable",
@@ -389,8 +713,8 @@ function createSponsorFulfillmentTask(input: {
     issue,
     dueDate,
     owner: input.defaultOwner,
-    status: !input.placement.logoReceived && input.deliverable.requiresLogo ? "Waiting" : "Not Started",
-    waitingOn: !input.placement.logoReceived && input.deliverable.requiresLogo ? "Sponsor logo" : "",
+    status: !input.commitment.logoReceived && input.deliverable.requiresLogo ? "Waiting" : "Not Started",
+    waitingOn: !input.commitment.logoReceived && input.deliverable.requiresLogo ? "Sponsor logo" : "",
     isBlocked: undefined,
     blockedBy: "",
     noteEntries: initialNote ? [initialNote] : []
@@ -400,42 +724,53 @@ function createSponsorFulfillmentTask(input: {
 function matchesSponsorFulfillmentTask(
   item: ActionItem,
   generatedTask: NewActionItemInput,
-  placement: SponsorPlacement,
+  commitment: SponsorCommitment,
+  opportunity: SponsorOpportunity,
   deliverable: SponsorDeliverableRule,
   eventInstance: EventInstance
 ) {
-  const sourceKey = getSponsorFulfillmentSourceKey(placement, deliverable.deliverableName);
+  const sourceKey = getSponsorFulfillmentSourceKey(commitment, opportunity, deliverable.deliverableName);
   const hasExactSourceMarker = item.noteEntries.some((entry) => entry.text.includes(`Sponsor radar source: ${sourceKey}.`));
   const matchesLegacyGeneratedShape =
     item.workstream === generatedTask.workstream &&
-    item.eventInstanceId === placement.eventInstanceId &&
+    item.eventInstanceId === commitment.eventInstanceId &&
     item.title.trim() === generatedTask.title.trim() &&
     item.noteEntries.some((entry) => entry.text.includes(`Generated from sponsor setup for ${eventInstance.name}.`));
 
   return hasExactSourceMarker || matchesLegacyGeneratedShape;
 }
 
-function getSponsorFulfillmentSourceKey(placement: SponsorPlacement, deliverableName: string) {
+function getSponsorFulfillmentSourceKey(
+  commitment: SponsorCommitment,
+  opportunity: SponsorOpportunity,
+  deliverableName: string
+) {
   return JSON.stringify({
-    eventInstanceId: placement.eventInstanceId,
-    sponsorName: placement.sponsorName.trim().toLowerCase(),
-    placement: placement.placement,
+    eventInstanceId: commitment.eventInstanceId,
+    sponsorName: commitment.sponsorName.trim().toLowerCase(),
+    opportunityId: opportunity.id,
+    placementType: opportunity.placementType,
     deliverableName,
-    linkedSubEventId: placement.linkedSubEventId ?? null
+    linkedSubEventId: commitment.linkedSubEventId ?? opportunity.linkedSubEventId ?? null
   });
 }
 
-function serializeSponsorPlacementKey(placement: SponsorPlacement) {
+function serializeSponsorCommitmentKey(commitment: SponsorCommitment, opportunity: SponsorOpportunity) {
   return JSON.stringify({
-    eventInstanceId: placement.eventInstanceId,
-    sponsorName: placement.sponsorName.trim().toLowerCase(),
-    placement: placement.placement,
-    linkedSubEventId: placement.linkedSubEventId ?? null
+    eventInstanceId: commitment.eventInstanceId,
+    sponsorName: commitment.sponsorName.trim().toLowerCase(),
+    opportunityId: commitment.opportunityId,
+    placementType: opportunity.placementType,
+    linkedSubEventId: commitment.linkedSubEventId ?? opportunity.linkedSubEventId ?? null
   });
 }
 
 function parseSponsorFulfillmentSourceFromItem(item: ActionItem) {
-  const marker = item.noteEntries.find((entry) => entry.text.includes("Sponsor radar source: "));
+  return parseSponsorFulfillmentSourceFromNoteEntries(item.noteEntries);
+}
+
+function parseSponsorFulfillmentSourceFromNoteEntries(noteEntries: Array<{ text: string }>) {
+  const marker = noteEntries.find((entry) => entry.text.includes("Sponsor radar source: "));
 
   if (!marker) {
     return null;
@@ -450,7 +785,9 @@ function parseSponsorFulfillmentSourceFromItem(item: ActionItem) {
     const parsed = JSON.parse(match[1] ?? "") as {
       eventInstanceId?: unknown;
       sponsorName?: unknown;
+      opportunityId?: unknown;
       placement?: unknown;
+      placementType?: unknown;
       deliverableName?: unknown;
       linkedSubEventId?: unknown;
     };
@@ -458,22 +795,54 @@ function parseSponsorFulfillmentSourceFromItem(item: ActionItem) {
     if (
       typeof parsed.eventInstanceId !== "string" ||
       typeof parsed.sponsorName !== "string" ||
-      typeof parsed.placement !== "string" ||
       typeof parsed.deliverableName !== "string"
     ) {
       return null;
     }
 
+    const placementType =
+      typeof parsed.placementType === "string"
+        ? parsed.placementType
+        : typeof parsed.placement === "string"
+          ? parsed.placement
+          : null;
+
+    if (!placementType) {
+      return null;
+    }
+
     return {
+      rawSourceKey: match[1] ?? "",
       eventInstanceId: parsed.eventInstanceId,
       sponsorName: parsed.sponsorName,
-      placement: parsed.placement,
+      opportunityId: typeof parsed.opportunityId === "string" ? parsed.opportunityId : undefined,
+      placementType,
       deliverableName: parsed.deliverableName,
       linkedSubEventId: typeof parsed.linkedSubEventId === "string" ? parsed.linkedSubEventId : undefined
     };
   } catch {
     return null;
   }
+}
+
+function getNormalizedParsedSponsorSourceKey(parsedSource: {
+  eventInstanceId: string;
+  sponsorName: string;
+  opportunityId?: string;
+  placementType: string;
+  deliverableName: string;
+  linkedSubEventId?: string;
+}) {
+  return parsedSource.opportunityId
+    ? JSON.stringify({
+        eventInstanceId: parsedSource.eventInstanceId,
+        sponsorName: parsedSource.sponsorName.trim().toLowerCase(),
+        opportunityId: parsedSource.opportunityId,
+        placementType: parsedSource.placementType,
+        deliverableName: parsedSource.deliverableName,
+        linkedSubEventId: parsedSource.linkedSubEventId ?? null
+      })
+    : null;
 }
 
 function resolveSponsorDeliverableDueDate(
@@ -544,7 +913,8 @@ function getSponsorCollateralPromotionRule(placement: string, deliverableName: s
 }
 
 function buildSponsorCollateralPlan(input: {
-  placement: SponsorPlacement;
+  commitment: SponsorCommitment;
+  opportunity: SponsorOpportunity;
   deliverable: SponsorDeliverableRule;
   eventInstance: EventInstance;
   defaultOwner: string;
@@ -552,7 +922,10 @@ function buildSponsorCollateralPlan(input: {
   existingCollateralItems: CollateralItem[];
   plannedFallbackCollateralKeys: Set<string>;
 }) {
-  const promotionRule = getSponsorCollateralPromotionRule(input.placement.placement, input.deliverable.deliverableName);
+  const promotionRule = getSponsorCollateralPromotionRule(
+    input.opportunity.placementType,
+    input.deliverable.deliverableName
+  );
 
   if (!promotionRule) {
     return null;
@@ -560,7 +933,7 @@ function buildSponsorCollateralPlan(input: {
 
   const target = resolveSponsorCollateralTarget({
     eventInstanceId: input.eventInstance.id,
-    placementLinkedSubEventId: input.placement.linkedSubEventId,
+    placementLinkedSubEventId: input.commitment.linkedSubEventId ?? input.opportunity.linkedSubEventId,
     preferredSubEventName: promotionRule.preferredSubEventName,
     collateralItemName: promotionRule.collateralItemName,
     eventSubEvents: input.eventSubEvents,
@@ -596,7 +969,11 @@ function buildSponsorCollateralPlan(input: {
   input.plannedFallbackCollateralKeys.add(fallbackKey);
 
   const fallbackCollateral = {
-    sourceKey: getSponsorFulfillmentSourceKey(input.placement, input.deliverable.deliverableName),
+    sourceKey: getSponsorFulfillmentSourceKey(
+      input.commitment,
+      input.opportunity,
+      input.deliverable.deliverableName
+    ),
     itemName: target.collateralItemName,
     subEventId: target.subEventId,
     subEventName: target.subEventName,
@@ -611,12 +988,12 @@ function buildSponsorCollateralPlan(input: {
         input.deliverable,
         input.eventInstance,
         input.eventSubEvents,
-        input.placement.linkedSubEventId
+        input.commitment.linkedSubEventId ?? input.opportunity.linkedSubEventId
       ),
       printer: "",
       quantity: "",
       updateType: "Net New",
-      noteEntries: buildFallbackCollateralNotes(input.placement, input.deliverable, input.eventInstance)
+      noteEntries: buildFallbackCollateralNotes(input.commitment, input.opportunity, input.deliverable, input.eventInstance)
     }
   } satisfies SponsorFallbackCollateralPlan;
 
@@ -670,11 +1047,12 @@ function resolveSponsorCollateralTarget(input: {
 }
 
 function buildFallbackCollateralNotes(
-  placement: SponsorPlacement,
+  commitment: SponsorCommitment,
+  opportunity: SponsorOpportunity,
   deliverable: SponsorDeliverableRule,
   eventInstance: EventInstance
 ) {
-  const sourceKey = getSponsorFulfillmentSourceKey(placement, deliverable.deliverableName);
+  const sourceKey = getSponsorFulfillmentSourceKey(commitment, opportunity, deliverable.deliverableName);
   const noteEntry = createActionNoteEntry(
     `Generated as fallback collateral for sponsor setup on ${eventInstance.name}. Sponsor radar source: ${sourceKey}.`,
     { author: LOCAL_FALLBACK_NOTE_AUTHOR }
@@ -692,6 +1070,47 @@ export function appendSponsorCollateralLinkNoteEntries(
   }
 
   const marker = `Sponsor collateral link: ${serializeSponsorCollateralLink(collateralLink)}.`;
+  if (noteEntries.some((entry) => entry.text.includes(marker))) {
+    return noteEntries;
+  }
+
+  const nextEntry = createActionNoteEntry(marker, {
+    author: LOCAL_FALLBACK_NOTE_AUTHOR
+  });
+
+  return nextEntry ? [nextEntry, ...noteEntries] : noteEntries;
+}
+
+export function upsertSponsorFulfillmentSourceNoteEntries(
+  noteEntries: ActionItem["noteEntries"],
+  sourceKey: string
+) {
+  const marker = `Sponsor radar source: ${sourceKey}.`;
+  const withoutExistingMarkers = noteEntries.filter((entry) => !entry.text.includes("Sponsor radar source: "));
+
+  if (withoutExistingMarkers.length !== noteEntries.length) {
+    const existingCurrentMarker = noteEntries.find((entry) => entry.text.includes(marker)) ?? null;
+
+    if (existingCurrentMarker) {
+      return [existingCurrentMarker, ...withoutExistingMarkers.filter((entry) => entry.id !== existingCurrentMarker.id)];
+    }
+  } else if (noteEntries.some((entry) => entry.text.includes(marker))) {
+    return noteEntries;
+  }
+
+  const nextEntry = createActionNoteEntry(marker, {
+    author: LOCAL_FALLBACK_NOTE_AUTHOR
+  });
+
+  return nextEntry ? [nextEntry, ...withoutExistingMarkers] : withoutExistingMarkers;
+}
+
+export function appendSponsorGeneratedWorkReviewNoteEntries(
+  noteEntries: ActionItem["noteEntries"],
+  sourceKey: string
+) {
+  const marker = `Sponsor setup review: generated source ${sourceKey} no longer matches current sponsorship setup. Keep if still needed, or archive/update manually.`;
+
   if (noteEntries.some((entry) => entry.text.includes(marker))) {
     return noteEntries;
   }
@@ -744,6 +1163,10 @@ export function getSponsorCollateralLinkFromItem(item: ActionItem) {
   } catch {
     return null;
   }
+}
+
+export function getSponsorFulfillmentSourceFromActionItem(item: Pick<ActionItem, "noteEntries">) {
+  return parseSponsorFulfillmentSourceFromNoteEntries(item.noteEntries);
 }
 
 function serializeSponsorCollateralLink(link: SponsorCollateralLink) {
@@ -827,4 +1250,71 @@ function normalizeIsActiveValue(value: unknown) {
 
 function isSponsorPlacementType(eventTypeId: string, value: string): value is SponsorPlacementType {
   return getSponsorPlacementOptions(eventTypeId).some((option) => option.id === value);
+}
+
+function hasMeaningfulActionProgress(item: Pick<ActionItem, "status" | "archivedAt" | "noteEntries">) {
+  if (item.archivedAt) {
+    return true;
+  }
+
+  if (item.status !== "Not Started" && item.status !== "Waiting") {
+    return true;
+  }
+
+  return item.noteEntries.some(
+    (entry) =>
+      !entry.text.includes("Generated from sponsor setup for ") &&
+      !entry.text.includes("Sponsor radar source: ") &&
+      !entry.text.includes("Sponsor collateral link: ") &&
+      !entry.text.includes("Sponsor setup review: ")
+  );
+}
+
+function hasMeaningfulCollateralProgress(item: Pick<CollateralItem, "status" | "archivedAt" | "noteEntries">) {
+  if (item.archivedAt) {
+    return true;
+  }
+
+  if (item.status !== "Backlog" && item.status !== "Waiting") {
+    return true;
+  }
+
+  return item.noteEntries.some(
+    (entry) =>
+      !entry.text.includes("Generated as fallback collateral for sponsor setup on ") &&
+      !entry.text.includes("Sponsor radar source: ") &&
+      !entry.text.includes("Sponsor setup review: ")
+  );
+}
+
+function resolveOpportunityId(
+  value: Partial<SponsorCommitment> & { placement?: string; placementType?: string; placementId?: string },
+  opportunities: SponsorOpportunity[]
+) {
+  if (typeof value.opportunityId === "string" && opportunities.some((opportunity) => opportunity.id === value.opportunityId)) {
+    return value.opportunityId;
+  }
+
+  const placementType =
+    typeof value.placementType === "string"
+      ? value.placementType
+      : typeof value.placement === "string"
+        ? value.placement
+        : typeof value.placementId === "string"
+          ? value.placementId
+          : undefined;
+
+  if (!placementType) {
+    return null;
+  }
+
+  return opportunities.find((opportunity) => opportunity.placementType === placementType)?.id ?? null;
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }

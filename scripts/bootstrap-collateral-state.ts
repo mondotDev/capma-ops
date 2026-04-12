@@ -53,7 +53,7 @@ async function bootstrapCollateralState(mode: BootstrapMode) {
   const persistedCollateralState = {
     collateralItems: localState.collateralItems,
     collateralProfiles: localState.collateralProfiles,
-    sponsorPlacementsByInstance: localState.sponsorPlacementsByInstance,
+    sponsorshipSetupByInstance: localState.sponsorshipSetupByInstance,
     eventInstances: localState.eventInstances,
     eventSubEvents: localState.eventSubEvents
   };

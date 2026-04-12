@@ -8,6 +8,7 @@ import {
   createUnassignedSubEvent,
   resolveActiveEventInstanceId,
   normalizeEventInstance,
+  normalizeSubEventScheduleMode,
   initialEventFamilies,
   initialEventInstances,
   initialEventSubEvents,
@@ -17,7 +18,7 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
-import { normalizeSponsorPlacementsByInstance, type SponsorPlacementsByInstance } from "@/lib/sponsor-fulfillment";
+import { normalizeSponsorshipSetupByInstance, type SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import { getDefaultWorkstreamSchedules, normalizeWorkstreamSchedules, type IssueStatus, type WorkstreamSchedule } from "@/lib/ops-utils";
 import type { AppStateSnapshot } from "@/lib/app-transfer";
@@ -27,7 +28,8 @@ export type PersistedAppState = {
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
-  sponsorPlacementsByInstance?: SponsorPlacementsByInstance;
+  sponsorshipSetupByInstance?: SponsorshipSetupByInstance;
+  sponsorPlacementsByInstance?: Record<string, unknown[]>;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -117,10 +119,13 @@ export function savePersistedAppState(state: PersistedAppState): SavePersistedAp
     collateralProfiles: Object.fromEntries(
       Object.entries(state.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
     ),
-    sponsorPlacementsByInstance: Object.fromEntries(
-      Object.entries(state.sponsorPlacementsByInstance ?? {}).map(([instanceId, placements]) => [
+    sponsorshipSetupByInstance: Object.fromEntries(
+      Object.entries(state.sponsorshipSetupByInstance ?? {}).map(([instanceId, setup]) => [
         instanceId,
-        placements.map((placement) => ({ ...placement }))
+        {
+          opportunities: setup.opportunities.map((opportunity) => ({ ...opportunity })),
+          commitments: setup.commitments.map((commitment) => ({ ...commitment }))
+        }
       ])
     ),
     activeEventInstanceId: state.activeEventInstanceId,
@@ -285,7 +290,9 @@ function isEventSubEventRecord(value: unknown): value is EventSubEvent {
     typeof subEvent.eventInstanceId === "string" &&
     typeof subEvent.name === "string" &&
     typeof subEvent.sortOrder === "number" &&
+    (subEvent.scheduleMode === undefined || normalizeSubEventScheduleMode(subEvent.scheduleMode, subEvent.name) !== null) &&
     (subEvent.date === undefined || typeof subEvent.date === "string") &&
+    (subEvent.endDate === undefined || typeof subEvent.endDate === "string") &&
     (subEvent.startTime === undefined || typeof subEvent.startTime === "string") &&
     (subEvent.endTime === undefined || typeof subEvent.endTime === "string")
   );
@@ -392,6 +399,10 @@ function parseStoredAppState(
             : parsedState.collateralProfile && isCollateralProfileRecord(parsedState.collateralProfile)
               ? { [initialEventInstances[0].id]: { ...parsedState.collateralProfile } }
               : {},
+          sponsorshipSetupByInstance:
+            parsedState.sponsorshipSetupByInstance && typeof parsedState.sponsorshipSetupByInstance === "object"
+              ? parsedState.sponsorshipSetupByInstance
+              : {},
           sponsorPlacementsByInstance:
             parsedState.sponsorPlacementsByInstance && typeof parsedState.sponsorPlacementsByInstance === "object"
               ? parsedState.sponsorPlacementsByInstance
@@ -437,7 +448,8 @@ function normalizeEventScopedState(input: {
   activeEventInstanceId: string;
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
-  sponsorPlacementsByInstance?: SponsorPlacementsByInstance;
+  sponsorshipSetupByInstance?: SponsorshipSetupByInstance;
+  sponsorPlacementsByInstance?: Record<string, unknown[]>;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
   eventTypes: EventType[];
@@ -464,11 +476,12 @@ function normalizeEventScopedState(input: {
   const collateralProfiles = Object.fromEntries(
     Object.entries(input.collateralProfiles).filter(([instanceId]) => validEventInstanceIds.has(instanceId))
   );
-  const sponsorPlacementsByInstance = normalizeSponsorPlacementsByInstance(
-    input.sponsorPlacementsByInstance,
+  const sponsorshipSetupByInstance = normalizeSponsorshipSetupByInstance(
+    input.sponsorshipSetupByInstance,
     {
       eventInstances: normalizedEventInstances,
-      eventSubEvents
+      eventSubEvents,
+      legacyPlacementsByInstance: input.sponsorPlacementsByInstance
     }
   );
   const eventInstances =
@@ -492,7 +505,7 @@ function normalizeEventScopedState(input: {
     activeEventInstanceId: resolveActiveEventInstanceId(input.activeEventInstanceId, eventInstances),
     collateralItems: resolvedCollateralItems,
     collateralProfiles: resolvedCollateralProfiles,
-    sponsorPlacementsByInstance,
+    sponsorshipSetupByInstance,
     eventTypes: input.eventTypes,
     eventInstances,
     eventSubEvents: resolvedEventSubEvents

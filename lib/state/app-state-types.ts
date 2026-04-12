@@ -6,10 +6,11 @@ import type {
   EventDateMode,
   EventFamily,
   EventInstance,
+  EventSubEventScheduleMode,
   EventSubEvent,
   EventType
 } from "@/lib/event-instances";
-import type { SponsorPlacementsByInstance } from "@/lib/sponsor-fulfillment";
+import type { SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import type { IssueStatus, WorkstreamSchedule } from "@/lib/ops-utils";
 
@@ -20,7 +21,7 @@ export type AppStateData = {
   issueStatuses: Partial<Record<string, IssueStatus>>;
   collateralItems: CollateralItem[];
   collateralProfiles: CollateralProfilesByInstance;
-  sponsorPlacementsByInstance: SponsorPlacementsByInstance;
+  sponsorshipSetupByInstance: SponsorshipSetupByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -58,7 +59,9 @@ export type UpsertEventSubEventInput = {
   id?: string;
   name: string;
   sortOrder?: number;
+  scheduleMode?: EventSubEventScheduleMode;
   date?: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
 };

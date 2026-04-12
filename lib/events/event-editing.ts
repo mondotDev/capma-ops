@@ -4,6 +4,7 @@ import {
   deriveEventDateRange,
   getUnassignedSubEventId,
   normalizeEventSubEvents,
+  normalizeSubEventScheduleMode,
   normalizeSubEventName,
   type EventInstance,
   type EventSubEvent
@@ -103,6 +104,12 @@ export function upsertEventSubEventState(input: {
     return null;
   }
 
+  const normalizedScheduleMode = normalizeSubEventScheduleMode(input.upsert.scheduleMode, nextName);
+  const nextDate = input.upsert.date?.trim() || undefined;
+  const nextEndDate = input.upsert.endDate?.trim() || undefined;
+  const nextStartTime = input.upsert.startTime?.trim() || undefined;
+  const nextEndTime = input.upsert.endTime?.trim() || undefined;
+
   if (input.upsert.id) {
     const existing = currentInstanceSubEvents.find((subEvent) => subEvent.id === input.upsert.id);
     if (!existing || existing.id === getUnassignedSubEventId(input.instanceId)) {
@@ -116,9 +123,13 @@ export function upsertEventSubEventState(input: {
               ...subEvent,
               name: nextName,
               sortOrder: input.upsert.sortOrder ?? subEvent.sortOrder,
-              date: input.upsert.date?.trim() || undefined,
-              startTime: input.upsert.startTime?.trim() || undefined,
-              endTime: input.upsert.endTime?.trim() || undefined
+              ...resolveScheduledSubEventFields({
+                scheduleMode: normalizedScheduleMode,
+                date: nextDate,
+                endDate: nextEndDate,
+                startTime: nextStartTime,
+                endTime: nextEndTime
+              })
             }
           : subEvent
       )
@@ -148,9 +159,13 @@ export function upsertEventSubEventState(input: {
       eventInstanceId: input.instanceId,
       name: nextName,
       sortOrder: nextSortOrder,
-      date: input.upsert.date?.trim() || undefined,
-      startTime: input.upsert.startTime?.trim() || undefined,
-      endTime: input.upsert.endTime?.trim() || undefined
+      ...resolveScheduledSubEventFields({
+        scheduleMode: normalizedScheduleMode,
+        date: nextDate,
+        endDate: nextEndDate,
+        startTime: nextStartTime,
+        endTime: nextEndTime
+      })
     }
   ]).subEvents;
 
@@ -158,6 +173,42 @@ export function upsertEventSubEventState(input: {
     nextEventSubEvents,
     upsertedSubEventId: nextId
   };
+}
+
+function resolveScheduledSubEventFields(input: {
+  scheduleMode: EventSubEvent["scheduleMode"];
+  date?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+}) {
+  if (input.scheduleMode === "multi_day") {
+    return {
+      scheduleMode: input.scheduleMode,
+      date: input.date,
+      endDate: input.endDate,
+      startTime: undefined,
+      endTime: undefined
+    } satisfies Pick<EventSubEvent, "scheduleMode" | "date" | "endDate" | "startTime" | "endTime">;
+  }
+
+  if (input.scheduleMode === "all_day") {
+    return {
+      scheduleMode: input.scheduleMode,
+      date: input.date,
+      endDate: undefined,
+      startTime: undefined,
+      endTime: undefined
+    } satisfies Pick<EventSubEvent, "scheduleMode" | "date" | "endDate" | "startTime" | "endTime">;
+  }
+
+  return {
+    scheduleMode: input.scheduleMode,
+    date: input.date,
+    endDate: undefined,
+    startTime: input.startTime,
+    endTime: input.endTime
+  } satisfies Pick<EventSubEvent, "scheduleMode" | "date" | "endDate" | "startTime" | "endTime">;
 }
 
 export function removeEventSubEventState(input: {
