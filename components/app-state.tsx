@@ -86,6 +86,7 @@ import {
   createDefaultEventInstances,
   createDefaultEventSubEvents,
   createDefaultEventTypes,
+  createEmptyAppStateData,
   getDefaultActiveEventInstanceId,
   getDefaultOwnerForNewItems
 } from "@/lib/state/app-state-defaults";
@@ -153,6 +154,7 @@ type AppStateContextValue = {
   importNativeActionItemsFromLocalRecovery: () => Promise<number>;
   openIssue: (issue: string) => GenerateDeliverablesResult;
   ensureEventInstanceUnassignedSubEvent: (instanceId: string) => string;
+  clearLocalAppState: () => void;
   resetAppState: () => void;
   restoreItem: (id: string) => void;
   setActiveEventInstanceId: (instanceId: string) => void;
@@ -1146,6 +1148,62 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     nativeActionItemStore
   ]);
 
+  const clearLocalAppState = useCallback(() => {
+    appStateRepository.clear();
+    enablePersistence();
+    clearNativeActionItemRecovery();
+    const nextState = createEmptyAppStateData();
+    collateralBootstrapSourceRef.current = {
+      collateralItems: nextState.collateralItems,
+      collateralProfiles: nextState.collateralProfiles,
+      sponsorshipSetupByInstance: nextState.sponsorshipSetupByInstance,
+      eventInstances: nextState.eventInstances,
+      eventSubEvents: nextState.eventSubEvents
+    };
+    hydrateAppState(nextState);
+    enqueueCollateralPersistenceWrite(() =>
+      collateralPersistenceStore
+        .replaceAll(
+          getPersistedCollateralState({
+            collateralItems: nextState.collateralItems,
+            collateralProfiles: nextState.collateralProfiles,
+            sponsorshipSetupByInstance: nextState.sponsorshipSetupByInstance,
+            eventInstances: nextState.eventInstances,
+            eventSubEvents: nextState.eventSubEvents
+          }),
+          getCollateralPersistenceContext({
+            defaultOwnerForNewItems: nextState.defaultOwnerForNewItems,
+            eventTypes: nextState.eventTypes
+          })
+        )
+        .then(() => undefined)
+    );
+    enqueueNativeActionItemStoreWrite(() =>
+      nativeActionItemStore
+        .replaceAll(
+          nextState.items,
+          getNativeActionItemContext({
+            eventInstances: nextState.eventInstances,
+            eventSubEvents: nextState.eventSubEvents,
+            eventTypes: nextState.eventTypes
+          })
+        )
+        .then(() => undefined)
+    );
+  }, [
+    appStateRepository,
+    clearNativeActionItemRecovery,
+    collateralPersistenceStore,
+    enablePersistence,
+    enqueueCollateralPersistenceWrite,
+    enqueueNativeActionItemStoreWrite,
+    getCollateralPersistenceContext,
+    getNativeActionItemContext,
+    getPersistedCollateralState,
+    hydrateAppState,
+    nativeActionItemStore
+  ]);
+
   const restoreItem = useCallback((id: string) => {
     enablePersistence();
     setItems((current) => {
@@ -1723,6 +1781,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     addCollateralItem,
     applyDefaultTemplateToInstance,
     bulkUpdateItems,
+    clearLocalAppState,
     createEventInstance,
     deleteItem,
     deleteCollateralItem,
@@ -1758,6 +1817,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       applyDefaultTemplateToInstance,
       archiveItem,
       bulkUpdateItems,
+      clearLocalAppState,
       completeIssue,
       createEventInstance,
       deleteCollateralItem,

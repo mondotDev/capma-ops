@@ -27,6 +27,10 @@ export function createDefaultActionItems() {
   });
 }
 
+export function createEmptyActionItems() {
+  return [] as ReturnType<typeof createDefaultActionItems>;
+}
+
 export function createDefaultCollateralItems() {
   return localCollateralStore.normalizeLoaded(
     initialLegDayCollateralItems.map((item) => ({ ...item })),
@@ -37,13 +41,25 @@ export function createDefaultCollateralItems() {
   );
 }
 
+export function createEmptyCollateralItems() {
+  return [] as ReturnType<typeof createDefaultCollateralItems>;
+}
+
 export function createDefaultCollateralProfiles(): CollateralProfilesByInstance {
   return {
     [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile }
   };
 }
 
+export function createEmptyCollateralProfiles(): CollateralProfilesByInstance {
+  return {};
+}
+
 export function createDefaultSponsorshipSetupByInstance(): SponsorshipSetupByInstance {
+  return {};
+}
+
+export function createEmptySponsorshipSetupByInstance(): SponsorshipSetupByInstance {
   return {};
 }
 
@@ -51,20 +67,40 @@ export function createDefaultEventFamilies() {
   return initialEventFamilies.map((family) => ({ ...family }));
 }
 
+export function createEmptyEventFamilies() {
+  return [] as ReturnType<typeof createDefaultEventFamilies>;
+}
+
 export function createDefaultEventTypes() {
   return initialEventTypes.map((eventType) => ({ ...eventType }));
+}
+
+export function createEmptyEventTypes() {
+  return [] as ReturnType<typeof createDefaultEventTypes>;
 }
 
 export function createDefaultEventInstances() {
   return initialEventInstances.map((instance) => ({ ...instance }));
 }
 
+export function createEmptyEventInstances() {
+  return [] as ReturnType<typeof createDefaultEventInstances>;
+}
+
 export function createDefaultEventSubEvents() {
   return initialEventSubEvents.map((subEvent) => ({ ...subEvent }));
 }
 
+export function createEmptyEventSubEvents() {
+  return [] as ReturnType<typeof createDefaultEventSubEvents>;
+}
+
 export function getDefaultActiveEventInstanceId() {
   return initialEventInstances[0]?.id ?? "";
+}
+
+export function getEmptyActiveEventInstanceId() {
+  return "";
 }
 
 export function getDefaultOwnerForNewItems() {
@@ -84,6 +120,23 @@ export function createDefaultAppStateData(): AppStateData {
     eventTypes: createDefaultEventTypes(),
     eventInstances: createDefaultEventInstances(),
     eventSubEvents: createDefaultEventSubEvents(),
+    workstreamSchedules: getDefaultWorkstreamSchedules()
+  };
+}
+
+export function createEmptyAppStateData(): AppStateData {
+  return {
+    items: createEmptyActionItems(),
+    issueStatuses: {},
+    collateralItems: createEmptyCollateralItems(),
+    collateralProfiles: createEmptyCollateralProfiles(),
+    sponsorshipSetupByInstance: createEmptySponsorshipSetupByInstance(),
+    activeEventInstanceId: getEmptyActiveEventInstanceId(),
+    defaultOwnerForNewItems: getDefaultOwnerForNewItems(),
+    eventFamilies: createEmptyEventFamilies(),
+    eventTypes: createEmptyEventTypes(),
+    eventInstances: createEmptyEventInstances(),
+    eventSubEvents: createEmptyEventSubEvents(),
     workstreamSchedules: getDefaultWorkstreamSchedules()
   };
 }

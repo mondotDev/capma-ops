@@ -39,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   } = useAppStateValues();
   const {
     addItem,
+    clearLocalAppState,
     exportAppStateSnapshot,
     generateIssueDeliverables,
     importAppStateSnapshot,
@@ -47,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   } = useAppActions();
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isResetPending, setIsResetPending] = useState(false);
+  const [pendingResetMode, setPendingResetMode] = useState<"seeded" | "blank" | null>(null);
   const [isImportPending, setIsImportPending] = useState(false);
   const [pendingImportPayload, setPendingImportPayload] = useState<unknown>(null);
   const [pendingImportFileName, setPendingImportFileName] = useState("");
@@ -106,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   function openSettings() {
-    setIsResetPending(false);
+    setPendingResetMode(null);
     setIsImportPending(false);
     setPendingImportPayload(null);
     setPendingImportFileName("");
@@ -116,15 +117,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   function closeSettings() {
     setIsSettingsOpen(false);
-    setIsResetPending(false);
+    setPendingResetMode(null);
     setIsImportPending(false);
     setPendingImportPayload(null);
     setPendingImportFileName("");
     setSettingsFeedback("");
   }
 
-  function handleResetLocalData() {
+  function handleResetToSeededDemoState() {
     resetAppState();
+    closeSettings();
+  }
+
+  function handleClearAllLocalData() {
+    clearLocalAppState();
     closeSettings();
   }
 
@@ -438,33 +444,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="settings-section">
               <div className="settings-section__header">
                 <h3 className="drawer-section__title">Local Data</h3>
-                <p className="field-hint">Reset saved app changes and return to the default seeded state.</p>
+                <p className="field-hint">
+                  Choose whether to restore the seeded demo data or clear local app state to a true blank slate.
+                </p>
               </div>
 
-              {isResetPending ? (
+              {pendingResetMode === "seeded" ? (
                 <div className="confirm-delete">
-                  <div className="confirm-delete__title">Reset local data?</div>
+                  <div className="confirm-delete__title">Reset to seeded demo state?</div>
                   <div className="confirm-delete__copy">
                     This will clear saved changes and restore the default sample state.
                   </div>
                   <div className="confirm-delete__actions">
                     <button
                       className="button-link button-link--inline-secondary"
-                      onClick={() => setIsResetPending(false)}
+                      onClick={() => setPendingResetMode(null)}
                       type="button"
                     >
                       Cancel
                     </button>
-                    <button className="button-danger" onClick={handleResetLocalData} type="button">
+                    <button className="button-danger" onClick={handleResetToSeededDemoState} type="button">
                       Reset
                     </button>
                   </div>
                 </div>
-              ) : (
-                <button className="button-danger" onClick={() => setIsResetPending(true)} type="button">
-                  Reset Local Data
-                </button>
-              )}
+              ) : null}
+
+              {pendingResetMode === "blank" ? (
+                <div className="confirm-delete">
+                  <div className="confirm-delete__title">Clear all local data?</div>
+                  <div className="confirm-delete__copy">
+                    This will remove all local events, placements, sponsors, collateral setup, and action items so you can test from a blank slate.
+                  </div>
+                  <div className="confirm-delete__actions">
+                    <button
+                      className="button-link button-link--inline-secondary"
+                      onClick={() => setPendingResetMode(null)}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button className="button-danger" onClick={handleClearAllLocalData} type="button">
+                      Clear All Local Data
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {pendingResetMode === null ? (
+                <div className="settings-actions">
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => setPendingResetMode("seeded")}
+                    type="button"
+                  >
+                    Reset to Seeded Demo State
+                  </button>
+                  <button className="button-danger" onClick={() => setPendingResetMode("blank")} type="button">
+                    Clear All Local Data
+                  </button>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>

@@ -304,7 +304,7 @@ export function validateEventInstanceCreationInput(input: {
   dateMode: EventDateMode;
   dates: string[];
 }) {
-  if (!getEventTypeDefinition(input.eventTypeId)) {
+  if (!input.eventTypeId.trim()) {
     return false;
   }
 

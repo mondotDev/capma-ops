@@ -145,7 +145,7 @@ import {
   setAppStateRepository
 } from "../lib/state/app-state-repository-provider";
 import type { AppStateRepository } from "../lib/state/app-state-repository";
-import { createDefaultAppStateData } from "../lib/state/app-state-defaults";
+import { createDefaultAppStateData, createEmptyAppStateData } from "../lib/state/app-state-defaults";
 import {
   getCollisionReviewHref,
   getItemEventGroupLabel,
@@ -2026,6 +2026,53 @@ test("savePersistedAppState returns quota-exceeded without throwing", () => {
       value: originalWindow
     });
   }
+});
+
+test("persisted app state preserves an explicit blank local graph", () => {
+  withMockedWindowStorage(() => {
+    const blankState = createEmptyAppStateData();
+
+    const saveResult = savePersistedAppState(blankState);
+    const loaded = localAppStateRepository.load();
+
+    assert.deepEqual(saveResult, { ok: true, status: "written" });
+    assert.equal(loaded.source, "primary");
+    assert.ok(loaded.state);
+    assert.deepEqual(loaded.state?.items, []);
+    assert.deepEqual(loaded.state?.collateralItems, []);
+    assert.deepEqual(loaded.state?.eventFamilies, []);
+    assert.deepEqual(loaded.state?.eventTypes, []);
+    assert.deepEqual(loaded.state?.eventInstances, []);
+    assert.deepEqual(loaded.state?.eventSubEvents, []);
+    assert.equal(loaded.state?.activeEventInstanceId, "");
+  });
+});
+
+test("imported app snapshots preserve an explicit blank local graph", () => {
+  const blankState = createEmptyAppStateData();
+  const parsed = parseImportedAppState({
+    version: 1,
+    exportedAt: "2026-04-12T10:00:00.000Z",
+    items: blankState.items,
+    issueStatuses: blankState.issueStatuses,
+    collateralItems: blankState.collateralItems,
+    collateralProfiles: blankState.collateralProfiles,
+    sponsorshipSetupByInstance: blankState.sponsorshipSetupByInstance,
+    activeEventInstanceId: blankState.activeEventInstanceId,
+    defaultOwnerForNewItems: blankState.defaultOwnerForNewItems,
+    eventFamilies: blankState.eventFamilies,
+    eventTypes: blankState.eventTypes,
+    eventInstances: blankState.eventInstances,
+    eventSubEvents: blankState.eventSubEvents,
+    workstreamSchedules: blankState.workstreamSchedules
+  });
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed?.eventFamilies, []);
+  assert.deepEqual(parsed?.eventTypes, []);
+  assert.deepEqual(parsed?.eventInstances, []);
+  assert.deepEqual(parsed?.eventSubEvents, []);
+  assert.equal(parsed?.activeEventInstanceId, "");
 });
 
 test("normalizeActionItemFields folds recognized legacy details values into waitingOn and drops ambiguous leftovers", () => {
@@ -4079,7 +4126,33 @@ test("event onboarding groups expose template-owned structure alongside created 
   assert.equal(firstFridayGroup?.definition.defaultSubEvents.length, 1);
 });
 
-test("event instance creation validation accepts supported types and rejects incomplete dates", () => {
+test("event onboarding groups include manual event types so custom events stay visible on the event board", () => {
+  const groups = getEventOnboardingGroups({
+    eventFamilies: createDefaultAppStateData().eventFamilies,
+    eventTypes: createDefaultAppStateData().eventTypes,
+    eventInstances: [
+      ...initialEventInstances,
+      {
+        id: "expo-sandbox-2026",
+        eventTypeId: "Expo",
+        name: "Expo Sandbox",
+        dateMode: "single",
+        dates: ["2026-08-14"],
+        startDate: "2026-08-14",
+        endDate: "2026-08-14",
+        location: "Anaheim"
+      }
+    ]
+  });
+
+  const manualGroup = groups.find((group) => group.definition.key === "Expo");
+
+  assert.equal(manualGroup?.eventFamilyName, "Manual events");
+  assert.equal(manualGroup?.definition.label, "Expo");
+  assert.equal(manualGroup?.instances[0]?.name, "Expo Sandbox");
+});
+
+test("event instance creation validation accepts manual event labels and rejects incomplete dates", () => {
   assert.equal(
     validateEventInstanceCreationInput({
       eventTypeId: "legislative-day",
@@ -4114,7 +4187,7 @@ test("event instance creation validation accepts supported types and rejects inc
       dateMode: "single",
       dates: ["2026-06-05"]
     }),
-    false
+    true
   );
 });
 

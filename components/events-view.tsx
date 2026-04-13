@@ -189,10 +189,10 @@ export function EventsView() {
                   <div className="events-group__tags">
                     <span className="events-chip">
                       {group.definition.supportsCollateral === false
-                        ? "No collateral pack yet"
+                        ? "Collateral handled manually"
                         : group.definition.collateralTemplatePackId
-                          ? "Collateral pack ready"
-                          : "Can start empty"}
+                          ? "Collateral options available"
+                          : "Ready for manual setup"}
                     </span>
                     {group.definition.supportsSponsorSetup ? (
                       <span className="events-chip events-chip--accent">
@@ -204,7 +204,7 @@ export function EventsView() {
                 <div className="events-group__meta">
                   <span>{group.eventFamilyName}</span>
                   <span>{describeDateMode(group.definition.dateMode)}</span>
-                  <span>{group.definition.defaultSubEvents.length} default sub-events</span>
+                  <span>{group.definition.defaultSubEvents.length} common sub-event lanes</span>
                 </div>
               </div>
             </div>
@@ -235,7 +235,7 @@ export function EventsView() {
                           <span>{formatEventDateRange(instance.startDate, instance.endDate)}</span>
                           {instance.location ? <span>{instance.location}</span> : null}
                           <span>{subEventCount} sub-event{subEventCount === 1 ? "" : "s"}</span>
-                          <span>{group.definition.collateralTemplatePackId ? "Collateral pack available" : "Can start empty"}</span>
+                          <span>{group.definition.collateralTemplatePackId ? "Collateral options available" : "Manual collateral setup"}</span>
                           <span>{formatScheduleStatus(scheduleStatus)}</span>
                         </div>
                         {instance.notes ? <div className="events-instance-card__notes">{instance.notes}</div> : null}

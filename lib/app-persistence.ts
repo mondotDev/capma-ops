@@ -425,7 +425,12 @@ function parseStoredAppState(
             : initialEventSubEvents.map((subEvent) => ({ ...subEvent })),
           eventTypes: Array.isArray(parsedState.eventTypes)
             ? parsedState.eventTypes.filter(isEventTypeRecord).map((eventType) => ({ ...eventType }))
-            : initialEventTypes.map((eventType) => ({ ...eventType }))
+            : initialEventTypes.map((eventType) => ({ ...eventType })),
+          preserveEmptyEventGraph:
+            Array.isArray(parsedState.eventInstances) &&
+            parsedState.eventInstances.length === 0 &&
+            Array.isArray(parsedState.eventSubEvents) &&
+            parsedState.eventSubEvents.length === 0
         }),
         defaultOwnerForNewItems:
           typeof parsedState.defaultOwnerForNewItems === "string"
@@ -453,9 +458,14 @@ function normalizeEventScopedState(input: {
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
   eventTypes: EventType[];
+  preserveEmptyEventGraph?: boolean;
 }) {
   const validEventTypeIds = new Set(input.eventTypes.map((eventType) => eventType.id));
   const normalizedEventInstances = input.eventInstances.filter((instance) => validEventTypeIds.has(instance.eventTypeId));
+  const shouldPreserveEmptyEventGraph =
+    input.preserveEmptyEventGraph === true &&
+    input.eventInstances.length === 0 &&
+    input.eventSubEvents.length === 0;
   const validEventInstanceIds = new Set(normalizedEventInstances.map((instance) => instance.id));
   const normalizedEventSubEvents = input.eventSubEvents.filter((subEvent) => validEventInstanceIds.has(subEvent.eventInstanceId));
   const unassignedSubEventIds = new Set(input.collateralItems.map((item) => item.subEventId).filter((subEventId) => subEventId.endsWith("-unassigned")));
@@ -485,21 +495,22 @@ function normalizeEventScopedState(input: {
     }
   );
   const eventInstances =
-    normalizedEventInstances.length > 0
+    normalizedEventInstances.length > 0 || shouldPreserveEmptyEventGraph
       ? normalizedEventInstances
       : initialEventInstances.map((instance) => ({ ...instance }));
   const fallbackInstanceIds = new Set(eventInstances.map((instance) => instance.id));
   const resolvedEventSubEvents =
-    normalizedEventInstances.length > 0
+    normalizedEventInstances.length > 0 || shouldPreserveEmptyEventGraph
       ? eventSubEvents
       : initialEventSubEvents.map((subEvent) => ({ ...subEvent }));
   const resolvedCollateralProfiles =
-    normalizedEventInstances.length > 0
+    normalizedEventInstances.length > 0 || shouldPreserveEmptyEventGraph
       ? collateralProfiles
       : Object.fromEntries(
           Object.entries(collateralProfiles).filter(([instanceId]) => fallbackInstanceIds.has(instanceId))
         );
-  const resolvedCollateralItems = normalizedEventInstances.length > 0 ? collateralItems : [];
+  const resolvedCollateralItems =
+    normalizedEventInstances.length > 0 || shouldPreserveEmptyEventGraph ? collateralItems : [];
 
   return {
     activeEventInstanceId: resolveActiveEventInstanceId(input.activeEventInstanceId, eventInstances),

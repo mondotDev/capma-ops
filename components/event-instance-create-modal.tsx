@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CreateEventInstanceInput } from "@/lib/state/app-state-types";
-import {
-  createSuggestedEventInstanceName,
-  type EventDateMode
-} from "@/lib/event-instances";
+import { type EventDateMode } from "@/lib/event-instances";
 import {
   getDefaultDatesForEventDateMode,
   type EventTypeDefinition,
@@ -32,13 +29,10 @@ export function EventInstanceCreateModal({
   onClose: () => void;
   onCreate: (input: CreateEventInstanceInput) => void;
 }) {
-  const [formState, setFormState] = useState<CreateInstanceFormState>(() =>
-    createInitialFormState(availableEventTypeDefinitions[0] ?? null)
-  );
-  const [hasEditedInstanceName, setHasEditedInstanceName] = useState(false);
-  const selectedDefinition = useMemo(
-    () => availableEventTypeDefinitions.find((definition) => definition.key === formState.eventTypeId) ?? null,
-    [availableEventTypeDefinitions, formState.eventTypeId]
+  const [formState, setFormState] = useState<CreateInstanceFormState>(() => createInitialFormState());
+  const eventTypeSuggestions = useMemo(
+    () => availableEventTypeDefinitions.map((definition) => definition.label),
+    [availableEventTypeDefinitions]
   );
 
   useEffect(() => {
@@ -46,47 +40,8 @@ export function EventInstanceCreateModal({
       return;
     }
 
-    setFormState(createInitialFormState(availableEventTypeDefinitions[0] ?? null));
-    setHasEditedInstanceName(false);
-  }, [availableEventTypeDefinitions, isOpen]);
-
-  useEffect(() => {
-    if (hasEditedInstanceName) {
-      return;
-    }
-
-    if (!selectedDefinition) {
-      return;
-    }
-
-    setFormState((current) => ({
-      ...current,
-      instanceName: createSuggestedEventInstanceName(
-        selectedDefinition.label,
-        current.dateMode,
-        current.dates,
-        current.location
-      )
-    }));
-  }, [formState.dateMode, formState.dates, formState.location, hasEditedInstanceName, selectedDefinition]);
-
-  useEffect(() => {
-    if (formState.eventTypeId && selectedDefinition) {
-      return;
-    }
-
-    const fallbackDefinition = availableEventTypeDefinitions[0] ?? null;
-    if (!fallbackDefinition || fallbackDefinition.key === formState.eventTypeId) {
-      return;
-    }
-
-    setFormState((current) => ({
-      ...current,
-      eventTypeId: fallbackDefinition.key,
-      dateMode: fallbackDefinition.dateMode,
-      dates: getDefaultDatesForEventDateMode(fallbackDefinition.dateMode)
-    }));
-  }, [availableEventTypeDefinitions, formState.eventTypeId, selectedDefinition]);
+    setFormState(createInitialFormState());
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
@@ -107,7 +62,7 @@ export function EventInstanceCreateModal({
     const normalizedDates = formState.dates.filter((date) => date.length > 0);
 
     onCreate({
-      eventTypeId: formState.eventTypeId,
+      eventTypeId: formState.eventTypeId.trim(),
       instanceName: formState.instanceName.trim(),
       dateMode: formState.dateMode,
       dates: normalizedDates,
@@ -126,7 +81,7 @@ export function EventInstanceCreateModal({
               New Event Instance
             </h2>
             <p className="quick-add-modal__subtitle">
-              Create the event instance, scaffold its default sub-events, and then choose whether to start with a collateral pack if one exists.
+              Create a clean event record and define the structure manually once the event page opens.
             </p>
           </div>
           <button className="button-link" onClick={onClose} type="button">
@@ -138,32 +93,21 @@ export function EventInstanceCreateModal({
           <div className="quick-add-grid">
             <div className="field">
               <label htmlFor="instance-event-type">Event Type</label>
-              <select
+              <input
                 className="field-control"
+                list="instance-event-type-suggestions"
                 id="instance-event-type"
-                onChange={(event) => {
-                  const nextDefinition =
-                    availableEventTypeDefinitions.find((definition) => definition.key === event.target.value) ?? null;
-
-                  setFormState((current) => ({
-                    ...current,
-                    eventTypeId: event.target.value,
-                    dateMode: nextDefinition?.dateMode ?? current.dateMode,
-                    dates: nextDefinition
-                      ? getDefaultDatesForEventDateMode(nextDefinition.dateMode)
-                      : current.dates
-                  }));
-                }}
+                onChange={(event) => setFormState((current) => ({ ...current, eventTypeId: event.target.value }))}
+                placeholder="Expo"
                 value={formState.eventTypeId}
-              >
-                {availableEventTypeDefinitions.map((eventTypeDefinition) => (
-                  <option key={eventTypeDefinition.key} value={eventTypeDefinition.key}>
-                    {eventTypeDefinition.label}
-                  </option>
+              />
+              <datalist id="instance-event-type-suggestions">
+                {eventTypeSuggestions.map((eventTypeLabel) => (
+                  <option key={eventTypeLabel} value={eventTypeLabel} />
                 ))}
-              </select>
+              </datalist>
               <div className="field__hint">
-                Event types provide the default date mode and sub-event scaffolding. A collateral pack may or may not exist yet.
+                Enter any event label. Existing event labels are available as suggestions, but they are optional.
               </div>
             </div>
             <div className="field">
@@ -171,10 +115,7 @@ export function EventInstanceCreateModal({
               <input
                 className="field-control"
                 id="instance-name"
-                onChange={(event) => {
-                  setHasEditedInstanceName(true);
-                  setFormState((current) => ({ ...current, instanceName: event.target.value }));
-                }}
+                onChange={(event) => setFormState((current) => ({ ...current, instanceName: event.target.value }))}
                 value={formState.instanceName}
               />
             </div>
@@ -339,25 +280,12 @@ export function EventInstanceCreateModal({
   );
 }
 
-function createInitialFormState(definition: EventTypeDefinition | null): CreateInstanceFormState {
-  if (!definition) {
-    return {
-      eventTypeId: "",
-      instanceName: "",
-      dateMode: "range",
-      dates: getDefaultDatesForEventDateMode("range"),
-      location: "",
-      notes: ""
-    };
-  }
-
-  const dates = getDefaultDatesForEventDateMode(definition.dateMode);
-
+function createInitialFormState(): CreateInstanceFormState {
   return {
-    eventTypeId: definition.key,
-    instanceName: createSuggestedEventInstanceName(definition.label, definition.dateMode, dates),
-    dateMode: definition.dateMode,
-    dates,
+    eventTypeId: "",
+    instanceName: "",
+    dateMode: "range",
+    dates: getDefaultDatesForEventDateMode("range"),
     location: "",
     notes: ""
   };

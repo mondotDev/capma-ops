@@ -22,19 +22,19 @@ export function EventInstanceTemplatePrompt({
         <div className="quick-add-modal__header">
           <div>
             <h2 className="quick-add-modal__title" id="apply-template-title">
-              Start With a Collateral Pack?
+              Open Collateral For This Event?
             </h2>
             <p className="quick-add-modal__subtitle">
-              {instanceName} has a default collateral pack available. Apply it now or continue into Collateral with an empty event instance.
+              {instanceName} is ready. You can open Collateral as-is, or preload the currently available collateral items now.
             </p>
           </div>
         </div>
         <div className="quick-add-actions">
           <button className="button-link button-link--inline-secondary" onClick={onSkip} type="button">
-            Start Empty
+            Open As-Is
           </button>
           <button className="topbar__button" onClick={onApply} type="button">
-            Apply Default Pack
+            Preload Collateral
           </button>
         </div>
       </section>

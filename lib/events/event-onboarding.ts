@@ -104,6 +104,29 @@ export function getEventOnboardingView(input: {
     eventFamilyName: familyNameById.get(definition.eventFamilyId) ?? definition.eventFamilyId,
     instances: instancesByTypeId.get(definition.key) ?? []
   })) satisfies EventOnboardingGroup[];
+  const knownDefinitionKeys = new Set(groups.map((group) => group.definition.key));
+  const customGroups = Array.from(instancesByTypeId.entries())
+    .filter(([eventTypeId]) => !knownDefinitionKeys.has(eventTypeId))
+    .map(([eventTypeId, instances]) => {
+      const representativeInstance = instances[0];
+
+      return {
+        definition: {
+          key: eventTypeId,
+          label: eventTypeId,
+          eventFamilyId: "__manual__",
+          dateMode: representativeInstance?.dateMode ?? "range",
+          defaultSubEvents: [],
+          supportsCollateral: false,
+          supportsSponsorSetup: false
+        } satisfies EventTypeDefinition,
+        eventFamilyName: "Manual events",
+        instances
+      } satisfies EventOnboardingGroup;
+    });
+  const allGroups = [...groups, ...customGroups].sort((left, right) =>
+    left.definition.label.localeCompare(right.definition.label)
+  );
 
   const selectedInstance =
     input.selectedInstanceId
@@ -112,13 +135,13 @@ export function getEventOnboardingView(input: {
 
   if (!selectedInstance) {
     return {
-      groups,
+      groups: allGroups,
       selectedInstance: null
     };
   }
 
   const definition = getEventTypeDefinition(selectedInstance.eventTypeId);
-  const selectedGroup = groups.find((group) => group.definition.key === selectedInstance.eventTypeId) ?? null;
+  const selectedGroup = allGroups.find((group) => group.definition.key === selectedInstance.eventTypeId) ?? null;
   const selectedSubEvents = sortSubEventsForEventWorkspace(
     input.eventSubEvents.filter((subEvent) => subEvent.eventInstanceId === selectedInstance.id)
   );
@@ -171,7 +194,7 @@ export function getEventOnboardingView(input: {
   const isCollateralReady = scheduleStatus === "scheduled";
 
   return {
-    groups,
+    groups: allGroups,
     selectedInstance: {
       instance: selectedInstance,
       definition,
