@@ -513,6 +513,29 @@ textarea {
   gap: 16px;
 }
 
+.dashboard-events {
+  display: grid;
+  gap: 18px;
+}
+
+.dashboard-workspace-modal {
+  position: relative;
+  width: min(1400px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 28px 56px rgba(15, 23, 42, 0.2);
+  padding: 22px;
+}
+
+.dashboard-workspace-modal__body {
+  display: grid;
+  gap: 16px;
+  min-height: 520px;
+}
+
 .collateral-page {
   display: grid;
   gap: 16px;

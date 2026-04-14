@@ -1,25 +1,127 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDashboardReadModel } from "@/components/app-read-models";
-import { useAppActions } from "@/components/app-state";
+import { EventInstanceCreateModal } from "@/components/event-instance-create-modal";
+import { EventInstanceDetailPanel } from "@/components/event-instance-detail-panel";
+import { EventInstanceTemplatePrompt } from "@/components/event-instance-template-prompt";
+import { useAppActions, useAppStateValues, type CreateEventInstanceInput } from "@/components/app-state";
 import { DashboardStuckCard } from "@/components/dashboard-stuck-card";
 import { getCollisionReviewHref } from "@/lib/action-view-utils";
+import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
+import { getEventTypeDefinitions } from "@/lib/event-type-definitions";
+import { getEventOnboardingView } from "@/lib/events/event-onboarding";
 import type { PublicationIssueSummaryRow } from "@/lib/queries/dashboard/dashboard-queries";
+import { buildSponsorFulfillmentGenerationResult, ensureSponsorshipSetupForEventInstance } from "@/lib/sponsor-fulfillment";
 import { formatShortDate } from "@/lib/ops-utils";
 
 export function DashboardView() {
   const router = useRouter();
-  const { completeIssue, generateMissingDeliverablesForIssue, openIssue, setIssueStatus } = useAppActions();
+  const {
+    activeEventInstanceId,
+    collateralItems,
+    defaultOwnerForNewItems,
+    eventFamilies,
+    eventInstances,
+    eventSubEvents,
+    eventTypes,
+    items,
+    sponsorshipSetupByInstance
+  } = useAppStateValues();
+  const {
+    addItem,
+    applyDefaultTemplateToInstance,
+    completeIssue,
+    createEventInstance,
+    generateMissingDeliverablesForIssue,
+    openIssue,
+    removeEventSubEvent,
+    removeSponsorCommitment,
+    removeSponsorOpportunity,
+    setActiveEventInstanceId,
+    setIssueStatus,
+    updateEventInstance,
+    upsertEventSubEvent,
+    upsertSponsorCommitment,
+    upsertSponsorOpportunity
+  } = useAppActions();
   const { dashboardSummary, urgentPreviewItems, publicationIssueSummaryRows, isLoading } = useDashboardReadModel();
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
+  const [selectedEventInstanceId, setSelectedEventInstanceId] = useState<string | null>(null);
   const visiblePublicationIssues = useMemo(
     () => reorderVisibleIssues(publicationIssueSummaryRows, activePublicationIssue),
     [activePublicationIssue, publicationIssueSummaryRows]
   );
+  const upcomingEvents = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const sortedEvents = [...eventInstances].sort((left, right) => left.startDate.localeCompare(right.startDate));
+    const futureEvents = sortedEvents.filter((instance) => (instance.endDate || instance.startDate) >= today);
+
+    return futureEvents.length > 0 ? futureEvents : sortedEvents;
+  }, [eventInstances]);
+  const eventTypeNameById = useMemo(
+    () => new Map(eventTypes.map((eventType) => [eventType.id, eventType.name])),
+    [eventTypes]
+  );
+  const pendingTemplateInstance =
+    pendingTemplateInstanceId
+      ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
+      : null;
+  const onboardingView = useMemo(
+    () =>
+      getEventOnboardingView({
+        eventFamilies,
+        eventTypes,
+        eventInstances,
+        eventSubEvents,
+        items,
+        collateralItems,
+        selectedInstanceId: selectedEventInstanceId
+      }),
+    [collateralItems, eventFamilies, eventInstances, eventSubEvents, eventTypes, items, selectedEventInstanceId]
+  );
+  const selectedWorkspaceInstance = onboardingView.selectedInstance;
+  const selectedSponsorshipSetup = selectedWorkspaceInstance
+    ? ensureSponsorshipSetupForEventInstance(
+        selectedWorkspaceInstance.instance.id,
+        selectedWorkspaceInstance.instance.eventTypeId,
+        sponsorshipSetupByInstance[selectedWorkspaceInstance.instance.id] ?? null
+      )
+    : null;
+  const selectedSponsorGenerationPreview = useMemo(() => {
+    if (!selectedWorkspaceInstance || !selectedSponsorshipSetup) {
+      return null;
+    }
+
+    return buildSponsorFulfillmentGenerationResult({
+      sponsorshipSetup: selectedSponsorshipSetup,
+      eventInstance: selectedWorkspaceInstance.instance,
+      existingItems: items,
+      existingCollateralItems: collateralItems,
+      defaultOwner: defaultOwnerForNewItems,
+      eventSubEvents
+    });
+  }, [
+    collateralItems,
+    defaultOwnerForNewItems,
+    eventSubEvents,
+    items,
+    selectedSponsorshipSetup,
+    selectedWorkspaceInstance
+  ]);
+
+  useEffect(() => {
+    if (!selectedEventInstanceId || eventInstances.some((instance) => instance.id === selectedEventInstanceId)) {
+      return;
+    }
+
+    setSelectedEventInstanceId(null);
+  }, [eventInstances, selectedEventInstanceId]);
 
   if (isLoading) {
     return (
@@ -32,8 +134,134 @@ export function DashboardView() {
     );
   }
 
+  function handleCreateEventInstance(input: CreateEventInstanceInput) {
+    const nextId = createEventInstance(input);
+    setIsCreateOpen(false);
+    setSelectedEventInstanceId(nextId);
+
+    if (getDefaultTemplatePackForEventType(input.eventTypeId)) {
+      setPendingTemplateInstanceId(nextId);
+      return;
+    }
+  }
+
+  function handleApplyTemplate() {
+    if (!pendingTemplateInstanceId) {
+      return;
+    }
+
+    applyDefaultTemplateToInstance(pendingTemplateInstanceId);
+    setPendingTemplateInstanceId(null);
+  }
+
+  function handleSkipTemplate() {
+    if (!pendingTemplateInstanceId) {
+      return;
+    }
+
+    setPendingTemplateInstanceId(null);
+  }
+
   return (
     <section className="dashboard-grid">
+      <section className="card card--secondary dashboard-events">
+        <div className="events-selector-card__header events-selector-card__header--board">
+          <div>
+            <div className="card__title">UPCOMING EVENTS</div>
+            <div className="events-selector-card__copy">
+              Start event setup here. Open any event card to jump into the event workspace, or add a new event record from Dashboard.
+            </div>
+          </div>
+          <button className="topbar__button" onClick={() => setIsCreateOpen(true)} type="button">
+            Add New Event
+          </button>
+        </div>
+        {upcomingEvents.length > 0 ? (
+          <div className="events-instance-list events-instance-list--board">
+            {upcomingEvents.map((instance) => (
+              <article
+                className={`events-instance-card${selectedWorkspaceInstance?.instance.id === instance.id ? " events-instance-card--selected" : ""}`}
+                key={instance.id}
+              >
+                <button
+                  className="events-instance-card__body events-instance-card__body--button"
+                  onClick={() => setSelectedEventInstanceId(instance.id)}
+                  type="button"
+                >
+                  <div className="events-instance-card__title-row">
+                    <strong>{instance.name}</strong>
+                    <span className={`events-chip${selectedWorkspaceInstance?.instance.id === instance.id ? " events-chip--workspace-active" : ""}`}>
+                      {selectedWorkspaceInstance?.instance.id === instance.id ? "Open Event" : "Open Workspace"}
+                    </span>
+                  </div>
+                  <div className="events-instance-card__meta">
+                    <span>{eventTypeNameById.get(instance.eventTypeId) ?? instance.eventTypeId}</span>
+                    <span>{formatDashboardEventDateRange(instance.startDate, instance.endDate)}</span>
+                    {instance.location ? <span>{instance.location}</span> : null}
+                  </div>
+                  {instance.notes ? <div className="events-instance-card__notes">{instance.notes}</div> : null}
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="events-group__empty">No event records yet. Add a new event to start setup.</div>
+        )}
+      </section>
+
+      {selectedWorkspaceInstance ? (
+        <div className="modal-layer" role="presentation">
+          <button
+            aria-label="Close event workspace"
+            className="modal-backdrop"
+            onClick={() => setSelectedEventInstanceId(null)}
+            type="button"
+          />
+          <section aria-labelledby="dashboard-event-workspace-title" aria-modal="true" className="dashboard-workspace-modal" role="dialog">
+            <div className="quick-add-modal__header">
+              <div>
+                <h2 className="quick-add-modal__title" id="dashboard-event-workspace-title">
+                  {selectedWorkspaceInstance.instance.name}
+                </h2>
+                <p className="quick-add-modal__subtitle">
+                  Event workspace opened from Dashboard. Close this overlay to return to the event card view.
+                </p>
+              </div>
+              <button
+                className="button-link"
+                onClick={() => setSelectedEventInstanceId(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <div className="dashboard-workspace-modal__body">
+              <EventInstanceDetailPanel
+                addItem={addItem}
+                actionItemCount={items.filter((item) => item.eventInstanceId === selectedWorkspaceInstance.instance.id).length}
+                actionViewHref={`/action?focus=sponsor&eventGroup=${encodeURIComponent(selectedWorkspaceInstance.instance.name)}`}
+                collateralItemCount={collateralItems.filter((item) => item.eventInstanceId === selectedWorkspaceInstance.instance.id).length}
+                isActive={selectedWorkspaceInstance.instance.id === activeEventInstanceId}
+                items={items}
+                onOpenInAction={(href) => router.push(href)}
+                onOpenInCollateral={(instanceId) => router.push(`/collateral?eventInstanceId=${encodeURIComponent(instanceId)}`)}
+                onRemoveSubEvent={removeEventSubEvent}
+                onRemoveSponsorCommitment={removeSponsorCommitment}
+                onRemoveSponsorOpportunity={removeSponsorOpportunity}
+                onSetActive={(instanceId) => setActiveEventInstanceId(instanceId)}
+                onUpdateInstance={updateEventInstance}
+                onUpsertSponsorCommitment={upsertSponsorCommitment}
+                onUpsertSponsorOpportunity={upsertSponsorOpportunity}
+                onUpsertSubEvent={upsertEventSubEvent}
+                selectedInstance={selectedWorkspaceInstance}
+                sponsorGenerationPreview={selectedSponsorGenerationPreview}
+                sponsorshipSetup={selectedSponsorshipSetup}
+              />
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <section className="command-zone">
         <div className="command-zone__band">
           <button
@@ -363,6 +591,19 @@ export function DashboardView() {
           </div>
         </div>
       </section>
+
+      <EventInstanceCreateModal
+        availableEventTypeDefinitions={getEventTypeDefinitions()}
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onCreate={handleCreateEventInstance}
+      />
+      <EventInstanceTemplatePrompt
+        instanceName={pendingTemplateInstance?.name ?? "New event instance"}
+        isOpen={Boolean(pendingTemplateInstanceId)}
+        onApply={handleApplyTemplate}
+        onSkip={handleSkipTemplate}
+      />
     </section>
   );
 }
@@ -449,6 +690,18 @@ function reorderVisibleIssues(
 
     return a.label.localeCompare(b.label);
   });
+}
+
+function formatDashboardEventDateRange(startDate: string, endDate: string) {
+  if (!startDate) {
+    return "";
+  }
+
+  if (!endDate || startDate === endDate) {
+    return formatShortDate(startDate);
+  }
+
+  return `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`;
 }
 
 

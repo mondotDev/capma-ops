@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { EventInstanceCreateModal } from "@/components/event-instance-create-modal";
 import { EventInstanceDetailPanel } from "@/components/event-instance-detail-panel";
 import { EventInstanceTemplatePrompt } from "@/components/event-instance-template-prompt";
@@ -20,6 +20,7 @@ import {
 
 export function EventsView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     activeEventInstanceId,
     collateralItems,
@@ -48,6 +49,15 @@ export function EventsView() {
   const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(activeEventInstanceId);
+  const requestedInstanceId = searchParams.get("eventInstanceId");
+
+  useEffect(() => {
+    if (!requestedInstanceId || !eventInstances.some((instance) => instance.id === requestedInstanceId)) {
+      return;
+    }
+
+    setSelectedInstanceId(requestedInstanceId);
+  }, [eventInstances, requestedInstanceId]);
 
   useEffect(() => {
     if (selectedInstanceId && eventInstances.some((instance) => instance.id === selectedInstanceId)) {

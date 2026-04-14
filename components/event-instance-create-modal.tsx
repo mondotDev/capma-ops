@@ -9,6 +9,12 @@ import {
   validateEventInstanceCreationInput
 } from "@/lib/event-type-definitions";
 
+type CuratedEventOption = {
+  id: string;
+  label: string;
+  titleFormat: "month-year" | "year";
+};
+
 type CreateInstanceFormState = {
   eventTypeId: string;
   instanceName: string;
@@ -17,6 +23,16 @@ type CreateInstanceFormState = {
   location: string;
   notes: string;
 };
+
+const CURATED_EVENT_OPTIONS: CuratedEventOption[] = [
+  { id: "first-friday", label: "First Friday", titleFormat: "month-year" },
+  { id: "monday-mingle", label: "Monday Mingle", titleFormat: "month-year" },
+  { id: "pest-ed", label: "Pest Ed", titleFormat: "year" },
+  { id: "termite-academy", label: "Termite Academy", titleFormat: "year" },
+  { id: "Hands-On", label: "Hands-On", titleFormat: "month-year" },
+  { id: "best-pest-expo", label: "Best Pest Expo", titleFormat: "year" },
+  { id: "development-summit", label: "Development Summit", titleFormat: "year" }
+];
 
 export function EventInstanceCreateModal({
   availableEventTypeDefinitions,
@@ -30,10 +46,19 @@ export function EventInstanceCreateModal({
   onCreate: (input: CreateEventInstanceInput) => void;
 }) {
   const [formState, setFormState] = useState<CreateInstanceFormState>(() => createInitialFormState());
-  const eventTypeSuggestions = useMemo(
-    () => availableEventTypeDefinitions.map((definition) => definition.label),
+  const curatedEventOptions = useMemo(
+    () =>
+      CURATED_EVENT_OPTIONS.map((option) => {
+        const matchingDefinition = availableEventTypeDefinitions.find((definition) => definition.key === option.id);
+
+        return {
+          ...option,
+          dateMode: matchingDefinition?.dateMode ?? "range"
+        };
+      }),
     [availableEventTypeDefinitions]
   );
+  const selectedEventOption = curatedEventOptions.find((option) => option.id === formState.eventTypeId) ?? null;
 
   useEffect(() => {
     if (!isOpen) {
@@ -42,6 +67,25 @@ export function EventInstanceCreateModal({
 
     setFormState(createInitialFormState());
   }, [isOpen]);
+
+  useEffect(() => {
+    setFormState((current) => {
+      const nextTitle = buildGeneratedEventTitle({
+        eventTypeId: current.eventTypeId,
+        dates: current.dates,
+        options: curatedEventOptions
+      });
+
+      if (nextTitle === current.instanceName) {
+        return current;
+      }
+
+      return {
+        ...current,
+        instanceName: nextTitle
+      };
+    });
+  }, [curatedEventOptions, formState.dates, formState.eventTypeId]);
 
   if (!isOpen) {
     return null;
@@ -92,32 +136,53 @@ export function EventInstanceCreateModal({
         <div className="quick-add-form">
           <div className="quick-add-grid">
             <div className="field">
-              <label htmlFor="instance-event-type">Event Type</label>
-              <input
+              <label htmlFor="instance-event-type">Event Family</label>
+              <select
                 className="field-control"
-                list="instance-event-type-suggestions"
                 id="instance-event-type"
-                onChange={(event) => setFormState((current) => ({ ...current, eventTypeId: event.target.value }))}
-                placeholder="Expo"
+                onChange={(event) =>
+                  setFormState((current) => {
+                    const nextOption = curatedEventOptions.find((option) => option.id === event.target.value) ?? null;
+                    const nextDateMode = nextOption?.dateMode ?? current.dateMode;
+                    const nextDates =
+                      nextDateMode === current.dateMode
+                        ? current.dates
+                        : getDefaultDatesForEventDateMode(nextDateMode);
+
+                    return {
+                      ...current,
+                      eventTypeId: event.target.value,
+                      dateMode: nextDateMode,
+                      dates: nextDates
+                    };
+                  })
+                }
                 value={formState.eventTypeId}
-              />
-              <datalist id="instance-event-type-suggestions">
-                {eventTypeSuggestions.map((eventTypeLabel) => (
-                  <option key={eventTypeLabel} value={eventTypeLabel} />
+              >
+                <option value="">Select an event family</option>
+                {curatedEventOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
                 ))}
-              </datalist>
+              </select>
               <div className="field__hint">
-                Enter any event label. Existing event labels are available as suggestions, but they are optional.
+                Choose from the curated event families used for normal event setup.
               </div>
             </div>
             <div className="field">
-              <label htmlFor="instance-name">Instance Name</label>
+              <label htmlFor="instance-name">Generated Event Title</label>
               <input
                 className="field-control"
                 id="instance-name"
-                onChange={(event) => setFormState((current) => ({ ...current, instanceName: event.target.value }))}
+                readOnly
                 value={formState.instanceName}
               />
+              <div className="field__hint">
+                {selectedEventOption
+                  ? "The event title is generated automatically from the selected event family and date."
+                  : "Select an event family and date to generate the event title."}
+              </div>
             </div>
             <div className="field">
               <label htmlFor="instance-date-mode">Date Mode</label>
@@ -289,4 +354,55 @@ function createInitialFormState(): CreateInstanceFormState {
     location: "",
     notes: ""
   };
+}
+
+function buildGeneratedEventTitle(input: {
+  eventTypeId: string;
+  dates: string[];
+  options: Array<CuratedEventOption & { dateMode: EventDateMode }>;
+}) {
+  const selectedOption = input.options.find((option) => option.id === input.eventTypeId);
+  const primaryDate = input.dates.find((date) => date.trim().length > 0) ?? "";
+
+  if (!selectedOption || !primaryDate) {
+    return "";
+  }
+
+  const [year, month] = primaryDate.split("-");
+
+  if (!year) {
+    return "";
+  }
+
+  if (selectedOption.titleFormat === "year") {
+    return `${selectedOption.label} - ${year}`;
+  }
+
+  const monthLabel = getMonthLabel(month);
+
+  if (!monthLabel) {
+    return "";
+  }
+
+  return `${selectedOption.label} - ${monthLabel} - ${year}`;
+}
+
+function getMonthLabel(month: string | undefined) {
+  const monthIndex = Number(month) - 1;
+  const monthLabels = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  ];
+
+  return monthLabels[monthIndex] ?? "";
 }
