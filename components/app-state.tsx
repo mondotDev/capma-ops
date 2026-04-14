@@ -766,6 +766,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const createEventInstance = useCallback((input: CreateEventInstanceInput) => {
     enablePersistence();
     const nextId = `${slugify(input.instanceName)}-${crypto.randomUUID().slice(0, 8)}`;
+    const nextEventTypes =
+      eventTypesRef.current.some((eventType) => eventType.id === input.eventTypeId)
+        ? eventTypesRef.current
+        : [
+            ...eventTypesRef.current,
+            {
+              id: input.eventTypeId,
+              name: input.eventTypeId,
+              familyId: "__manual__"
+            } satisfies EventType
+          ];
     const nextEventState = buildCreatedEventInstanceState({
       currentEventInstances: eventInstancesRef.current,
       currentEventSubEvents: eventSubEventsRef.current,
@@ -797,6 +808,10 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }
       : sponsorshipSetupByInstanceRef.current;
 
+    if (nextEventTypes !== eventTypesRef.current) {
+      setEventTypes(nextEventTypes);
+      eventTypesRef.current = nextEventTypes;
+    }
     setEventInstances(nextEventState.nextEventInstances);
     setEventSubEvents((current) =>
       normalizeEventSubEvents([
@@ -824,7 +839,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             eventInstances: nextEventState.nextEventInstances,
             eventSubEvents: normalizeEventSubEvents(nextEventState.nextEventSubEvents).subEvents
           }),
-          getCollateralPersistenceContext()
+          getCollateralPersistenceContext({ eventTypes: nextEventTypes })
         )
         .then(() => undefined)
     );

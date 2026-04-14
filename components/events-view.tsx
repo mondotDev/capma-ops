@@ -111,10 +111,7 @@ export function EventsView() {
 
     if (getDefaultTemplatePackForEventType(input.eventTypeId)) {
       setPendingTemplateInstanceId(nextId);
-      return;
     }
-
-    router.push(`/collateral?eventInstanceId=${encodeURIComponent(nextId)}`);
   }
 
   function handleApplyTemplate() {
@@ -123,16 +120,13 @@ export function EventsView() {
     }
 
     applyDefaultTemplateToInstance(pendingTemplateInstanceId);
-    router.push(`/collateral?eventInstanceId=${encodeURIComponent(pendingTemplateInstanceId)}`);
     setPendingTemplateInstanceId(null);
+    setFeedback("Collateral options were applied. Continue setup here or open Collateral when you're ready.");
   }
 
   function handleSkipTemplate() {
-    if (pendingTemplateInstanceId) {
-      router.push(`/collateral?eventInstanceId=${encodeURIComponent(pendingTemplateInstanceId)}`);
-    }
-
     setPendingTemplateInstanceId(null);
+    setFeedback("Event created. Continue setup in Events and open Collateral later if needed.");
   }
 
   function handleOpenInCollateral(instanceId: string) {

@@ -98,6 +98,34 @@ const WORKSPACE_SECTIONS = [
   { id: "fulfillment-preview", label: "Fulfillment Preview" }
 ] as const;
 
+const PLACEMENT_DELIVERABLE_CATEGORY_OPTIONS = [
+  "Marketing",
+  "Email",
+  "On-Site",
+  "Registration",
+  "Post-Event",
+  "Web"
+] as const;
+
+const PLACEMENT_DELIVERABLE_CHANNEL_OPTIONS = [
+  "LinkedIn",
+  "Facebook",
+  "Instagram",
+  "NewsBrief",
+  "Email",
+  "Website",
+  "Live Event",
+  "Slide Deck",
+  "Registration Page"
+] as const;
+
+const PLACEMENT_DELIVERABLE_TIMING_TYPE_OPTIONS = [
+  "Pre_Event",
+  "Event_Day",
+  "Post_Event",
+  "Fixed_Month"
+] as const;
+
 export function EventInstanceDetailPanel({
   addItem,
   items,
@@ -939,25 +967,46 @@ function SponsorOpportunitiesSection(input: {
                                       />
                                     </td>
                                     <td>
-                                      <input
+                                      <select
                                         className="field-control"
                                         onChange={(event) => updateDeliverable(opportunity, deliverable.id, { category: event.target.value })}
                                         value={deliverable.category}
-                                      />
+                                      >
+                                        <option value="">Select</option>
+                                        {PLACEMENT_DELIVERABLE_CATEGORY_OPTIONS.map((option) => (
+                                          <option key={option} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
                                     </td>
                                     <td>
-                                      <input
+                                      <select
                                         className="field-control"
                                         onChange={(event) => updateDeliverable(opportunity, deliverable.id, { channel: event.target.value })}
                                         value={deliverable.channel}
-                                      />
+                                      >
+                                        <option value="">Select</option>
+                                        {PLACEMENT_DELIVERABLE_CHANNEL_OPTIONS.map((option) => (
+                                          <option key={option} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
                                     </td>
                                     <td>
-                                      <input
+                                      <select
                                         className="field-control"
                                         onChange={(event) => updateDeliverable(opportunity, deliverable.id, { timingType: event.target.value })}
                                         value={deliverable.timingType}
-                                      />
+                                      >
+                                        <option value="">Select</option>
+                                        {PLACEMENT_DELIVERABLE_TIMING_TYPE_OPTIONS.map((option) => (
+                                          <option key={option} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
                                     </td>
                                     <td>
                                       <input

@@ -848,6 +848,45 @@ test("imports fall back to the seeded default event graph when all event instanc
   assert.deepEqual(parsed?.collateralItems, []);
 });
 
+test("imports preserve manual events when the matching manual event type is included", () => {
+  const parsed = parseImportedAppState({
+    version: 1,
+    exportedAt: "2026-04-12T10:00:00.000Z",
+    items: [],
+    issueStatuses: {},
+    collateralItems: [],
+    collateralProfiles: {},
+    sponsorshipSetupByInstance: {},
+    activeEventInstanceId: "expo-sandbox-2026",
+    eventFamilies: createDefaultAppStateData().eventFamilies,
+    eventTypes: [
+      ...createDefaultAppStateData().eventTypes,
+      { id: "Expo", name: "Expo", familyId: "__manual__" }
+    ],
+    eventInstances: [
+      {
+        id: "expo-sandbox-2026",
+        eventTypeId: "Expo",
+        name: "Expo Sandbox",
+        dateMode: "single",
+        dates: ["2026-08-14"],
+        startDate: "2026-08-14",
+        endDate: "2026-08-14",
+        location: "Anaheim"
+      }
+    ],
+    eventSubEvents: [],
+    defaultOwnerForNewItems: "Melissa",
+    workstreamSchedules: getDefaultWorkstreamSchedules()
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed?.eventInstances.length, 1);
+  assert.equal(parsed?.eventInstances[0]?.id, "expo-sandbox-2026");
+  assert.equal(parsed?.eventTypes.some((eventType) => eventType.id === "Expo"), true);
+  assert.equal(parsed?.activeEventInstanceId, "expo-sandbox-2026");
+});
+
 test("collateral execution rows surface only qualifying statuses for the active event instance", () => {
   const rows = getVisibleCollateralExecutionRows({
     activeDueDate: "",
@@ -2739,6 +2778,36 @@ test("local app state repository saves and reloads the same normalized state", (
       loaded.state?.eventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.startTime,
       "07:30"
     );
+  });
+});
+
+test("local app state repository preserves manual events when their manual event type is saved", () => {
+  withMockedWindowStorage(() => {
+    const state = createDefaultAppStateData();
+    state.eventTypes = [...state.eventTypes, { id: "Expo", name: "Expo", familyId: "__manual__" }];
+    state.eventInstances = [
+      ...state.eventInstances,
+      {
+        id: "expo-sandbox-2026",
+        eventTypeId: "Expo",
+        name: "Expo Sandbox",
+        dateMode: "single",
+        dates: ["2026-08-14"],
+        startDate: "2026-08-14",
+        endDate: "2026-08-14",
+        location: "Anaheim"
+      }
+    ];
+    state.activeEventInstanceId = "expo-sandbox-2026";
+
+    localAppStateRepository.save(state);
+    const loaded = localAppStateRepository.load();
+
+    assert.equal(loaded.source, "primary");
+    assert.ok(loaded.state);
+    assert.equal(loaded.state?.eventInstances.some((instance) => instance.id === "expo-sandbox-2026"), true);
+    assert.equal(loaded.state?.eventTypes.some((eventType) => eventType.id === "Expo"), true);
+    assert.equal(loaded.state?.activeEventInstanceId, "expo-sandbox-2026");
   });
 });
 
