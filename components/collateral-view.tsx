@@ -5,10 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useCollateralWorkspaceReadModel } from "@/components/app-read-models";
 import { type CollateralProfileDeadlineFilter } from "@/components/collateral-profile-card";
-import {
-  CollateralSummaryStrip,
-  type CollateralSummaryFilter
-} from "@/components/collateral-summary-strip";
+import { type CollateralSummaryFilter } from "@/components/collateral-summary-strip";
 import {
   useAppActions,
   useAppStateValues,
@@ -17,7 +14,6 @@ import {
 import { EventInstanceCreateModal } from "@/components/event-instance-create-modal";
 import { EventInstanceTemplatePrompt } from "@/components/event-instance-template-prompt";
 import {
-  COLLATERAL_STATUS_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
   isCollateralArchived,
   isCollateralBlocked,
@@ -31,7 +27,7 @@ import {
   setCollateralCreateTraceId,
   traceCollateralCreate
 } from "@/lib/collateral-create-trace";
-import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
+import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
 import {
   getAvailableEventTypeDefinitions
 } from "@/lib/event-type-definitions";
@@ -74,6 +70,17 @@ type SponsorGenerationPreview = {
   previewTitles: string[];
 };
 
+type CollateralQuickAddScope = "event-wide" | "linked";
+
+type CollateralUiStatus = "Backlog" | "In Progress" | "Waiting" | "Done";
+
+const COLLATERAL_UI_STATUS_OPTIONS: readonly CollateralUiStatus[] = [
+  "Backlog",
+  "In Progress",
+  "Waiting",
+  "Done"
+];
+
 export function CollateralView({
   initialEventInstanceId,
   initialSelectedCollateralId
@@ -109,6 +116,10 @@ export function CollateralView({
   const [activeProfileDeadlineFilter, setActiveProfileDeadlineFilter] =
     useState<CollateralProfileDeadlineFilter>("none");
   const [showArchived, setShowArchived] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickAddName, setQuickAddName] = useState("");
+  const [quickAddScope, setQuickAddScope] = useState<CollateralQuickAddScope>("event-wide");
+  const [quickAddSubEventId, setQuickAddSubEventId] = useState("");
   const [pendingOpenIntent, setPendingOpenIntent] = useState<PendingCollateralOpenIntent>(() => ({
     collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
     eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
@@ -132,7 +143,8 @@ export function CollateralView({
     workspaceBundle,
     collateralListView,
     selectedWorkspace,
-    eventPrograms
+    eventPrograms,
+    eventInstances
   } = useCollateralWorkspaceReadModel({
     activeSummaryFilter,
     activeProfileDeadlineFilter,
@@ -156,8 +168,18 @@ export function CollateralView({
   const supportsSponsorSetup = selectedEventInstance
     ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
     : false;
-  const eventInstancesByProgram = workspaceBundle.eventInstancesByProgram;
   const creatableEventTypeDefinitions = useMemo(() => getAvailableEventTypeDefinitions(eventPrograms), [eventPrograms]);
+  const eventTypeNameById = useMemo(
+    () => new Map(eventPrograms.map((eventProgram) => [eventProgram.id, eventProgram.name])),
+    [eventPrograms]
+  );
+  const selectableEventInstances = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const sortedInstances = [...eventInstances].sort((left, right) => left.startDate.localeCompare(right.startDate));
+    const futureInstances = sortedInstances.filter((instance) => (instance.endDate || instance.startDate) >= today);
+
+    return futureInstances.length > 0 ? futureInstances : sortedInstances;
+  }, [eventInstances]);
   const sponsorGenerationPreview = useMemo<SponsorGenerationPreview | null>(() => {
     if (!selectedEventInstance || !supportsSponsorSetup) {
       return null;
@@ -293,6 +315,10 @@ export function CollateralView({
       eventInstanceId: promotionDefaults.eventInstanceId,
       subEventId: promotionDefaults.subEventId,
       itemName: promotionDefaults.collateralItemName,
+      notes: "",
+      requiresLogo: false,
+      requiresCopy: false,
+      requiresApproval: false,
       status: "Backlog",
       owner: defaultOwnerForNewItems,
       blockedBy: "",
@@ -324,13 +350,37 @@ export function CollateralView({
 
   const instanceItems = collateralListView.instanceItems;
   const visibleInstanceItems = collateralListView.visibleInstanceItems;
-  const groupedItems = collateralListView.groupedItems;
-  const summary = collateralListView.summary;
   const selectedItem = selectedWorkspace.selectedItem;
   const subEventNameById = selectedWorkspace.subEventNameById;
   const selectedSubEventOptions = selectedWorkspace.subEventOptions;
   const emptySubEventId = selectedWorkspace.emptySubEventId;
   const selectedEventDateRange = workspaceBundle.selectedEventDateRange;
+  const selectedItemScope = selectedItem ? getCollateralScope(selectedItem.subEventId, emptySubEventId) : "event-wide";
+  const linkedSubEventOptions = useMemo(
+    () => selectedSubEventOptions.filter((subEvent) => subEvent.id !== emptySubEventId),
+    [emptySubEventId, selectedSubEventOptions]
+  );
+  const listItems = useMemo(
+    () =>
+      [...visibleInstanceItems].sort((left, right) => {
+        const leftHasDueDate = left.dueDate.length > 0;
+        const rightHasDueDate = right.dueDate.length > 0;
+
+        if (leftHasDueDate !== rightHasDueDate) {
+          return leftHasDueDate ? -1 : 1;
+        }
+
+        if (leftHasDueDate && rightHasDueDate) {
+          const dueDateCompare = left.dueDate.localeCompare(right.dueDate);
+          if (dueDateCompare !== 0) {
+            return dueDateCompare;
+          }
+        }
+
+        return left.itemName.localeCompare(right.itemName);
+      }),
+    [visibleInstanceItems]
+  );
 
   useEffect(() => {
     if (!pendingOpenIntent.collateralId) {
@@ -365,7 +415,7 @@ export function CollateralView({
       return;
     }
 
-    const renderedItem = groupedItems.flatMap(([, items]) => items).find((item) => item.id === traceId) ?? null;
+    const renderedItem = listItems.find((item) => item.id === traceId) ?? null;
 
     traceCollateralCreate("collateral-view-render", {
       traceId,
@@ -376,10 +426,7 @@ export function CollateralView({
       selectedId,
       instanceItemIds: instanceItems.map((item) => item.id),
       visibleItemIds: visibleInstanceItems.map((item) => item.id),
-      groupedSections: groupedItems.map(([subEvent, items]) => ({
-        subEvent,
-        itemIds: items.map((item) => item.id)
-      })),
+      groupedSections: [{ subEvent: "flat-list", itemIds: listItems.map((item) => item.id) }],
       renderedItem: renderedItem
         ? {
             id: renderedItem.id,
@@ -393,8 +440,8 @@ export function CollateralView({
   }, [
     activeProfileDeadlineFilter,
     activeSummaryFilter,
-    groupedItems,
     instanceItems,
+    listItems,
     resolvedActiveEventInstanceId,
     selectedId,
     showArchived,
@@ -403,37 +450,44 @@ export function CollateralView({
 
   const pendingTemplateInstance =
     pendingTemplateInstanceId
-      ? workspaceBundle.eventInstancesByProgram
-          .flatMap((group) => group.instances)
-          .find((instance) => instance.id === pendingTemplateInstanceId) ?? null
+      ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
       : null;
   const hasAppliedTemplateItems = workspaceBundle.hasAppliedTemplateItems;
-  const readiness = workspaceBundle.readiness;
-  const hasActiveCollateralFilters =
-    activeSummaryFilter !== "all" || activeProfileDeadlineFilter !== "none" || showArchived;
+  const hasActiveCollateralFilters = showArchived;
   const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
-  const activeFilterLabel = getCollateralSummaryFilterLabel(activeSummaryFilter);
-  const activeProfileFilterLabel = getCollateralProfileDeadlineFilterLabel(activeProfileDeadlineFilter);
-  function handleAddCollateralItem() {
-    if (draftCollateralItem && draftCollateralItem.eventInstanceId === resolvedActiveEventInstanceId) {
-      setSelectedId(draftCollateralItem.id);
-      traceCollateralCreate("draft-reselected", {
-        id: draftCollateralItem.id,
-        eventInstanceId: draftCollateralItem.eventInstanceId,
-        subEventId: draftCollateralItem.subEventId,
-        status: draftCollateralItem.status,
-        archivedAt: draftCollateralItem.archivedAt,
-        activeEventInstanceId: resolvedActiveEventInstanceId
-      });
+  function openQuickAddModal() {
+    const fallbackSubEventId = ensureEventInstanceUnassignedSubEvent(resolvedActiveEventInstanceId);
+    const preferredLinkedSubEventId = linkedSubEventOptions[0]?.id ?? fallbackSubEventId;
+    setQuickAddName("");
+    setQuickAddScope("event-wide");
+    setQuickAddSubEventId(preferredLinkedSubEventId);
+    setIsQuickAddOpen(true);
+  }
+
+  function closeQuickAddModal() {
+    setIsQuickAddOpen(false);
+  }
+
+  function handleQuickAddCollateral() {
+    const nextName = quickAddName.trim();
+
+    if (!nextName) {
       return;
     }
 
     const fallbackSubEventId = ensureEventInstanceUnassignedSubEvent(resolvedActiveEventInstanceId);
-    const nextDraft = {
-      id: DRAFT_COLLATERAL_ID,
+    const nextSubEventId =
+      quickAddScope === "event-wide"
+        ? fallbackSubEventId
+        : quickAddSubEventId || linkedSubEventOptions[0]?.id || fallbackSubEventId;
+    const nextId = addCollateralItem({
       eventInstanceId: resolvedActiveEventInstanceId,
-      subEventId: fallbackSubEventId,
-      itemName: "New collateral item",
+      subEventId: nextSubEventId,
+      itemName: nextName,
+      notes: "",
+      requiresLogo: false,
+      requiresCopy: false,
+      requiresApproval: false,
       status: "Backlog",
       owner: defaultOwnerForNewItems,
       blockedBy: "",
@@ -442,30 +496,12 @@ export function CollateralView({
       quantity: "",
       updateType: "",
       noteEntries: [],
-      lastUpdated: new Date().toISOString().slice(0, 10)
-    } satisfies CollateralItem;
-    setDraftCollateralItem(nextDraft);
-    setSelectedId(DRAFT_COLLATERAL_ID);
-    setCollateralCreateTraceId(null);
-    traceCollateralCreate("draft-created", {
-      id: nextDraft.id,
-      eventInstanceId: nextDraft.eventInstanceId,
-      subEventId: nextDraft.subEventId,
-      status: nextDraft.status,
-      archivedAt: undefined,
-      activeEventInstanceId: resolvedActiveEventInstanceId,
-      activeSummaryFilter,
-      activeProfileDeadlineFilter,
-      showArchived
+      fileLink: undefined
     });
-  }
 
-  function toggleSummaryFilter(nextFilter: CollateralSummaryFilter) {
-    setActiveSummaryFilter((current) => (current === nextFilter ? "all" : nextFilter));
-  }
-
-  function toggleProfileDeadlineFilter(nextFilter: CollateralProfileDeadlineFilter) {
-    setActiveProfileDeadlineFilter((current) => (current === nextFilter ? "none" : nextFilter));
+    setSelectedId(nextId);
+    setCollateralCreateTraceId(nextId);
+    closeQuickAddModal();
   }
 
   function openCreateInstanceModal() {
@@ -690,183 +726,90 @@ export function CollateralView({
 
   return (
     <section className="collateral-page">
-      <div className="collateral-page__header">
-        <div>
-          <h1 className="collateral-page__title">{selectedEventInstance?.name ?? "Collateral"}</h1>
-          <p className="collateral-page__subtitle">
-            {selectedEventDateRange
-              ? `${selectedEventDateRange} - production tracking for signage, print pieces, decks, and event materials.`
-              : "Production tracking for signage, print pieces, decks, and event materials."}
-          </p>
-        </div>
-        <div className="collateral-page__actions">
-          <div className="field">
-            <label htmlFor="collateral-event-instance">Event Instance</label>
-            <select
-              className="field-control"
-              id="collateral-event-instance"
-              onChange={(event) => requestEventInstanceSwitch(event.target.value)}
-              value={resolvedActiveEventInstanceId}
-            >
-              {eventInstancesByProgram.map(({ eventProgram, instances }) => (
-                <optgroup key={eventProgram.id} label={eventProgram.name}>
-                  {instances.map((instance) => (
-                    <option key={instance.id} value={instance.id}>
-                      {supportsCollateralEventType(instance.eventTypeId) ? instance.name : `${instance.name} (Limited)`}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+      <div className="card card--secondary collateral-workspace-header">
+        <div className="collateral-workspace-header__main">
+          <div>
+            <h1 className="collateral-page__title">{selectedEventInstance?.name ?? "Collateral"}</h1>
+            <div className="collateral-workspace-header__meta">
+              {selectedEventDateRange ? <span>{selectedEventDateRange}</span> : null}
+              {selectedEventInstance?.location ? <span>{selectedEventInstance.location}</span> : null}
+              {currentEventProgram ? (
+                <span>{eventTypeNameById.get(selectedEventInstance?.eventTypeId ?? "") ?? currentEventProgram.name}</span>
+              ) : null}
+            </div>
+            <p className="collateral-page__subtitle">
+              Event-owned production items for this event. Sponsor-specific deliverables stay in Events and Fulfillment Preview.
+            </p>
           </div>
-          <button
-            className="button-link button-link--inline-secondary"
-            onClick={() => router.push("/events")}
-            type="button"
-          >
-            Open Events
-          </button>
-          <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
-            Quick Create Instance
-          </button>
-          <button
-            className="topbar__button"
-            disabled={!isSelectedEventProgramSupported}
-            onClick={handleAddCollateralItem}
-            type="button"
-          >
-            + Add Collateral
-          </button>
+          <div className="collateral-page__actions">
+            <div className="field">
+              <label htmlFor="collateral-event-instance">Event Instance</label>
+              <select
+                className="field-control"
+                id="collateral-event-instance"
+                onChange={(event) => requestEventInstanceSwitch(event.target.value)}
+                value={resolvedActiveEventInstanceId}
+              >
+                {selectableEventInstances.map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="topbar__button" onClick={openQuickAddModal} type="button">
+              + Add Collateral
+            </button>
+          </div>
         </div>
+        {setupFeedback ? (
+          <div className="collateral-inline-feedback" role="status">
+            <span>{setupFeedback}</span>
+            <button className="button-link button-link--inline-secondary" onClick={() => setSetupFeedback("")} type="button">
+              Dismiss
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      {selectedEventInstance ? (
-        <div className="collateral-context card card--secondary">
-          <div className="collateral-context__primary">
-            <div className="collateral-context__label">Current Event Context</div>
-            <div className="collateral-context__title-row">
-              <strong className="collateral-context__title">{selectedEventInstance.name}</strong>
-              {currentEventProgram ? <span className="collateral-context__chip">{currentEventProgram.name}</span> : null}
-            </div>
-          </div>
-          <div className="collateral-context__meta">
-            {selectedEventDateRange ? <span>{selectedEventDateRange}</span> : null}
-            {selectedEventInstance.location ? <span>{selectedEventInstance.location}</span> : null}
-            {defaultTemplatePack ? (
-              <span>{hasAppliedTemplateItems ? "Default template applied" : "Default template available"}</span>
-            ) : (
-              <span>Collateral workflow not configured for this event program yet</span>
-            )}
-          </div>
-          <div className="collateral-context__hint">
-            Use Events to create and configure new event instances. Collateral stays focused on the production records for the active occurrence.
-          </div>
-        </div>
-      ) : null}
-
-      {selectedEventInstance && !isSelectedEventProgramSupported ? (
-        <div className="collateral-setup-banner collateral-setup-banner--warning" role="status">
-          <span>
-            This event instance is visible for context, but collateral workflows are not configured for this event program yet.
-          </span>
-        </div>
-      ) : null}
-
-      {selectedEventInstance && isSelectedEventProgramSupported ? (
-        <div className="collateral-readiness card card--secondary" role="status">
-          <div className="collateral-readiness__header">
-            <div>
-              <div className="card__title">INSTANCE READINESS</div>
-              <div className="collateral-readiness__meta">
-                {readiness.signals.length > 0
-                  ? "This instance still has setup gaps or active work that needs attention."
-                  : "No obvious setup gaps detected for the current instance."}
+      <div className="collateral-layout collateral-layout--flat">
+        <div className="collateral-main">
+          <div className="card card--secondary collateral-working-list">
+            <div className="collateral-working-list__header">
+              <div>
+                <div className="card__title">COLLATERAL ITEMS</div>
+                <div className="collateral-working-list__copy">
+                  Scannable event-owned materials list for signage, decks, print pieces, boards, and similar production work.
+                </div>
+              </div>
+              <div className="collateral-working-list__actions">
+                {defaultTemplatePack && !hasAppliedTemplateItems && isSelectedEventProgramSupported ? (
+                  <button
+                    className="button-link button-link--inline-secondary"
+                    onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
+                    type="button"
+                  >
+                    Apply Default Template
+                  </button>
+                ) : null}
+                <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
+                  Quick Create Instance
+                </button>
               </div>
             </div>
-            {readiness.signals.some((signal) => signal.kind === "blockedItems") ? (
-              <button
-                className="button-link button-link--inline-secondary"
-                onClick={() => setActiveSummaryFilter("needsAttention")}
-                type="button"
-              >
-                View needs attention
-              </button>
-            ) : null}
-          </div>
-          {readiness.signals.length > 0 ? (
-            <div className="collateral-readiness__signals">
-              {readiness.signals.map((signal) => (
-                <span
-                  className={getCollateralReadinessClassName(signal.tone)}
-                  key={signal.kind}
-                  title={signal.copy}
-                >
-                  {signal.shortLabel}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="collateral-readiness__empty">Template, profile dates, and active item setup look usable.</div>
-          )}
-          {defaultTemplatePack && !hasAppliedTemplateItems ? (
-            <div className="collateral-readiness__actions">
-              <button
-                className="topbar__button"
-                onClick={() => applyDefaultTemplateToInstance(resolvedActiveEventInstanceId)}
-                type="button"
-              >
-                Apply Default Template
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {setupFeedback ? (
-        <div className="collateral-setup-banner" role="status">
-          <span>{setupFeedback}</span>
-          <button className="button-link button-link--inline-secondary" onClick={() => setSetupFeedback("")} type="button">
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-
-      <CollateralSummaryStrip
-        activeSummaryFilter={activeSummaryFilter}
-        onToggleSummaryFilter={toggleSummaryFilter}
-        summary={summary}
-      />
-
-      <div className="collateral-layout">
-        <div className="collateral-main">
-          <div className="card card--secondary collateral-groups">
-            <div className="card__title">
-              COLLATERAL ITEMS
-              {currentEventProgram ? <span className="collateral-card-context"> - {currentEventProgram.name}</span> : null}
-            </div>
-            <div className="collateral-group-toolbar">
+            <div className="collateral-list-toolbar">
               <label className="toggle">
                 <input
                   checked={showArchived}
                   onChange={(event) => setShowArchived(event.target.checked)}
                   type="checkbox"
                 />
-                <span>Show Completed/Cut</span>
+                <span>Show Done</span>
               </label>
-            </div>
             {hasActiveCollateralFilters ? (
-              <div className="collateral-filter-context">
+              <div className="collateral-filter-context collateral-filter-context--inline">
                 <span>
-                  Showing:{" "}
-                  {[
-                    activeSummaryFilter !== "all" ? activeFilterLabel : null,
-                    showArchived ? "Including completed/cut history" : null,
-                    activeProfileDeadlineFilter !== "none"
-                      ? `Due by ${activeProfileFilterLabel}`
-                      : null
-                  ]
-                    .filter(Boolean)
-                    .join(" • ")}
+                  Showing done items in the working list.
                 </span>
                 <button
                   className="button-link button-link--inline-secondary"
@@ -877,18 +820,17 @@ export function CollateralView({
                 </button>
               </div>
             ) : null}
-            {groupedItems.length === 0 ? (
+            </div>
+            {listItems.length === 0 ? (
               <div className="empty-state empty-state--actionable">
                 <div className="empty-state__title">
-                  {hasActiveCollateralFilters ? "No items match this view." : "This event instance is empty."}
+                  {hasActiveCollateralFilters ? "No items match this view." : "No collateral items yet."}
                 </div>
                 <div className="empty-state__copy">
                   {!hasActiveCollateralFilters
-                    ? !isSelectedEventProgramSupported
-                      ? "Collateral tracking is not enabled for this event program yet."
-                      : defaultTemplatePack
-                        ? `Apply the default template pack for ${currentEventProgram?.name ?? "this event"} or add your first collateral item manually.`
-                        : "Add your first collateral item manually to start tracking production work for this event instance."
+                    ? defaultTemplatePack && isSelectedEventProgramSupported
+                        ? `Apply the default template for ${currentEventProgram?.name ?? "this event"} or add your first collateral item manually.`
+                        : "Add your first collateral item to start tracking event-wide or sub-event production work."
                     : "Try a different summary view, show completed/cut items, or clear the filter to return to the active collateral list."}
                 </div>
                 <div className="empty-state__actions">
@@ -901,8 +843,8 @@ export function CollateralView({
                       Apply Default Template
                     </button>
                   ) : null}
-                  {!hasActiveCollateralFilters && isSelectedEventProgramSupported ? (
-                    <button className="button-link button-link--inline-secondary" onClick={handleAddCollateralItem} type="button">
+                  {!hasActiveCollateralFilters ? (
+                    <button className="button-link button-link--inline-secondary" onClick={openQuickAddModal} type="button">
                       Add First Collateral Item
                     </button>
                   ) : (
@@ -917,52 +859,47 @@ export function CollateralView({
                 </div>
               </div>
             ) : (
-              groupedItems.map(([subEvent, items]) => (
-                <section className="collateral-group" key={subEvent}>
-                  <div className="collateral-group__header">
-                    <h2 className="collateral-group__title">{subEvent}</h2>
-                    <span className="collateral-group__count">{items.length}</span>
-                  </div>
-                  <div className="collateral-list">
-                    {items.map((item) => {
-                      const isSelected = item.id === selectedId;
+              <div className="collateral-list collateral-list--flat">
+                {listItems.map((item) => {
+                  const isSelected = item.id === selectedId;
+                  const scopeLabel =
+                    getCollateralScope(item.subEventId, emptySubEventId) === "event-wide"
+                      ? "Event-wide"
+                      : subEventNameById.get(item.subEventId) ?? "Linked sub-event";
 
-                      return (
-                        <button
-                          className={getCollateralRowClassName(item, isSelected)}
-                          key={item.id}
-                          onClick={() => setSelectedId(item.id)}
-                          type="button"
-                        >
-                          <div className="collateral-row__main">
-                            <div className="collateral-row__title">{item.itemName}</div>
-                            <div className="collateral-row__meta">
-                              {item.owner ? (
-                                <span>{item.owner}</span>
-                              ) : (
-                                <span className="collateral-row__meta-flag collateral-row__meta-flag--unassigned">
-                                  No owner assigned
-                                </span>
-                              )}
-                              <span>{item.dueDate ? formatShortDate(item.dueDate) : "No due date"}</span>
-                              {item.blockedBy ? (
-                                <span className="collateral-row__meta-flag collateral-row__meta-flag--blocked">
-                                  Blocked by {item.blockedBy}
-                                </span>
-                              ) : null}
-                              <span>{item.printer || "No printer assigned"}</span>
-                              {item.quantity ? <span>Qty {item.quantity}</span> : null}
-                            </div>
-                          </div>
-                          <div className="collateral-row__signals">
-                            <span className={getCollateralStatusClassName(item)}>{item.status}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))
+                  return (
+                    <button
+                      className={getCollateralRowClassName(item, isSelected)}
+                      key={item.id}
+                      onClick={() => setSelectedId(item.id)}
+                      type="button"
+                    >
+                      <div className="collateral-row__main">
+                        <div className="collateral-row__title">{item.itemName}</div>
+                        <div className="collateral-row__meta">
+                          <span>{scopeLabel}</span>
+                          {item.owner ? (
+                            <span>Owner: {item.owner}</span>
+                          ) : (
+                            <span className="collateral-row__meta-flag collateral-row__meta-flag--unassigned">
+                              No owner assigned
+                            </span>
+                          )}
+                          <span>{item.dueDate ? `Due ${formatShortDate(item.dueDate)}` : "No due date"}</span>
+                        </div>
+                        {item.notes?.trim() ? (
+                          <div className="collateral-row__supporting">{item.notes.trim()}</div>
+                        ) : item.fileLink?.trim() ? (
+                          <div className="collateral-row__supporting">{item.fileLink.trim()}</div>
+                        ) : null}
+                      </div>
+                      <div className="collateral-row__signals">
+                        <span className={getCollateralStatusClassName(item)}>{getCollateralUiStatus(item.status)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -1003,7 +940,9 @@ export function CollateralView({
                 )}
                 <div className="drawer__header-meta">
                   <span className="drawer__workstream">
-                    {subEventNameById.get(selectedItem.subEventId) ?? "Unassigned sub-event"}
+                    {selectedItemScope === "event-wide"
+                      ? "Event-wide"
+                      : subEventNameById.get(selectedItem.subEventId) ?? "Linked sub-event"}
                   </span>
                   <span className={getCollateralStatusClassName(selectedItem)}>{selectedItem.status}</span>
                   {isCollateralArchived(selectedItem) ? (
@@ -1073,43 +1012,113 @@ export function CollateralView({
             <div className="drawer__sections">
               <section className="drawer-section drawer-section--form collateral-drawer">
                 <div className="collateral-drawer__group">
-                  <div className="drawer__panel-title">Identity</div>
+                  <div className="drawer__panel-title">Event-Owned Collateral</div>
                   <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
+                    <div className="field field--wide">
+                      <label htmlFor="collateral-item-name">Item Name</label>
+                      <input
+                        id="collateral-item-name"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { itemName: event.target.value })}
+                        value={selectedItem.itemName}
+                      />
+                    </div>
                     <div className="field field--secondary">
-                      <label htmlFor="collateral-sub-event">Sub-Event</label>
+                      <label htmlFor="collateral-scope">Scope</label>
                       <select
-                        id="collateral-sub-event"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { subEventId: event.target.value })}
-                        value={selectedItem.subEventId}
+                        id="collateral-scope"
+                        onChange={(event) =>
+                          patchCollateralItem(selectedItem.id, {
+                            subEventId:
+                              event.target.value === "event-wide"
+                                ? emptySubEventId
+                                : selectedSubEventOptions.find((subEvent) => subEvent.id !== emptySubEventId)?.id ?? emptySubEventId
+                          })
+                        }
+                        value={selectedItemScope}
                       >
-                        {selectedSubEventOptions.length === 0 ? (
-                          <option value={emptySubEventId}>Unassigned</option>
-                        ) : null}
-                        {selectedSubEventOptions.map((subEvent) => (
-                          <option key={subEvent.id} value={subEvent.id}>
-                            {subEvent.name}
-                          </option>
-                        ))}
+                        <option value="event-wide">Event-wide</option>
+                        <option value="linked">Linked to sub-event</option>
                       </select>
                     </div>
+                    {selectedItemScope === "linked" ? (
+                      <div className="field field--secondary">
+                        <label htmlFor="collateral-sub-event">Linked Sub-Event</label>
+                        <select
+                          id="collateral-sub-event"
+                          onChange={(event) => patchCollateralItem(selectedItem.id, { subEventId: event.target.value })}
+                          value={selectedItem.subEventId}
+                        >
+                          {selectedSubEventOptions
+                            .filter((subEvent) => subEvent.id !== emptySubEventId)
+                            .map((subEvent) => (
+                              <option key={subEvent.id} value={subEvent.id}>
+                                {subEvent.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    ) : null}
                     <div className="field field--priority">
                       <label htmlFor="collateral-status">Status</label>
                       <select
                         id="collateral-status"
                         onChange={(event) =>
                           patchCollateralItem(selectedItem.id, {
-                            status: event.target.value as CollateralItem["status"]
+                            status: getStoredCollateralStatusForUi(
+                              event.target.value as CollateralUiStatus,
+                              selectedItem.status
+                            )
                           })
                         }
-                        value={selectedItem.status}
+                        value={getCollateralUiStatus(selectedItem.status)}
                       >
-                        {COLLATERAL_STATUS_OPTIONS.map((status) => (
+                        {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
                           <option key={status} value={status}>
                             {status}
                           </option>
                         ))}
                       </select>
                     </div>
+                    <div className="field field--wide">
+                      <label htmlFor="collateral-notes">Notes</label>
+                      <textarea
+                        id="collateral-notes"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { notes: event.target.value })}
+                        placeholder="Add production context, specs, or handoff notes."
+                        rows={3}
+                        value={selectedItem.notes ?? ""}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="collateral-drawer__group">
+                  <div className="drawer__panel-title">Sponsor Inputs</div>
+                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
+                    <label className="toggle">
+                      <input
+                        checked={selectedItem.requiresLogo === true}
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { requiresLogo: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>Requires Logo</span>
+                    </label>
+                    <label className="toggle">
+                      <input
+                        checked={selectedItem.requiresCopy === true}
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { requiresCopy: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>Requires Copy</span>
+                    </label>
+                    <label className="toggle">
+                      <input
+                        checked={selectedItem.requiresApproval === true}
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { requiresApproval: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>Requires Approval</span>
+                    </label>
                   </div>
                 </div>
 
@@ -1318,6 +1327,83 @@ export function CollateralView({
         onSkip={handleSkipTemplateApply}
       />
 
+      {isQuickAddOpen ? (
+        <div className="modal-layer" role="presentation">
+          <button
+            aria-label="Close add collateral modal"
+            className="modal-backdrop"
+            onClick={closeQuickAddModal}
+            type="button"
+          />
+          <section aria-labelledby="quick-add-collateral-title" aria-modal="true" className="quick-add-modal" role="dialog">
+            <div className="quick-add-modal__header">
+              <div>
+                <h2 className="quick-add-modal__title" id="quick-add-collateral-title">
+                  Add Collateral
+                </h2>
+                <p className="quick-add-modal__subtitle">
+                  Start with the minimum. Everything else can be edited after creation.
+                </p>
+              </div>
+            </div>
+            <div className="drawer__grid drawer__grid--form">
+              <div className="field field--wide">
+                <label htmlFor="quick-add-collateral-name">Name</label>
+                <input
+                  autoFocus
+                  id="quick-add-collateral-name"
+                  onChange={(event) => setQuickAddName(event.target.value)}
+                  placeholder="Welcome sign, master deck, table tents..."
+                  value={quickAddName}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="quick-add-collateral-scope">Scope</label>
+                <select
+                  id="quick-add-collateral-scope"
+                  onChange={(event) => setQuickAddScope(event.target.value as CollateralQuickAddScope)}
+                  value={quickAddScope}
+                >
+                  <option value="event-wide">Event-wide</option>
+                  <option value="linked">Linked to sub-event</option>
+                </select>
+              </div>
+              {quickAddScope === "linked" ? (
+                <div className="field">
+                  <label htmlFor="quick-add-collateral-sub-event">Sub-Event</label>
+                  <select
+                    id="quick-add-collateral-sub-event"
+                    onChange={(event) => setQuickAddSubEventId(event.target.value)}
+                    value={quickAddSubEventId}
+                  >
+                    {linkedSubEventOptions.map((subEvent) => (
+                      <option key={subEvent.id} value={subEvent.id}>
+                        {subEvent.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+            <div className="confirm-delete confirm-delete--neutral">
+              <div className="confirm-delete__actions">
+                <button className="button-link button-link--inline-secondary" onClick={closeQuickAddModal} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="topbar__button"
+                  disabled={quickAddName.trim().length === 0}
+                  onClick={handleQuickAddCollateral}
+                  type="button"
+                >
+                  Create Item
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
         {pendingDraftDiscardIntent ? (
           <div className="modal-layer" role="presentation">
             <button
@@ -1394,21 +1480,21 @@ function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
 }
 
 function getCollateralStatusClassName(item: CollateralItem) {
-  const normalizedStatus = normalizeCollateralWorkflowStatus(item.status);
+  const uiStatus = getCollateralUiStatus(item.status);
 
   if (isCollateralBlocked(item)) {
     return "collateral-status collateral-status--blocked";
   }
 
-  if (normalizedStatus === "waiting") {
+  if (uiStatus === "Waiting") {
     return "collateral-status collateral-status--waiting";
   }
 
-  if (normalizedStatus === "ready") {
-    return "collateral-status collateral-status--ready";
+  if (uiStatus === "In Progress") {
+    return "collateral-status collateral-status--progress";
   }
 
-  if (normalizedStatus === "complete" || normalizedStatus === "cut") {
+  if (uiStatus === "Done") {
     return "collateral-status collateral-status--terminal";
   }
 
@@ -1431,45 +1517,48 @@ function getCollateralDrawerDueText(item: CollateralItem) {
   return `Due ${formatShortDate(item.dueDate)}`;
 }
 
-function getCollateralSummaryFilterLabel(filter: CollateralSummaryFilter) {
-  if (filter === "active") {
-    return "Active";
-  }
-
-  if (filter === "needsAttention") {
-    return "Needs Attention";
-  }
-
-  if (filter === "atPrinter") {
-    return "At Printer";
-  }
-
-  if (filter === "readyForPrint") {
-    return "Ready for Print";
-  }
-
-  return "All";
+function getCollateralScope(subEventId: string, emptySubEventId: string) {
+  return subEventId === emptySubEventId ? "event-wide" : "linked";
 }
 
-function getCollateralProfileDeadlineFilterLabel(filter: CollateralProfileDeadlineFilter) {
-  if (filter === "logoDeadline") {
-    return "Logo Deadline";
+function getCollateralUiStatus(status: CollateralItem["status"]): CollateralUiStatus {
+  const normalizedStatus = normalizeCollateralWorkflowStatus(status);
+
+  if (normalizedStatus === "complete" || normalizedStatus === "cut") {
+    return "Done";
   }
 
-  if (filter === "externalPrintingDue") {
-    return "External Printing Due";
+  if (normalizedStatus === "waiting" || isBlockedStatus(status)) {
+    return "Waiting";
   }
 
-  if (filter === "internalPrintingStart") {
-    return "Start Internal Printing";
+  if (status === "In Design" || status === "Ready for Print" || status === "Sent to Printer") {
+    return "In Progress";
   }
 
-  return "";
+  return "Backlog";
 }
 
-function getCollateralReadinessClassName(tone: "warning" | "attention") {
-  return tone === "warning"
-    ? "collateral-readiness__pill collateral-readiness__pill--warning"
-    : "collateral-readiness__pill collateral-readiness__pill--attention";
+function getStoredCollateralStatusForUi(
+  uiStatus: CollateralUiStatus,
+  currentStatus: CollateralItem["status"]
+): CollateralItem["status"] {
+  if (uiStatus === "Done") {
+    return "Complete";
+  }
+
+  if (uiStatus === "Waiting") {
+    return currentStatus === "Blocked" ? "Blocked" : "Waiting";
+  }
+
+  if (uiStatus === "In Progress") {
+    return currentStatus === "Ready for Print" || currentStatus === "Sent to Printer" ? currentStatus : "In Design";
+  }
+
+  return "Backlog";
+}
+
+function isBlockedStatus(status: CollateralItem["status"]) {
+  return status === "Blocked";
 }
 

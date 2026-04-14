@@ -296,6 +296,7 @@ function createCollateralItem(overrides: Partial<CollateralItem> = {}): Collater
     eventInstanceId: "legislative-day-2026",
     subEventId: "leg-day-legislative-visits",
     itemName: "Leave-behind",
+    notes: "",
     status: "Backlog",
     owner: "Melissa",
     blockedBy: "",

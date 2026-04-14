@@ -35,10 +35,13 @@ export function createCollateralItem(
       id: `collateral-${crypto.randomUUID()}`,
       eventInstanceId,
       subEventId: normalizeSubEventId(input.subEventId, eventInstanceId, context?.eventSubEvents),
+      notes: input.notes ?? "",
+      requiresLogo: input.requiresLogo === true,
+      requiresCopy: input.requiresCopy === true,
+      requiresApproval: input.requiresApproval === true,
       owner: normalizeOwner(input.owner, context),
       updateType: normalizeCollateralUpdateType(input.updateType),
-      noteEntries: normalizeNoteEntries(input.noteEntries, input.notes ?? "", nextTimestamp),
-      notes: undefined,
+      noteEntries: normalizeNoteEntries(input.noteEntries, "", nextTimestamp),
       lastUpdated: nextTimestamp
     },
     context
@@ -219,7 +222,10 @@ export function applyCollateralTemplate(input: {
           quantity: templateItem.defaultQuantity,
           updateType: templateItem.defaultUpdateType,
           noteEntries: normalizeNoteEntries(undefined, templateItem.defaultNotes, new Date().toISOString()),
-          notes: undefined,
+          notes: "",
+          requiresLogo: false,
+          requiresCopy: false,
+          requiresApproval: false,
           fileLink: undefined
         },
         {
@@ -265,8 +271,11 @@ function reconcileCollateralFields(item: CollateralItem, context?: CollateralMut
     subEventId: normalizeSubEventId(item.subEventId, eventInstanceId, context?.eventSubEvents),
     owner: normalizeOwner(item.owner, context),
     updateType: normalizeCollateralUpdateType(item.updateType),
-    noteEntries: normalizeNoteEntries(item.noteEntries, item.notes ?? "", item.lastUpdated),
-    notes: undefined,
+    notes: item.notes ?? "",
+    requiresLogo: item.requiresLogo === true,
+    requiresCopy: item.requiresCopy === true,
+    requiresApproval: item.requiresApproval === true,
+    noteEntries: normalizeNoteEntries(item.noteEntries, "", item.lastUpdated),
     archivedAt: fallbackArchivedAt
   };
 }
@@ -340,9 +349,13 @@ function serializeCollateralItem(item: CollateralItem) {
     itemName: item.itemName,
     lastUpdated: item.lastUpdated,
     noteEntries: item.noteEntries,
+    notes: item.notes,
     owner: item.owner,
     printer: item.printer,
     quantity: item.quantity,
+    requiresApproval: item.requiresApproval === true,
+    requiresCopy: item.requiresCopy === true,
+    requiresLogo: item.requiresLogo === true,
     status: item.status,
     subEventId: item.subEventId,
     templateOriginId: item.templateOriginId ?? "",

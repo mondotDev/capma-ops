@@ -44,6 +44,10 @@ export type CollateralItem = {
   subEventId: string;
   templateOriginId?: string;
   itemName: string;
+  notes?: string;
+  requiresLogo?: boolean;
+  requiresCopy?: boolean;
+  requiresApproval?: boolean;
   status: CollateralStatus;
   owner: string;
   blockedBy: string;
@@ -52,7 +56,6 @@ export type CollateralItem = {
   quantity: string;
   updateType: string;
   noteEntries: ActionNoteEntry[];
-  notes?: string;
   fileLink?: string;
   lastUpdated: string;
   archivedAt?: string;
@@ -223,6 +226,10 @@ export function normalizeCollateralItem(
     subEventId,
     templateOriginId: typeof item.templateOriginId === "string" ? item.templateOriginId : undefined,
     itemName: item.itemName,
+    notes: typeof item.notes === "string" ? item.notes : "",
+    requiresLogo: item.requiresLogo === true,
+    requiresCopy: item.requiresCopy === true,
+    requiresApproval: item.requiresApproval === true,
     status: item.status as CollateralStatus,
     owner: typeof item.owner === "string" && item.owner.length > 0 ? item.owner : DEFAULT_OWNER,
     blockedBy: typeof item.blockedBy === "string" ? item.blockedBy : "",
@@ -235,8 +242,11 @@ export function normalizeCollateralItem(
     printer: item.printer,
     quantity: item.quantity,
     updateType: normalizeCollateralUpdateType(item.updateType),
-    noteEntries: normalizeNoteEntries(item.noteEntries, typeof item.notes === "string" ? item.notes : "", item.lastUpdated),
-    notes: undefined,
+    noteEntries: normalizeNoteEntries(
+      item.noteEntries,
+      Array.isArray(item.noteEntries) ? "" : typeof item.notes === "string" ? item.notes : "",
+      item.lastUpdated
+    ),
     fileLink: typeof item.fileLink === "string" ? item.fileLink : undefined,
     lastUpdated: item.lastUpdated,
     archivedAt: typeof item.archivedAt === "string" && item.archivedAt.length > 0 ? item.archivedAt : undefined
@@ -263,6 +273,10 @@ function createSeedItem(
     subEventId: getInitialLegDaySubEventIdByName(subEventName) ?? "leg-day-multi-event",
     templateOriginId,
     itemName,
+    notes,
+    requiresLogo: false,
+    requiresCopy: false,
+    requiresApproval: false,
     status,
     owner,
     blockedBy,
@@ -270,8 +284,7 @@ function createSeedItem(
     printer,
     quantity,
     updateType: normalizeCollateralUpdateType(updateType),
-    noteEntries: normalizeNoteEntries(undefined, notes, "2026-03-28"),
-    notes: undefined,
+    noteEntries: normalizeNoteEntries(undefined, "", "2026-03-28"),
     lastUpdated: "2026-03-28",
     archivedAt: undefined
   };
