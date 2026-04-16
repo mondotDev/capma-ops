@@ -46,7 +46,7 @@ export function DashboardView() {
     upsertSponsorCommitment,
     upsertSponsorOpportunity
   } = useAppActions();
-  const { dashboardSummary, urgentPreviewItems, publicationIssueSummaryRows, isLoading } = useDashboardReadModel();
+  const { dashboardSummary, publicationIssueSummaryRows, isLoading } = useDashboardReadModel();
   const [publicationFeedback, setPublicationFeedback] = useState("");
   const [activePublicationIssue, setActivePublicationIssue] = useState<string | null>(null);
   const [issuePendingCompletion, setIssuePendingCompletion] = useState<string | null>(null);
@@ -294,35 +294,6 @@ export function DashboardView() {
               <span className="command-metric__label">Due Soon</span>
               <strong className="command-metric__value">{dashboardSummary.dueSoon}</strong>
             </button>
-            <button
-              aria-label="Peak Day: highest number of active items due on a single day in the next seven days"
-              className="command-metric command-metric--peak"
-              disabled={!dashboardSummary.peakUpcomingLoadDate}
-              onClick={() => {
-                if (!dashboardSummary.peakUpcomingLoadDate) {
-                  return;
-                }
-
-                router.push(getCollisionReviewHref(dashboardSummary.peakUpcomingLoadDate));
-              }}
-              title="Highest number of active items due on a single day in the next seven days"
-              type="button"
-            >
-              <span className="command-metric__label">Peak Day</span>
-              <strong className="command-metric__value">{dashboardSummary.peakUpcomingLoadCount}</strong>
-            </button>
-          </div>
-          <div className="command-zone__list">
-            {urgentPreviewItems.length > 0 ? (
-              urgentPreviewItems.map((item) => (
-                <div className="risk-preview" key={item.id} title={`${item.title} - ${item.meta}`}>
-                  <div className="risk-preview__title">{item.title}</div>
-                  <div className="risk-preview__meta">{item.meta}</div>
-                </div>
-              ))
-            ) : (
-              <div className="muted">No urgent items right now</div>
-            )}
           </div>
         </div>
       </section>

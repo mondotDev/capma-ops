@@ -126,7 +126,7 @@ export function getActionScopeLabelByValue(scopes: ActionScope[], value: string)
 
 function resolveActionItemScope(
   item: ActionItem,
-  _eventPrograms: EventProgram[],
+  eventPrograms: EventProgram[],
   eventInstances: EventInstance[]
 ): ActionScope {
   if (item.eventInstanceId) {
@@ -156,7 +156,43 @@ function resolveActionItemScope(
     }
   }
 
+  const programLinkedInstance = resolveProgramLinkedInstance(item, eventPrograms, eventInstances);
+
+  if (programLinkedInstance) {
+    return createInstanceScope(programLinkedInstance);
+  }
+
   return UNASSIGNED_SCOPE;
+}
+
+function resolveProgramLinkedInstance(
+  item: ActionItem,
+  eventPrograms: EventProgram[],
+  eventInstances: EventInstance[]
+) {
+  const candidateLabels = [normalizeEventGroupValue(item.eventGroup), item.workstream?.trim() ?? ""]
+    .map((value) => value ?? "")
+    .filter((value) => value.length > 0);
+
+  if (candidateLabels.length === 0) {
+    return null;
+  }
+
+  for (const label of candidateLabels) {
+    const program = eventPrograms.find((entry) => entry.name === label);
+
+    if (!program) {
+      continue;
+    }
+
+    const matchingInstances = eventInstances.filter((instance) => instance.eventTypeId === program.id);
+
+    if (matchingInstances.length === 1) {
+      return matchingInstances[0] ?? null;
+    }
+  }
+
+  return null;
 }
 
 function resolveLegacyOperationalBucket(eventGroup?: string) {

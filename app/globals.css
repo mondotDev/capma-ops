@@ -3844,6 +3844,13 @@ tr.blocked-row {
   flex: 1 1 640px;
 }
 
+.filter-bar__actions {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .filter-group {
   display: flex;
   align-items: center;
@@ -3903,34 +3910,30 @@ tr.blocked-row {
   gap: 8px;
 }
 
-.action-context-strip {
-  display: grid;
-  gap: 12px;
-}
-
-.action-context-strip__header {
+.action-context-summary {
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
 }
 
-.action-context-strip__count {
-  font-size: 18px;
+.action-context-summary__items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.action-context-summary__count {
+  font-size: 14px;
   font-weight: 700;
   color: var(--text);
 }
 
-.action-context-strip__meta {
-  margin-top: 4px;
+.action-context-summary__detail {
   font-size: 13px;
   color: var(--muted);
-}
-
-.action-context-strip__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .action-exit-notice {
@@ -3965,31 +3968,6 @@ tr.blocked-row {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-}
-
-.action-context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid rgba(31, 41, 51, 0.1);
-  border-radius: 999px;
-  background: #fbfdff;
-  color: var(--text);
-}
-
-.action-context-chip__label {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.action-context-chip__clear {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 0;
 }
 
 .summary-chip {
@@ -4050,6 +4028,84 @@ tr.blocked-row {
   min-width: 248px;
 }
 
+.filter-menu {
+  position: relative;
+}
+
+.filter-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #d8e0e8;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filter-menu__trigger--active {
+  border-color: rgba(0, 59, 109, 0.22);
+  background: #f7fafc;
+  color: var(--accent);
+}
+
+.filter-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.filter-menu__popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 5;
+  display: grid;
+  gap: 12px;
+}
+
+.filter-menu__section {
+  display: grid;
+  gap: 8px;
+}
+
+.filter-menu__section--toggles {
+  padding-top: 4px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.filter-menu__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.filter-menu__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .bulk-action-bar {
   display: flex;
   align-items: center;
@@ -4091,17 +4147,6 @@ tr.blocked-row {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.action-toolbar__filter {
-  margin: 0;
-}
-
-.action-toolbar__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  justify-content: flex-end;
 }
 
 .toggle {
@@ -5325,9 +5370,28 @@ textarea,
     flex-basis: 100%;
   }
 
+  .filter-bar__actions {
+    width: 100%;
+  }
+
   .filter-field,
   .filter-field__select {
     min-width: 100%;
+  }
+
+  .filter-menu {
+    width: 100%;
+  }
+
+  .filter-menu__trigger {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filter-menu__popover {
+    left: 0;
+    right: auto;
+    width: 100%;
   }
 
   .page {
@@ -5378,15 +5442,6 @@ textarea,
   }
 
   .action-toolbar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .action-toolbar__meta {
-    justify-content: flex-start;
-  }
-
-  .action-context-strip__header {
     flex-direction: column;
     align-items: flex-start;
   }

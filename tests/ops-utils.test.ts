@@ -60,7 +60,10 @@ import {
   reconcileQuickAddEventSelectionOnWorkstreamChange,
   shouldClearEventLinkOnWorkstreamChange
 } from "../lib/action/action-item-ux";
-import { getVisibleCollateralExecutionRows } from "../lib/collateral-execution-view";
+import {
+  getCollateralExecutionRowClassName,
+  getVisibleCollateralExecutionRows
+} from "../lib/collateral-execution-view";
 import {
   getTemplateItemsForPack,
   getTemplateSubEventsForPack
@@ -1119,6 +1122,78 @@ test("collateral execution rows do not surface for unsupported event types", () 
   });
 
   assert.deepEqual(rows, []);
+});
+
+test("completed collateral execution rows appear only when completed visibility is enabled", () => {
+  const hiddenByDefault = getVisibleCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: "legislative-day-2026",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    showCompleted: false,
+    collateralItems: [
+      localCollateralStore.normalizeLoaded(
+        [createCollateralItem({ id: "completed-collateral", status: "Complete", dueDate: "2026-03-31" })],
+        { eventInstances: createDefaultAppStateData().eventInstances, eventSubEvents: createDefaultAppStateData().eventSubEvents }
+      )[0]!
+    ],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+    ],
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+  });
+
+  const shownWhenEnabled = getVisibleCollateralExecutionRows({
+    activeDueDate: "",
+    activeEventGroup: "all",
+    activeEventInstanceId: "legislative-day-2026",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "completed collateral",
+    showCompleted: true,
+    collateralItems: [
+      localCollateralStore.normalizeLoaded(
+        [createCollateralItem({ id: "completed-collateral", status: "Complete", itemName: "Completed collateral", dueDate: "2026-03-31" })],
+        { eventInstances: createDefaultAppStateData().eventInstances, eventSubEvents: createDefaultAppStateData().eventSubEvents }
+      )[0]!
+    ],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+    ],
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+  });
+
+  assert.deepEqual(hiddenByDefault, []);
+  assert.deepEqual(shownWhenEnabled.map((row) => row.collateralId), ["completed-collateral"]);
+  assert.equal(getCollateralExecutionRowClassName(shownWhenEnabled[0]!), "cut-row");
 });
 
 test("action view rows merge native and collateral execution work into one urgency-sorted list", () => {
@@ -3497,7 +3572,7 @@ test("action view list query returns grouped mixed rows and event options withou
   assert.equal(listView.eventGroupOptions.some((option) => option.value === "Legislative Day"), false);
 });
 
-test("action scope options use execution scope only for event-linked and non-event work", () => {
+test("action scope options use canonical event instances in the visible dropdown", () => {
   const state = createDefaultAppStateData();
 
   const listView = getActionListViewData({
@@ -3543,12 +3618,59 @@ test("action scope options use execution scope only for event-linked and non-eve
 
   assert.deepEqual(
     listView.eventGroupOptions.map((option) => option.value),
-    ["all", "Unassigned", "General Operations", "Legislative Day 2026"]
+    ["all", ...state.eventInstances
+      .slice()
+      .sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name))
+      .map((instance) => instance.name)]
   );
   assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day"), false);
   assert.equal(listView.groupedRows.some((group) => group.label === "Legislative Day 2026"), true);
   assert.equal(listView.groupedRows.some((group) => group.label === "General Operations"), true);
   assert.equal(listView.groupedRows.some((group) => group.label === "Unassigned"), true);
+});
+
+test("canonical scope selection still matches legacy event-linked native rows when one instance exists", () => {
+  const state = createDefaultAppStateData();
+  const bestPestInstance = {
+    id: "best-pest-expo-2026",
+    eventTypeId: "best-pest-expo",
+    name: "Best Pest Expo - 2026",
+    dateMode: "range" as const,
+    dates: ["2026-10-12", "2026-10-14"],
+    startDate: "2026-10-12",
+    endDate: "2026-10-14"
+  };
+
+  const listView = getActionListViewData({
+    items: [
+      createItem({
+        id: "best-pest-legacy",
+        title: "Best Pest setup",
+        workstream: "Best Pest Expo",
+        eventGroup: "Best Pest Expo",
+        eventInstanceId: undefined,
+        operationalBucket: undefined
+      })
+    ],
+    collateralItems: [],
+    eventInstances: [...state.eventInstances, bestPestInstance],
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "Best Pest Expo - 2026",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "",
+      showCompleted: false
+    }
+  });
+
+  assert.deepEqual(listView.visibleRows.map((row) => row.id), ["best-pest-legacy"]);
+  assert.equal(listView.groupedRows.some((group) => group.label === "Best Pest Expo - 2026"), true);
 });
 
 test("action view list summary counts follow the visible mixed operational lane", () => {
@@ -3603,6 +3725,124 @@ test("action view list summary counts follow the visible mixed operational lane"
     waiting: 1,
     totalActive: 2
   });
+});
+
+test("action view search can include completed native items only when explicitly enabled", () => {
+  const state = createDefaultAppStateData();
+
+  const hiddenByDefault = getActionListViewData({
+    items: [
+      createItem({
+        id: "completed-native",
+        title: "Completed native action",
+        status: "Complete",
+        dueDate: "2026-03-31"
+      }),
+      createItem({
+        id: "active-native",
+        title: "Active native action",
+        dueDate: "2026-03-31"
+      })
+    ],
+    collateralItems: [],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "completed native",
+      showCompleted: false
+    }
+  });
+
+  const shownWhenEnabled = getActionListViewData({
+    items: [
+      createItem({
+        id: "completed-native",
+        title: "Completed native action",
+        status: "Complete",
+        dueDate: "2026-03-31"
+      }),
+      createItem({
+        id: "active-native",
+        title: "Active native action",
+        dueDate: "2026-03-31"
+      })
+    ],
+    collateralItems: [],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "completed native",
+      showCompleted: true
+    }
+  });
+
+  assert.deepEqual(hiddenByDefault.visibleRows.map((row) => row.id), []);
+  assert.deepEqual(shownWhenEnabled.visibleRows.map((row) => row.id), ["completed-native"]);
+});
+
+test("action view search can include completed collateral rows only when explicitly enabled", () => {
+  const state = createDefaultAppStateData();
+  const completedCollateral = localCollateralStore.normalizeLoaded(
+    [createCollateralItem({ id: "completed-collateral", itemName: "Completed collateral", status: "Complete", dueDate: "2026-03-31" })],
+    { eventInstances: state.eventInstances, eventSubEvents: state.eventSubEvents }
+  )[0]!;
+
+  const hiddenByDefault = getActionListViewData({
+    items: [],
+    collateralItems: [completedCollateral],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "completed collateral",
+      showCompleted: false
+    }
+  });
+
+  const shownWhenEnabled = getActionListViewData({
+    items: [],
+    collateralItems: [completedCollateral],
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes,
+    activeEventInstanceId: "legislative-day-2026",
+    filters: {
+      activeDueDate: "",
+      activeEventGroup: "all",
+      activeFilter: "all",
+      activeFocus: "all",
+      activeLens: "all",
+      activeIssue: "",
+      activeQuery: "completed collateral",
+      showCompleted: true
+    }
+  });
+
+  assert.deepEqual(hiddenByDefault.visibleRows.map((row) => row.id), []);
+  assert.deepEqual(shownWhenEnabled.visibleRows.map((row) => row.id), ["collateral-execution-completed-collateral"]);
 });
 
 test("review collisions lens keeps only active upcoming due-dated work", () => {

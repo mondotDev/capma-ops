@@ -1,4 +1,3 @@
-import { buildActionScopes } from "@/lib/action-scopes";
 import {
   getVisibleCollateralExecutionRows,
   type CollateralExecutionRow
@@ -50,6 +49,7 @@ type CollateralExecutionQueryInput = {
   activeIssue: string;
   activeLens: ActionViewFilters["activeLens"];
   activeQuery: string;
+  showCompleted?: boolean;
   applySearch?: boolean;
   collateralItems: Parameters<typeof getVisibleCollateralExecutionRows>[0]["collateralItems"];
   eventInstances: EventInstance[];
@@ -135,6 +135,7 @@ export function getActionCollateralExecutionRows(input: Omit<CollateralExecution
     activeIssue: input.activeIssue,
     activeLens: input.activeLens,
     activeQuery: input.activeQuery,
+    showCompleted: input.showCompleted,
     applySearch: input.applySearch,
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
@@ -157,6 +158,7 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     activeIssue: input.filters.activeIssue,
     activeLens: input.filters.activeLens,
     activeQuery: input.filters.activeQuery,
+    showCompleted: input.filters.showCompleted,
     applySearch: false,
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
@@ -199,26 +201,18 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     activeIssue: "",
     activeLens: "all",
     activeQuery: "",
+    showCompleted: input.filters.showCompleted,
     applySearch: false,
     collateralItems: input.collateralItems,
     eventInstances: input.eventInstances,
     eventSubEvents: input.eventSubEvents,
     eventPrograms
   });
-  const actionScopes = buildActionScopes({
-    items: input.items,
-    eventPrograms,
-    eventInstances: input.eventInstances,
-    collateralExecutionInstanceIds: collateralRows.map((row) => row.eventInstanceId)
-  });
   const collisionReview = getCollisionReviewSummary(visibleRows, input.filters.activeDueDate);
   const reviewLensSummary = getReviewLensSummary(visibleRows, input.filters.activeLens);
 
   return {
-    eventGroupOptions: actionScopes.map((scope) => ({
-      label: scope.label,
-      value: scope.value
-    })),
+    eventGroupOptions: getVisibleActionScopeOptions(input.eventInstances),
     groupedRows:
       input.filters.activeLens === "reviewCollisions"
         ? groupActionViewRowsByDueDate(visibleRows)
@@ -232,6 +226,18 @@ export function getActionListViewData(input: ActionListQueryInput): ActionListVi
     collisionReview: input.filters.activeLens === "reviewCollisions" ? collisionReview : null,
     reviewLensSummary
   };
+}
+
+function getVisibleActionScopeOptions(eventInstances: EventInstance[]) {
+  return [
+    { label: "All Work", value: "all" },
+    ...[...eventInstances]
+      .sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name))
+      .map((instance) => ({
+        label: instance.name,
+        value: instance.name
+      }))
+  ];
 }
 
 export function getSelectedActionItemWorkspace(input: {

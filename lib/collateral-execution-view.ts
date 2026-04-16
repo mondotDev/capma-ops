@@ -53,6 +53,7 @@ export function getVisibleCollateralExecutionRows(input: {
   activeIssue: string;
   activeLens: ActionLens;
   activeQuery: string;
+  showCompleted?: boolean;
   applySearch?: boolean;
   collateralItems: CollateralItem[];
   eventInstances: EventInstance[];
@@ -61,6 +62,7 @@ export function getVisibleCollateralExecutionRows(input: {
   eventTypes?: EventProgram[];
 }) {
   const applySearch = input.applySearch ?? true;
+  const showCompleted = input.showCompleted ?? false;
   const eventPrograms = input.eventPrograms ?? input.eventTypes ?? [];
   const resolvedActiveEventInstanceId = resolveActiveEventInstanceId(
     input.activeEventInstanceId,
@@ -92,8 +94,8 @@ export function getVisibleCollateralExecutionRows(input: {
     .filter(
       (item) =>
         item.eventInstanceId === resolvedActiveEventInstanceId &&
-        !isCollateralArchived(item) &&
-        isActionViewCollateralStatus(item.status)
+        isVisibleCollateralExecutionItem(item, showCompleted) &&
+        (isActionViewCollateralStatus(item.status) || (showCompleted && item.status === "Complete"))
     )
     .map<CollateralExecutionRow>((item) => ({
       kind: "collateral",
@@ -133,6 +135,10 @@ export function getVisibleCollateralExecutionRows(input: {
 }
 
 export function getCollateralExecutionRowClassName(row: CollateralExecutionRow) {
+  if (row.status === "Complete") {
+    return "cut-row";
+  }
+
   if (isCollateralBlocked(row)) {
     return "blocked-row";
   }
@@ -240,6 +246,14 @@ function matchesCollateralExecutionSearch(row: CollateralExecutionRow, query: st
   ]
     .filter(Boolean)
     .some((value) => value.toLowerCase().includes(normalizedQuery));
+}
+
+function isVisibleCollateralExecutionItem(item: CollateralItem, showCompleted: boolean) {
+  if (showCompleted && item.status === "Complete") {
+    return true;
+  }
+
+  return !isCollateralArchived(item);
 }
 
 function sortCollateralExecutionRows(a: CollateralExecutionRow, b: CollateralExecutionRow) {

@@ -31,10 +31,8 @@ import {
 } from "@/lib/queries/collateral/collateral-workspace-queries";
 import {
   getDashboardLiveSummary,
-  getDashboardUrgentPreview,
   getPublicationIssueSummary,
   type DashboardLiveSummary,
-  type DashboardUrgentPreviewItem,
   type PublicationIssueSummaryRow
 } from "@/lib/queries/dashboard/dashboard-queries";
 import { createLocalAppReadSource } from "@/lib/read-source/local-app-read-source";
@@ -92,7 +90,6 @@ function useLocalAppReadSource() {
 
 export function useDashboardReadModel(): {
   dashboardSummary: DashboardLiveSummary;
-  urgentPreviewItems: DashboardUrgentPreviewItem[];
   publicationIssueSummaryRows: PublicationIssueSummaryRow[];
   isLoading: boolean;
   source: "loading" | "local" | "remote";
@@ -133,10 +130,6 @@ export function useDashboardReadModel(): {
     () => getDashboardLiveSummary(resolvedDashboardSource),
     [resolvedDashboardSource]
   );
-  const urgentPreviewItems = useMemo(
-    () => getDashboardUrgentPreview(resolvedDashboardSource, 2),
-    [resolvedDashboardSource]
-  );
   const publicationIssueSummaryRows = useMemo(
     () => getPublicationIssueSummary(resolvedDashboardSource),
     [resolvedDashboardSource]
@@ -144,7 +137,6 @@ export function useDashboardReadModel(): {
 
   return {
     dashboardSummary,
-    urgentPreviewItems,
     publicationIssueSummaryRows,
     isLoading: dashboardSource === null,
     source: dashboardSessionSource?.source ?? "loading"

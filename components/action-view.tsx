@@ -131,6 +131,7 @@ export function ActionView({
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkFeedback, setBulkFeedback] = useState("");
@@ -143,12 +144,13 @@ export function ActionView({
   const [noteDraft, setNoteDraft] = useState("");
   const blockedByInputRef = useRef<HTMLInputElement | null>(null);
   const deleteConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filtersMenuRef = useRef<HTMLDivElement | null>(null);
   const activeFilter = getActionFilterValue(initialFilter);
   const activeFocus = getActionFocusValue(initialFocus);
   const activeLens = getActionLensValue(initialLens);
   const activeDueDate = getActionDueDateValue(initialDueDate);
   const activeEventGroup = getActionEventGroupValue(initialEventGroup);
-  const activeQuery = getActionQueryValue(initialQuery);
+  const activeQuery = getActionQueryValue(searchParams.get("q") ?? initialQuery);
   const activeIssue = initialIssue?.trim() || "";
   const actionListFilters = useMemo(
     () => ({
@@ -248,7 +250,6 @@ export function ActionView({
         : null,
     [collateralItems, selectedItem, selectedSponsorCollateralPromotion]
   );
-  const focusLabel = activeFocus !== "all" ? FOCUS_LABELS[activeFocus] : null;
   const selectedVisibleIds = useMemo(
     () => selectedItemIds.filter((id) => visibleSelectableRows.some((row) => row.actionItemId === id)),
     [selectedItemIds, visibleSelectableRows]
@@ -266,12 +267,15 @@ export function ActionView({
       !showCompleted ||
       !showArchived
   );
-  const closedVisibilitySummary = useMemo(
-    () => ({
-      hidesArchived: !showArchived,
-      hidesCompleted: !showCompleted
-    }),
-    [showArchived, showCompleted]
+  const secondaryFilterCount = useMemo(
+    () =>
+      [
+        REVIEW_LENS_OPTIONS.some((option) => option.value === activeLens),
+        activeFilter !== "all",
+        showCompleted,
+        showArchived
+      ].filter(Boolean).length,
+    [activeFilter, activeLens, showArchived, showCompleted]
   );
   const contextChips = useMemo(
     () =>
@@ -283,8 +287,6 @@ export function ActionView({
         activeLens,
         activeQuery,
         activeScopeLabel,
-        hidesArchived: closedVisibilitySummary.hidesArchived,
-        hidesCompleted: closedVisibilitySummary.hidesCompleted,
         hasPublicationIssueWorkspace: Boolean(publicationIssueWorkspace),
         hasScopedEventGroup: activeEventGroup !== "all"
       }),
@@ -297,10 +299,12 @@ export function ActionView({
       activeLens,
       activeQuery,
       activeScopeLabel,
-      closedVisibilitySummary.hidesArchived,
-      closedVisibilitySummary.hidesCompleted,
       publicationIssueWorkspace
     ]
+  );
+  const activeNonSearchConstraintCount = useMemo(
+    () => contextChips.filter((chip) => chip.kind !== "search").length,
+    [contextChips]
   );
 
   useEffect(() => {
@@ -356,6 +360,33 @@ export function ActionView({
     setIsDeleteConfirmOpen(false);
     setIsActionsMenuOpen(false);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!isFiltersOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (filtersMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
+      setIsFiltersOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsFiltersOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFiltersOpen]);
 
   useEffect(() => {
     if (!isDeleteConfirmOpen) {
@@ -892,54 +923,92 @@ export function ActionView({
                 ))}
               </div>
             </div>
-            <div className="filter-group">
-              <span className="filter-group__label">Review</span>
-              <div className="filter-group__pills">
-                {REVIEW_LENS_OPTIONS.map((option) => (
-                  <button
-                    aria-pressed={activeLens === option.value}
-                    className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
-                    key={option.value}
-                    onClick={() => handleLensChange(option.value)}
-                    type="button"
-                  >
-                    {option.label.replace("Review: ", "")}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="filter-group">
-              <span className="filter-group__label">Status</span>
-              <div className="filter-group__pills">
-                {STATUS_FILTER_OPTIONS.map((option) => (
-                  <button
-                    aria-pressed={activeFilter === option.value}
-                    className={activeFilter === option.value ? "filter-pill active" : "filter-pill"}
-                    key={option.value}
-                    onClick={() => handleFilterChange(option.value)}
-                    type="button"
-                  >
+          </div>
+          <div className="filter-bar__actions">
+            <label className="filter-field">
+              <span className="filter-field__label">Scope</span>
+              <select
+                aria-label="Filter by scope"
+                className="cell-select filter-field__select"
+                onChange={(event) => handleEventGroupChange(event.target.value)}
+                value={activeEventGroup}
+              >
+                {eventGroupOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
                     {option.label}
-                  </button>
+                  </option>
                 ))}
-              </div>
+              </select>
+            </label>
+            <div className="filter-menu" ref={filtersMenuRef}>
+              <button
+                aria-expanded={isFiltersOpen}
+                aria-haspopup="menu"
+                className={secondaryFilterCount > 0 ? "filter-menu__trigger filter-menu__trigger--active" : "filter-menu__trigger"}
+                onClick={() => setIsFiltersOpen((current) => !current)}
+                type="button"
+              >
+                <span>Filters</span>
+                {secondaryFilterCount > 0 ? (
+                  <span className="filter-menu__count">{secondaryFilterCount}</span>
+                ) : null}
+              </button>
+              {isFiltersOpen ? (
+                <div className="filter-menu__popover" role="menu">
+                  <div className="filter-menu__section">
+                    <div className="filter-menu__label">Review</div>
+                    <div className="filter-menu__pills">
+                      {REVIEW_LENS_OPTIONS.map((option) => (
+                        <button
+                          aria-pressed={activeLens === option.value}
+                          className={activeLens === option.value ? "filter-pill active" : "filter-pill"}
+                          key={option.value}
+                          onClick={() => handleLensChange(option.value)}
+                          type="button"
+                        >
+                          {option.label.replace("Review: ", "")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="filter-menu__section">
+                    <div className="filter-menu__label">Status</div>
+                    <div className="filter-menu__pills">
+                      {STATUS_FILTER_OPTIONS.map((option) => (
+                        <button
+                          aria-pressed={activeFilter === option.value}
+                          className={activeFilter === option.value ? "filter-pill active" : "filter-pill"}
+                          key={option.value}
+                          onClick={() => handleFilterChange(option.value)}
+                          type="button"
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="filter-menu__section filter-menu__section--toggles">
+                    <label className="toggle">
+                      <input
+                        checked={showArchived}
+                        onChange={(event) => setShowArchived(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>Show Archived</span>
+                    </label>
+                    <label className="toggle">
+                      <input
+                        checked={showCompleted}
+                        onChange={(event) => setShowCompleted(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>Include Completed</span>
+                    </label>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
-          <label className="filter-field">
-            <span className="filter-field__label">Scope</span>
-            <select
-              aria-label="Filter by scope"
-              className="cell-select filter-field__select"
-              onChange={(event) => handleEventGroupChange(event.target.value)}
-              value={activeEventGroup}
-            >
-              {eventGroupOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
 
         <div className="summary-row" aria-label="Action summary">
@@ -965,58 +1034,24 @@ export function ActionView({
           </span>
         </div>
 
-        <div className="card card--secondary action-context-strip" aria-label="Current action view context">
-          <div className="action-context-strip__header">
-            <div>
-              <div className="card__title">CURRENT VIEW</div>
-              <div className="action-context-strip__count">
-                Showing {visibleExecutionCount} {visibleExecutionCount === 1 ? "item" : "items"}
-                {totalExecutionCount !== visibleExecutionCount ? ` of ${totalExecutionCount}` : ""}
-              </div>
-              <div className="action-context-strip__meta">
-                {getActionContextMetaCopy(activeLens, hasActiveExecutionContext)}
-              </div>
-            </div>
-            {hasActiveExecutionContext ? (
-              <button className="button-link button-link--inline-secondary" onClick={clearAllContext} type="button">
-                Clear all constraints
-              </button>
+        <div className="action-context-summary" aria-label="Current action view context">
+          <div className="action-context-summary__items">
+            <span className="action-context-summary__count">
+              {visibleExecutionCount} {visibleExecutionCount === 1 ? "item" : "items"}
+              {totalExecutionCount !== visibleExecutionCount ? ` of ${totalExecutionCount}` : ""}
+            </span>
+            {activeQuery ? <span className="action-context-summary__detail">Search: {activeQuery}</span> : null}
+            {activeNonSearchConstraintCount > 0 ? (
+              <span className="action-context-summary__detail">
+                {activeNonSearchConstraintCount} other {activeNonSearchConstraintCount === 1 ? "constraint" : "constraints"} active
+              </span>
             ) : null}
           </div>
-
-          {contextChips.length > 0 ? (
-            <div className="action-context-strip__chips">
-              {contextChips.map((chip) => {
-                const clearHandler = getContextChipClearHandler(chip.kind, {
-                  clearDueDateFilter,
-                  clearFocus,
-                  clearIssueFilter,
-                  clearSearchQuery,
-                  handleEventGroupChange,
-                  handleFilterChange,
-                  handleLensChange
-                });
-
-                return (
-                  <span className="action-context-chip" key={`${chip.kind}-${chip.label}`}>
-                    <span className="action-context-chip__label">{chip.label}</span>
-                    {clearHandler ? (
-                      <button
-                        aria-label={`Clear ${chip.label}`}
-                        className="action-context-chip__clear"
-                        onClick={clearHandler}
-                        type="button"
-                      >
-                        Clear
-                      </button>
-                    ) : null}
-                  </span>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="muted">All active execution work is visible.</div>
-          )}
+          {hasActiveExecutionContext ? (
+            <button className="button-link button-link--inline-secondary" onClick={clearAllContext} type="button">
+              Clear all constraints
+            </button>
+          ) : null}
         </div>
 
         {itemExitNotice ? (
@@ -1226,87 +1261,6 @@ export function ActionView({
           </div>
         ) : null}
 
-        {activeQuery ? (
-          <div className="issue-context">
-            <div>
-              <div className="issue-context__title">Search: {activeQuery}</div>
-              <div className="issue-context__meta">
-                {visibleExecutionCount} {visibleExecutionCount === 1 ? "item" : "items"}
-              </div>
-            </div>
-            <button className="button-link button-link--inline-secondary" onClick={clearSearchQuery} type="button">
-              Clear search
-            </button>
-          </div>
-        ) : null}
-
-        <div className="action-toolbar">
-          <div className="action-toolbar__controls">
-            <label className="toggle">
-              <input
-                checked={showArchived}
-                onChange={(event) => setShowArchived(event.target.checked)}
-                type="checkbox"
-              />
-              <span>Show Archived</span>
-            </label>
-            <label className="toggle">
-              <input
-                checked={showCompleted}
-                onChange={(event) => setShowCompleted(event.target.checked)}
-                type="checkbox"
-              />
-              <span>Show Closed</span>
-            </label>
-            <span className="muted action-toolbar__hint">Select rows to bulk-assign owner.</span>
-          </div>
-
-          <div className="action-toolbar__meta">
-            {focusLabel ? (
-              <p className="muted action-toolbar__filter">
-                Focused on {focusLabel.toLowerCase()}.{" "}
-                <button className="button-link button-link--inline" onClick={clearFocus} type="button">
-                  Clear focus
-                </button>
-              </p>
-            ) : null}
-            {activeFilter !== "all" ? (
-              <p className="muted action-toolbar__filter">
-                Showing {getFilterLabel(activeFilter).toLowerCase()} items.{" "}
-                <button className="button-link button-link--inline" onClick={() => handleFilterChange("all")} type="button">
-                  Reset
-                </button>
-              </p>
-            ) : null}
-            {activeLens !== "all" ? (
-              <p className="muted action-toolbar__filter">
-                Lens: {getLensLabel(activeLens)}.{" "}
-                <button className="button-link button-link--inline" onClick={() => handleLensChange("all")} type="button">
-                  Clear
-                </button>
-              </p>
-            ) : null}
-            {activeEventGroup !== "all" ? (
-              <p className="muted action-toolbar__filter">
-                Scope: {activeScopeLabel}.{" "}
-                <button className="button-link button-link--inline" onClick={() => handleEventGroupChange("all")} type="button">
-                  Clear
-                </button>
-              </p>
-            ) : null}
-            {activeQuery ? (
-              <p className="muted action-toolbar__filter">
-                Search is active.{" "}
-                <button className="button-link button-link--inline" onClick={clearSearchQuery} type="button">
-                  Clear
-                </button>
-              </p>
-            ) : null}
-            {activeFilter === "mine" ? (
-              <p className="muted action-toolbar__filter">Owner filter is set to {DEFAULT_OWNER}.</p>
-            ) : null}
-          </div>
-        </div>
       </div>
 
       <div className={selectedItem ? "action-layout action-layout--open" : "action-layout"}>
@@ -2049,9 +2003,7 @@ type ActionContextChip = {
     | "dueDate"
     | "issue"
     | "search"
-    | "workspace"
-    | "completed"
-    | "archived";
+    | "workspace";
   label: string;
 };
 
@@ -2082,20 +2034,10 @@ function buildActionContextChips(input: {
   activeLens: ActionLens;
   activeQuery: string;
   activeScopeLabel: string;
-  hidesArchived: boolean;
-  hidesCompleted: boolean;
   hasPublicationIssueWorkspace: boolean;
   hasScopedEventGroup: boolean;
 }): ActionContextChip[] {
   const chips: ActionContextChip[] = [];
-
-  if (input.hidesCompleted) {
-    chips.push({ kind: "completed", label: "Closed hidden" });
-  }
-
-  if (input.hidesArchived) {
-    chips.push({ kind: "archived", label: "Archived hidden" });
-  }
 
   if (input.hasPublicationIssueWorkspace) {
     chips.push({ kind: "workspace", label: "Publication workspace" });
@@ -2130,53 +2072,6 @@ function buildActionContextChips(input: {
   }
 
   return chips;
-}
-
-function getContextChipClearHandler(
-  kind: ActionContextChip["kind"],
-  handlers: {
-    clearDueDateFilter: () => void;
-    clearFocus: () => void;
-    clearIssueFilter: () => void;
-    clearSearchQuery: () => void;
-    handleEventGroupChange: (nextEventGroup: string) => void;
-    handleFilterChange: (nextFilter: ActionFilter) => void;
-    handleLensChange: (nextLens: ActionLens) => void;
-  }
-) {
-  if (kind === "filter") {
-    return () => handlers.handleFilterChange("all");
-  }
-
-  if (kind === "focus") {
-    return handlers.clearFocus;
-  }
-
-  if (kind === "lens") {
-    return () => handlers.handleLensChange("all");
-  }
-
-  if (kind === "scope") {
-    return () => handlers.handleEventGroupChange("all");
-  }
-
-  if (kind === "dueDate") {
-    return handlers.clearDueDateFilter;
-  }
-
-  if (kind === "issue") {
-    return handlers.clearIssueFilter;
-  }
-
-  if (kind === "search") {
-    return handlers.clearSearchQuery;
-  }
-
-  if (kind === "completed" || kind === "archived" || kind === "workspace") {
-    return null;
-  }
-
-  return null;
 }
 
 function getActionEmptyStateCopy(
@@ -2430,22 +2325,6 @@ function getCollisionDateLabel(dateValue: string) {
   }
 
   return formatShortDate(dateValue);
-}
-
-function getActionContextMetaCopy(activeLens: ActionLens, hasActiveExecutionContext: boolean) {
-  if (activeLens === "reviewWaitingTooLong") {
-    return "Reviewing waiting items with no update in 7+ days.";
-  }
-
-  if (activeLens === "reviewStale") {
-    return "Reviewing open non-waiting items with no update in 14+ days.";
-  }
-
-  if (hasActiveExecutionContext) {
-    return "Rows are narrowed by the active execution context below.";
-  }
-
-  return "No extra constraints are hiding rows right now.";
 }
 
 function getPublicationRowBadgeLabel(row: {
