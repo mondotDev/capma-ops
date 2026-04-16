@@ -221,6 +221,7 @@ export function useActionViewReadModel(input: {
 }
 
 export function useCollateralWorkspaceReadModel(input: {
+  selectedEventInstanceId: string;
   activeSummaryFilter: CollateralSummaryFilter;
   activeProfileDeadlineFilter: CollateralProfileDeadlineFilter;
   selectedId: string | null;
@@ -235,11 +236,10 @@ export function useCollateralWorkspaceReadModel(input: {
 } {
   // Keep Collateral fully local until Action View-style coherence rules are defined.
   // Collateral is an operational workspace, not a safe remote-read-only surface yet.
-  const { activeEventInstanceId } = useAppStateValues();
   const readSource = useLocalAppReadSource();
   const workspaceSource = useMemo(
-    () => readSource.getCollateralWorkspaceSource({ activeEventInstanceId }),
-    [activeEventInstanceId, readSource]
+    () => readSource.getCollateralWorkspaceSource({ activeEventInstanceId: input.selectedEventInstanceId }),
+    [input.selectedEventInstanceId, readSource]
   );
   const workspaceBundle = useMemo(
     () =>
@@ -303,7 +303,7 @@ export function useCollateralWorkspaceReadModel(input: {
 
     traceCollateralCreate("read-model-workspace", {
       traceId,
-      activeEventInstanceId,
+      activeEventInstanceId: input.selectedEventInstanceId,
       resolvedActiveEventInstanceId: workspaceBundle.resolvedActiveEventInstanceId,
       activeSummaryFilter: input.activeSummaryFilter,
       activeProfileDeadlineFilter: input.activeProfileDeadlineFilter,
@@ -331,11 +331,11 @@ export function useCollateralWorkspaceReadModel(input: {
       selectedId: input.selectedId
     });
   }, [
-    activeEventInstanceId,
     collateralListView.groupedItems,
     collateralListView.visibleInstanceItems,
     input.activeProfileDeadlineFilter,
     input.activeSummaryFilter,
+    input.selectedEventInstanceId,
     input.selectedId,
     input.showArchived,
     workspaceBundle.resolvedActiveEventInstanceId,

@@ -44,6 +44,7 @@ import {
   getSponsorPlacementLabel,
   supportsSponsorSetupForEventType
 } from "@/lib/sponsor-fulfillment";
+import { resolveActiveEventInstanceId } from "@/lib/event-instances";
 
 type PendingDraftDiscardIntent =
   | { type: "switch"; nextEventInstanceId: string }
@@ -88,7 +89,12 @@ export function CollateralView({
   initialEventInstanceId?: string;
   initialSelectedCollateralId?: string;
 }) {
-  const { defaultOwnerForNewItems, items, sponsorshipSetupByInstance } = useAppStateValues();
+  const {
+    activeEventInstanceId,
+    defaultOwnerForNewItems,
+    items,
+    sponsorshipSetupByInstance
+  } = useAppStateValues();
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
@@ -120,6 +126,9 @@ export function CollateralView({
   const [quickAddName, setQuickAddName] = useState("");
   const [quickAddScope, setQuickAddScope] = useState<CollateralQuickAddScope>("event-wide");
   const [quickAddSubEventId, setQuickAddSubEventId] = useState("");
+  const [selectedEventInstanceId, setSelectedEventInstanceId] = useState(
+    () => initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? activeEventInstanceId
+  );
   const [pendingOpenIntent, setPendingOpenIntent] = useState<PendingCollateralOpenIntent>(() => ({
     collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
     eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
@@ -146,6 +155,7 @@ export function CollateralView({
     eventPrograms,
     eventInstances
   } = useCollateralWorkspaceReadModel({
+    selectedEventInstanceId,
     activeSummaryFilter,
     activeProfileDeadlineFilter,
     selectedId,
@@ -179,6 +189,10 @@ export function CollateralView({
     const futureInstances = sortedInstances.filter((instance) => (instance.endDate || instance.startDate) >= today);
 
     return futureInstances.length > 0 ? futureInstances : sortedInstances;
+  }, [eventInstances]);
+
+  useEffect(() => {
+    setSelectedEventInstanceId((current) => resolveActiveEventInstanceId(current, eventInstances));
   }, [eventInstances]);
   const sponsorGenerationPreview = useMemo<SponsorGenerationPreview | null>(() => {
     if (!selectedEventInstance || !supportsSponsorSetup) {
@@ -251,7 +265,7 @@ export function CollateralView({
     }
 
     if (pendingOpenIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
-      setActiveEventInstanceId(pendingOpenIntent.eventInstanceId);
+      setSelectedEventInstanceId(pendingOpenIntent.eventInstanceId);
       return;
     }
 
@@ -259,8 +273,7 @@ export function CollateralView({
   }, [
     draftCollateralItem,
     pendingOpenIntent.eventInstanceId,
-    resolvedActiveEventInstanceId,
-    setActiveEventInstanceId
+    resolvedActiveEventInstanceId
   ]);
 
   useEffect(() => {
@@ -280,7 +293,7 @@ export function CollateralView({
     }
 
     if (pendingSponsorPromotionIntent.eventInstanceId !== resolvedActiveEventInstanceId) {
-      setActiveEventInstanceId(pendingSponsorPromotionIntent.eventInstanceId);
+      setSelectedEventInstanceId(pendingSponsorPromotionIntent.eventInstanceId);
       return;
     }
 
@@ -344,7 +357,6 @@ export function CollateralView({
     items,
     pendingSponsorPromotionIntent,
     resolvedActiveEventInstanceId,
-    setActiveEventInstanceId,
     workspaceBundle.instanceSubEvents
   ]);
 
@@ -516,6 +528,7 @@ export function CollateralView({
 
   function finishCreateInstance(input: CreateEventInstanceInput) {
     const nextId = createEventInstance(input);
+    setSelectedEventInstanceId(nextId);
     setSelectedId(null);
     closeCreateInstanceModal();
     setSetupFeedback(`${input.instanceName.trim()} created. Choose whether to start with the default template or an empty instance.`);
@@ -678,7 +691,7 @@ export function CollateralView({
       return;
     }
 
-    setActiveEventInstanceId(nextEventInstanceId);
+    setSelectedEventInstanceId(nextEventInstanceId);
     setSelectedId(null);
   }
 
@@ -702,7 +715,7 @@ export function CollateralView({
     setPendingDraftDiscardIntent(null);
 
     if (intent.type === "switch") {
-      setActiveEventInstanceId(intent.nextEventInstanceId);
+      setSelectedEventInstanceId(intent.nextEventInstanceId);
       return;
     }
 
@@ -713,7 +726,7 @@ export function CollateralView({
       });
 
       if (intent.eventInstanceId !== resolvedActiveEventInstanceId) {
-        setActiveEventInstanceId(intent.eventInstanceId);
+        setSelectedEventInstanceId(intent.eventInstanceId);
       }
       return;
     }
