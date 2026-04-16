@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useCollateralWorkspaceReadModel } from "@/components/app-read-models";
@@ -57,6 +57,7 @@ type CollateralQuickAddScope = "event-wide" | "linked";
 
 type CollateralUiStatus = "Backlog" | "In Progress" | "Waiting" | "Done";
 type CollateralEditorTab = "details" | "production" | "notes";
+type CollateralEditorFocusTarget = "blockedBy" | null;
 
 const COLLATERAL_UI_STATUS_OPTIONS: readonly CollateralUiStatus[] = [
   "Backlog",
@@ -105,9 +106,11 @@ export function CollateralView({
   const [quickAddScope, setQuickAddScope] = useState<CollateralQuickAddScope>("event-wide");
   const [quickAddSubEventId, setQuickAddSubEventId] = useState("");
   const [activeEditorTab, setActiveEditorTab] = useState<CollateralEditorTab>("details");
+  const [pendingEditorFocusTarget, setPendingEditorFocusTarget] = useState<CollateralEditorFocusTarget>(null);
   const [selectedEventInstanceId, setSelectedEventInstanceId] = useState(
     () => initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? activeEventInstanceId
   );
+  const blockedByInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingOpenIntent, setPendingOpenIntent] = useState<PendingCollateralOpenIntent>(() => ({
     collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
     eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
@@ -375,6 +378,20 @@ export function CollateralView({
   }, [selectedItem?.id]);
 
   useEffect(() => {
+    if (pendingEditorFocusTarget !== "blockedBy" || activeEditorTab !== "details" || !selectedItem) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      blockedByInputRef.current?.focus();
+      blockedByInputRef.current?.select();
+      setPendingEditorFocusTarget(null);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeEditorTab, pendingEditorFocusTarget, selectedItem]);
+
+  useEffect(() => {
     if (!selectedItem) {
       return;
     }
@@ -596,6 +613,14 @@ export function CollateralView({
     patchCollateralItem(item.id, {
       status: getStoredCollateralStatusForUi(uiStatus, item.status)
     });
+
+    if (uiStatus !== "Waiting") {
+      return;
+    }
+
+    setActiveEditorTab("details");
+    setPendingEditorFocusTarget("blockedBy");
+    setSelectedId((current) => (current === item.id ? current : item.id));
   }
 
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
@@ -1183,6 +1208,7 @@ export function CollateralView({
                           <label htmlFor="collateral-blocked-by">Blocked By</label>
                           <input
                             id="collateral-blocked-by"
+                            ref={blockedByInputRef}
                             onChange={(event) => patchCollateralItem(selectedItem.id, { blockedBy: event.target.value })}
                             placeholder="Optional blocker"
                             value={selectedItem.blockedBy}

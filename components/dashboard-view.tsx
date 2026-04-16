@@ -547,7 +547,18 @@ export function DashboardView() {
         <div className="dashboard-card-slot dashboard-card-slot--load">
           <div className="card card--secondary">
             <div className="card__title">UPCOMING LOAD</div>
-            <div className="load-section-label">Next 14 Days</div>
+            <div className="load-section-header">
+              <div className="load-section-label">Next 14 Days</div>
+              {dashboardSummary.overdue > 0 ? (
+                <button
+                  className="load-overdue-indicator"
+                  onClick={() => router.push("/action?filter=overdue")}
+                  type="button"
+                >
+                  + {dashboardSummary.overdue} overdue
+                </button>
+              ) : null}
+            </div>
             <div className="load-grid" aria-label="Load over the next 14 days">
               {dashboardSummary.overviewLoadRows.map((row, rowIndex) => (
                 <div className="load-grid__row" key={`row-${rowIndex}`}>

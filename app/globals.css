@@ -2745,12 +2745,35 @@ textarea {
 }
 
 .load-section-label {
-  margin-bottom: 8px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #788696;
+}
+
+.load-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.load-overdue-indicator {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #9b3412;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.load-overdue-indicator:hover,
+.load-overdue-indicator:focus-visible {
+  color: #7c2d12;
+  text-decoration: underline;
 }
 
 .simple-row--stacked {
