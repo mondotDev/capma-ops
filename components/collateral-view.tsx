@@ -6,13 +6,7 @@ import { ActionItemNotesPanel } from "@/components/action-item-notes-panel";
 import { useCollateralWorkspaceReadModel } from "@/components/app-read-models";
 import { type CollateralProfileDeadlineFilter } from "@/components/collateral-profile-card";
 import { type CollateralSummaryFilter } from "@/components/collateral-summary-strip";
-import {
-  useAppActions,
-  useAppStateValues,
-  type CreateEventInstanceInput
-} from "@/components/app-state";
-import { EventInstanceCreateModal } from "@/components/event-instance-create-modal";
-import { EventInstanceTemplatePrompt } from "@/components/event-instance-template-prompt";
+import { useAppActions, useAppStateValues } from "@/components/app-state";
 import {
   COLLATERAL_PRINTER_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
@@ -28,10 +22,6 @@ import {
   setCollateralCreateTraceId,
   traceCollateralCreate
 } from "@/lib/collateral-create-trace";
-import { getDefaultTemplatePackForEventType } from "@/lib/collateral-templates";
-import {
-  getAvailableEventTypeDefinitions
-} from "@/lib/event-type-definitions";
 import {
   createActionNoteEntry,
   formatShortDate,
@@ -48,7 +38,6 @@ import { resolveActiveEventInstanceId } from "@/lib/event-instances";
 
 type PendingDraftDiscardIntent =
   | { type: "switch"; nextEventInstanceId: string }
-  | { type: "createInstance" }
   | { type: "sponsorPromotion"; actionItemId: string; eventInstanceId: string }
   | null;
 
@@ -92,18 +81,13 @@ export function CollateralView({
   const {
     addCollateralItem,
     applyDefaultTemplateToInstance,
-    createEventInstance,
     deleteCollateralItem,
     ensureEventInstanceUnassignedSubEvent,
-    setActiveEventInstanceId,
     updateCollateralItem
   } = useAppActions();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isCreateInstanceOpen, setIsCreateInstanceOpen] = useState(false);
-  const [pendingTemplateInstanceId, setPendingTemplateInstanceId] = useState<string | null>(null);
-  const [pendingCreateInstanceInput, setPendingCreateInstanceInput] = useState<CreateEventInstanceInput | null>(null);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [draftCollateralItem, setDraftCollateralItem] = useState<CollateralItem | null>(null);
@@ -170,7 +154,6 @@ export function CollateralView({
           sponsorshipSetupByInstance[resolvedActiveEventInstanceId]
         )
       : null;
-  const creatableEventTypeDefinitions = useMemo(() => getAvailableEventTypeDefinitions(eventPrograms), [eventPrograms]);
   const eventTypeNameById = useMemo(
     () => new Map(eventPrograms.map((eventProgram) => [eventProgram.id, eventProgram.name])),
     [eventPrograms]
@@ -446,10 +429,6 @@ export function CollateralView({
     visibleInstanceItems
   ]);
 
-  const pendingTemplateInstance =
-    pendingTemplateInstanceId
-      ? eventInstances.find((instance) => instance.id === pendingTemplateInstanceId) ?? null
-      : null;
   const hasAppliedTemplateItems = workspaceBundle.hasAppliedTemplateItems;
   const hasActiveCollateralFilters = showArchived;
   const hasUnsavedDraftCollateral = Boolean(draftCollateralItem);
@@ -500,55 +479,6 @@ export function CollateralView({
     setSelectedId(nextId);
     setCollateralCreateTraceId(nextId);
     closeQuickAddModal();
-  }
-
-  function openCreateInstanceModal() {
-    setSetupFeedback("");
-    setIsCreateInstanceOpen(true);
-  }
-
-  function closeCreateInstanceModal() {
-    setIsCreateInstanceOpen(false);
-    setPendingCreateInstanceInput(null);
-  }
-
-  function finishCreateInstance(input: CreateEventInstanceInput) {
-    const nextId = createEventInstance(input);
-    setSelectedEventInstanceId(nextId);
-    setSelectedId(null);
-    closeCreateInstanceModal();
-    setSetupFeedback(`${input.instanceName.trim()} created. Choose whether to start with the default template or an empty instance.`);
-
-    if (getDefaultTemplatePackForEventType(input.eventTypeId)) {
-      setPendingTemplateInstanceId(nextId);
-    } else {
-      setSetupFeedback(`${input.instanceName.trim()} created and set as the active event instance.`);
-    }
-  }
-
-  function handleCreateInstance(input: CreateEventInstanceInput) {
-    if (hasUnsavedDraftCollateral) {
-      setPendingDraftDiscardIntent({ type: "createInstance" });
-      setPendingCreateInstanceInput(input);
-      return;
-    }
-
-    finishCreateInstance(input);
-  }
-
-  function handleConfirmTemplateApply() {
-    if (!pendingTemplateInstanceId) {
-      return;
-    }
-
-    applyDefaultTemplateToInstance(pendingTemplateInstanceId);
-    setSetupFeedback(`${pendingTemplateInstance?.name ?? "Event instance"} is ready with its default template applied.`);
-    setPendingTemplateInstanceId(null);
-  }
-
-  function handleSkipTemplateApply() {
-    setSetupFeedback(`${pendingTemplateInstance?.name ?? "Event instance"} is active and ready to start empty.`);
-    setPendingTemplateInstanceId(null);
   }
 
   function addNote(item: CollateralItem) {
@@ -683,9 +613,6 @@ export function CollateralView({
   }
 
   function handleCancelDraftDiscardIntent() {
-    if (pendingDraftDiscardIntent?.type === "createInstance") {
-      setPendingCreateInstanceInput(null);
-    }
     if (pendingDraftDiscardIntent?.type === "sponsorPromotion") {
       setPendingSponsorPromotionIntent(null);
     }
@@ -718,10 +645,6 @@ export function CollateralView({
       return;
     }
 
-    if (pendingCreateInstanceInput) {
-      finishCreateInstance(pendingCreateInstanceInput);
-      setPendingCreateInstanceInput(null);
-    }
   }
 
   return (
@@ -792,9 +715,6 @@ export function CollateralView({
                     Apply Default Template
                   </button>
                 ) : null}
-                <button className="button-link button-link--inline-secondary" onClick={openCreateInstanceModal} type="button">
-                  Quick Create Instance
-                </button>
               </div>
             </div>
             <div className="collateral-list-toolbar">
@@ -1434,19 +1354,6 @@ export function CollateralView({
         ) : null}
       </div>
 
-      <EventInstanceCreateModal
-        availableEventTypeDefinitions={creatableEventTypeDefinitions}
-        isOpen={isCreateInstanceOpen}
-        onClose={closeCreateInstanceModal}
-        onCreate={handleCreateInstance}
-      />
-      <EventInstanceTemplatePrompt
-        instanceName={pendingTemplateInstance?.name ?? "New event instance"}
-        isOpen={Boolean(pendingTemplateInstance)}
-        onApply={handleConfirmTemplateApply}
-        onSkip={handleSkipTemplateApply}
-      />
-
       {isQuickAddOpen ? (
         <div className="modal-layer" role="presentation">
           <button
@@ -1543,7 +1450,7 @@ export function CollateralView({
                       ? "Switching event context will discard the new collateral item you have not saved yet."
                       : pendingDraftDiscardIntent.type === "sponsorPromotion"
                         ? "Creating a collateral draft from sponsor work will discard the new collateral item you have not saved yet."
-                        : "Creating a new event instance will switch context and discard the new collateral item you have not saved yet."}
+                        : ""}
                   </p>
                 </div>
               </div>
