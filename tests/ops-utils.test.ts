@@ -743,13 +743,14 @@ test("persisted collateral state remaps known sub-event aliases onto the canonic
 
 test("action view collateral status contract stays explicit and narrow", () => {
   assert.deepEqual(ACTION_VIEW_COLLATERAL_STATUS_OPTIONS, [
+    "Backlog",
     "In Design",
     "Waiting",
     "Blocked",
     "Ready for Print"
   ]);
   assert.equal(isActionViewCollateralStatus("In Design"), true);
-  assert.equal(isActionViewCollateralStatus("Backlog"), false);
+  assert.equal(isActionViewCollateralStatus("Backlog"), true);
   assert.equal(isActionViewCollateralStatus("Sent to Printer"), false);
 });
 
@@ -942,7 +943,7 @@ test("collateral execution rows surface only qualifying statuses for the active 
     eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
   });
 
-  assert.deepEqual(rows.map((row) => row.collateralId).sort(), ["a", "b"]);
+  assert.deepEqual(rows.map((row) => row.collateralId).sort(), ["a", "b", "c"]);
 });
 
 test("non-surfaced collateral statuses remain collateral-only in action view", () => {
@@ -956,7 +957,6 @@ test("non-surfaced collateral statuses remain collateral-only in action view", (
     activeLens: "all",
     activeQuery: "",
     collateralItems: [
-      createCollateralItem({ id: "backlog", status: "Backlog" }),
       createCollateralItem({ id: "sent", status: "Sent to Printer" }),
       createCollateralItem({ id: "complete", status: "Complete" }),
       createCollateralItem({ id: "cut", status: "Cut" })
@@ -979,6 +979,42 @@ test("non-surfaced collateral statuses remain collateral-only in action view", (
   });
 
   assert.deepEqual(rows, []);
+});
+
+test("backlog collateral rows remain due-date filterable once included in action view", () => {
+  const rows = getVisibleCollateralExecutionRows({
+    activeDueDate: "2026-04-10",
+    activeEventGroup: "all",
+    activeEventInstanceId: "legislative-day-2026",
+    activeFilter: "all",
+    activeFocus: "all",
+    activeIssue: "",
+    activeLens: "all",
+    activeQuery: "",
+    collateralItems: [
+      createCollateralItem({ id: "backlog-match", status: "Backlog", dueDate: "2026-04-10" }),
+      createCollateralItem({ id: "backlog-other-date", status: "Backlog", dueDate: "2026-04-11" }),
+      createCollateralItem({ id: "in-design-match", status: "In Design", dueDate: "2026-04-10" }),
+      createCollateralItem({ id: "sent-match", status: "Sent to Printer", dueDate: "2026-04-10" })
+    ],
+    eventInstances: [
+      {
+        id: "legislative-day-2026",
+        eventTypeId: "legislative-day",
+        name: "Legislative Day 2026",
+        dateMode: "range",
+        dates: ["2026-04-21", "2026-04-23"],
+        startDate: "2026-04-21",
+        endDate: "2026-04-23"
+      }
+    ],
+    eventSubEvents: [
+      { id: "leg-day-legislative-visits", eventInstanceId: "legislative-day-2026", name: "Legislative Visits", sortOrder: 10 }
+    ],
+    eventTypes: [{ id: "legislative-day", name: "Legislative Day", familyId: "legislative-advocacy" }]
+  });
+
+  assert.deepEqual(rows.map((row) => row.collateralId).sort(), ["backlog-match", "in-design-match"]);
 });
 
 test("archived collateral execution items do not reappear in action view even if their status is execution-visible", () => {
@@ -2940,7 +2976,7 @@ test("dashboard read-side summary returns live counts and preview-ready aggregat
   );
 
   assert.equal(summary.overdue, 1);
-  assert.equal(summary.dueSoon, 3);
+  assert.equal(summary.dueSoon, 4);
   assert.equal(summary.blockedCount, 1);
   assert.equal(summary.overviewLoadRows.length, 2);
   assert.equal(summary.workstreamSummaryRows.length > 0, true);
@@ -2974,7 +3010,7 @@ test("dashboard urgent preview query returns preview-ready urgent rows", () => {
           dueDate: "2026-03-31"
         }),
         createCollateralItem({
-          id: "hidden-backlog-collateral",
+          id: "backlog-collateral",
           status: "Backlog",
           dueDate: "2026-03-31"
         })
@@ -2996,9 +3032,9 @@ test("dashboard urgent preview query returns preview-ready urgent rows", () => {
   assert.deepEqual(preview.map((item) => item.id), [
     "urgent-1",
     "collateral-execution-urgent-collateral",
-    "urgent-2"
+    "collateral-execution-backlog-collateral"
   ]);
-  assert.equal(preview.some((item) => item.id === "collateral-execution-hidden-backlog-collateral"), false);
+  assert.equal(preview.some((item) => item.id === "collateral-execution-backlog-collateral"), true);
   assert.equal(preview[0]?.title, "Urgent overdue item");
   assert.match(preview[0]?.meta ?? "", /Overdue/);
 });

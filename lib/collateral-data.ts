@@ -39,6 +39,7 @@ export type CollateralStatus = (typeof COLLATERAL_STATUS_OPTIONS)[number];
 // Action View intentionally surfaces only the execution-relevant subset of
 // collateral work. Full inventory and planning statuses stay in Collateral.
 export const ACTION_VIEW_COLLATERAL_STATUS_OPTIONS = [
+  "Backlog",
   "In Design",
   "Waiting",
   "Blocked",
