@@ -2141,7 +2141,6 @@ textarea {
 }
 
 .collateral-row {
-  appearance: none;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 14px;
   background: #ffffff;
@@ -2152,7 +2151,6 @@ textarea {
   width: 100%;
   padding: 12px 14px;
   text-align: left;
-  cursor: pointer;
 }
 
 .collateral-row--selected {
@@ -2192,6 +2190,18 @@ textarea {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.collateral-row__body {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+  cursor: pointer;
 }
 
 .collateral-row__title {
@@ -2247,6 +2257,12 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
   flex-shrink: 0;
+  align-items: center;
+}
+
+.collateral-row__status-control {
+  display: inline-flex;
+  align-items: center;
 }
 
 .collateral-status {
@@ -3099,6 +3115,13 @@ textarea {
 .group-title {
   font-size: 12px;
   font-weight: 700;
+}
+
+select.collateral-status {
+  appearance: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  padding-right: 28px;
 }
 
 .muted {
@@ -4201,6 +4224,35 @@ tr.blocked-row {
     linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
 }
 
+.collateral-editor-layer {
+  z-index: 45;
+}
+
+.collateral-editor-modal {
+  top: max(24px, calc(var(--topbar-height) + 8px));
+  right: 50%;
+  transform: translateX(50%);
+  width: min(1240px, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
+  height: min(calc(100vh - 48px), 920px);
+  border-radius: 22px;
+  box-shadow: 0 26px 60px rgba(15, 23, 42, 0.18);
+}
+
+.collateral-editor-modal__sticky {
+  padding: 18px 24px 14px;
+}
+
+.collateral-editor-modal__header {
+  gap: 12px;
+}
+
+.collateral-editor-modal__body {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px 28px 26px;
+}
+
 .drawer__header-text {
   min-width: 0;
 }
@@ -4372,18 +4424,18 @@ tr.blocked-row {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #6d7c8b;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .collateral-drawer__title {
-  font-size: 32px;
-  line-height: 1.05;
+  font-size: 26px;
+  line-height: 1.02;
   letter-spacing: -0.02em;
 }
 
 .collateral-drawer__title-input {
-  font-size: 32px;
-  line-height: 1.05;
+  font-size: 26px;
+  line-height: 1.02;
   letter-spacing: -0.02em;
 }
 
@@ -4391,7 +4443,7 @@ tr.blocked-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .collateral-drawer__meta-pill {
@@ -4411,7 +4463,15 @@ tr.blocked-row {
 }
 
 .collateral-drawer__grid--dense {
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.collateral-drawer__toggle {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: #fbfdff;
 }
 
 .collateral-drawer__blocked-field input {
@@ -4421,6 +4481,57 @@ tr.blocked-row {
 .drawer--collateral .collateral-drawer__group {
   gap: 12px;
   padding-top: 16px;
+}
+
+.drawer--collateral .collateral-drawer__group--notes {
+  padding-top: 8px;
+}
+
+.collateral-editor-tabs {
+  gap: 16px;
+}
+
+.collateral-editor-tabs__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(212, 221, 230, 0.9);
+}
+
+.drawer__actions-trigger--close {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.collateral-editor-tabs__tab {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #516273;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.collateral-editor-tabs__tab--active {
+  border-color: rgba(0, 59, 109, 0.22);
+  background: #eef5fb;
+  color: var(--accent);
+}
+
+.collateral-editor-tabs__panel {
+  display: grid;
+  gap: 14px;
+}
+
+.collateral-editor-tabs__panel--notes {
+  gap: 16px;
+}
+
+.collateral-editor-tabs__panel--notes .drawer-section--notes {
+  grid-column: 1;
 }
 
 .drawer--collateral .drawer__panel-title {
@@ -5135,6 +5246,18 @@ textarea,
 
   .drawer__grid--two-up,
   .drawer__grid--form {
+    grid-template-columns: 1fr;
+  }
+
+  .collateral-editor-modal {
+    width: min(100vw - 24px, 980px);
+    max-width: calc(100vw - 24px);
+    height: min(calc(100vh - 32px), 860px);
+    top: 16px;
+  }
+
+  .collateral-editor-modal__body,
+  .collateral-drawer__grid--dense {
     grid-template-columns: 1fr;
   }
 

@@ -67,6 +67,7 @@ const DRAFT_COLLATERAL_ID = "__draft-collateral__";
 type CollateralQuickAddScope = "event-wide" | "linked";
 
 type CollateralUiStatus = "Backlog" | "In Progress" | "Waiting" | "Done";
+type CollateralEditorTab = "details" | "production" | "notes";
 
 const COLLATERAL_UI_STATUS_OPTIONS: readonly CollateralUiStatus[] = [
   "Backlog",
@@ -119,6 +120,7 @@ export function CollateralView({
   const [quickAddName, setQuickAddName] = useState("");
   const [quickAddScope, setQuickAddScope] = useState<CollateralQuickAddScope>("event-wide");
   const [quickAddSubEventId, setQuickAddSubEventId] = useState("");
+  const [activeEditorTab, setActiveEditorTab] = useState<CollateralEditorTab>("details");
   const [selectedEventInstanceId, setSelectedEventInstanceId] = useState(
     () => initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? activeEventInstanceId
   );
@@ -386,6 +388,25 @@ export function CollateralView({
   }, [selectedItem?.id, selectedItem?.itemName]);
 
   useEffect(() => {
+    setActiveEditorTab("details");
+  }, [selectedItem?.id]);
+
+  useEffect(() => {
+    if (!selectedItem) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedId(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedItem]);
+
+  useEffect(() => {
     const traceId = getCollateralCreateTraceId();
 
     if (!traceId) {
@@ -641,6 +662,12 @@ export function CollateralView({
     setShowArchived(false);
   }
 
+  function updateCollateralUiStatus(item: CollateralItem, uiStatus: CollateralUiStatus) {
+    patchCollateralItem(item.id, {
+      status: getStoredCollateralStatusForUi(uiStatus, item.status)
+    });
+  }
+
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
     if (nextEventInstanceId === resolvedActiveEventInstanceId) {
       return;
@@ -840,40 +867,58 @@ export function CollateralView({
                       ? "Event-wide"
                       : subEventNameById.get(item.subEventId) ?? "Linked sub-event";
 
-                  return (
-                    <button
-                      className={getCollateralRowClassName(item, isSelected)}
-                      key={item.id}
-                      onClick={() => setSelectedId(item.id)}
-                      type="button"
-                    >
-                      <div className="collateral-row__main">
-                        <div className="collateral-row__title">{item.itemName}</div>
-                        <div className="collateral-row__meta">
-                          <span>{scopeLabel}</span>
-                          {item.owner ? (
-                            <span>Owner: {item.owner}</span>
-                          ) : (
-                            <span className="collateral-row__meta-flag collateral-row__meta-flag--unassigned">
-                              No owner assigned
-                            </span>
-                          )}
-                          {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
-                          <span>{item.dueDate ? `Due ${formatShortDate(item.dueDate)}` : "No due date"}</span>
+                    return (
+                      <div
+                        className={getCollateralRowClassName(item, isSelected)}
+                        key={item.id}
+                      >
+                        <button
+                          className="collateral-row__body"
+                          onClick={() => setSelectedId(item.id)}
+                          type="button"
+                        >
+                          <div className="collateral-row__main">
+                            <div className="collateral-row__title">{item.itemName}</div>
+                            <div className="collateral-row__meta">
+                              <span>{scopeLabel}</span>
+                              {item.owner ? (
+                                <span>Owner: {item.owner}</span>
+                              ) : (
+                                <span className="collateral-row__meta-flag collateral-row__meta-flag--unassigned">
+                                  No owner assigned
+                                </span>
+                              )}
+                              {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
+                              <span>{item.dueDate ? `Due ${formatShortDate(item.dueDate)}` : "No due date"}</span>
+                            </div>
+                            {item.notes?.trim() ? (
+                              <div className="collateral-row__supporting">{item.notes.trim()}</div>
+                            ) : item.fileLink?.trim() ? (
+                              <div className="collateral-row__supporting">{item.fileLink.trim()}</div>
+                            ) : null}
+                          </div>
+                        </button>
+                        <div className="collateral-row__signals">
+                          <label className="collateral-row__status-control">
+                            <span className="sr-only">Update status for {item.itemName}</span>
+                            <select
+                              aria-label={`Status for ${item.itemName}`}
+                              className={getCollateralStatusClassName(item)}
+                              onChange={(event) => updateCollateralUiStatus(item, event.target.value as CollateralUiStatus)}
+                              value={getCollateralUiStatus(item.status)}
+                            >
+                              {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
-                        {item.notes?.trim() ? (
-                          <div className="collateral-row__supporting">{item.notes.trim()}</div>
-                        ) : item.fileLink?.trim() ? (
-                          <div className="collateral-row__supporting">{item.fileLink.trim()}</div>
-                        ) : null}
                       </div>
-                      <div className="collateral-row__signals">
-                        <span className={getCollateralStatusClassName(item)}>{getCollateralUiStatus(item.status)}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
             )}
             {completedListItems.length > 0 ? (
               <section className="collateral-completed-section" aria-labelledby="collateral-completed-title">
@@ -897,28 +942,46 @@ export function CollateralView({
                         : subEventNameById.get(item.subEventId) ?? "Linked sub-event";
 
                     return (
-                      <button
+                      <div
                         className={getCollateralRowClassName(item, isSelected, "completed")}
                         key={item.id}
-                        onClick={() => setSelectedId(item.id)}
-                        type="button"
                       >
-                        <div className="collateral-row__main">
-                          <div className="collateral-row__title">{item.itemName}</div>
-                          <div className="collateral-row__meta">
-                            <span>{scopeLabel}</span>
-                            {item.owner ? <span>Owner: {item.owner}</span> : null}
-                            {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
-                            <span>{item.status}</span>
+                        <button
+                          className="collateral-row__body"
+                          onClick={() => setSelectedId(item.id)}
+                          type="button"
+                        >
+                          <div className="collateral-row__main">
+                            <div className="collateral-row__title">{item.itemName}</div>
+                            <div className="collateral-row__meta">
+                              <span>{scopeLabel}</span>
+                              {item.owner ? <span>Owner: {item.owner}</span> : null}
+                              {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
+                              <span>{item.status}</span>
+                            </div>
+                            {item.notes?.trim() ? (
+                              <div className="collateral-row__supporting">{item.notes.trim()}</div>
+                            ) : null}
                           </div>
-                          {item.notes?.trim() ? (
-                            <div className="collateral-row__supporting">{item.notes.trim()}</div>
-                          ) : null}
-                        </div>
+                        </button>
                         <div className="collateral-row__signals">
-                          <span className={getCollateralStatusClassName(item)}>{item.status}</span>
+                          <label className="collateral-row__status-control">
+                            <span className="sr-only">Update status for {item.itemName}</span>
+                            <select
+                              aria-label={`Status for ${item.itemName}`}
+                              className={getCollateralStatusClassName(item)}
+                              onChange={(event) => updateCollateralUiStatus(item, event.target.value as CollateralUiStatus)}
+                              value={getCollateralUiStatus(item.status)}
+                            >
+                              {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -928,11 +991,22 @@ export function CollateralView({
         </div>
 
         {selectedItem ? (
-          <aside className="drawer drawer--collateral" aria-label="Collateral details">
-            <div className="drawer__sticky">
-            <div className="drawer__header">
+          <div className="modal-layer collateral-editor-layer" role="presentation">
+            <button
+              aria-label="Close collateral editor"
+              className="modal-backdrop collateral-editor-backdrop"
+              onClick={() => setSelectedId(null)}
+              type="button"
+            />
+            <section
+              aria-label="Collateral details"
+              aria-modal="true"
+              className="drawer drawer--collateral collateral-editor-modal"
+              role="dialog"
+            >
+            <div className="drawer__sticky collateral-editor-modal__sticky">
+            <div className="drawer__header collateral-editor-modal__header">
               <div className="drawer__header-text">
-                <div className="collateral-drawer__eyebrow">Collateral item</div>
                 {isEditingTitle ? (
                   <input
                     aria-label="Edit collateral item title"
@@ -998,6 +1072,14 @@ export function CollateralView({
                 ) : null}
               </div>
               <div className="drawer__header-actions">
+                <button
+                  aria-label="Close collateral editor"
+                  className="drawer__actions-trigger drawer__actions-trigger--close"
+                  onClick={() => setSelectedId(null)}
+                  type="button"
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
                 <div className="drawer__actions-menu">
                   <button
                     aria-expanded={isActionsMenuOpen}
@@ -1025,216 +1107,265 @@ export function CollateralView({
                     </div>
                   ) : null}
                 </div>
-                <button className="button-link" onClick={() => setSelectedId(null)} type="button">
-                  Close
-                </button>
               </div>
             </div>
             </div>
 
-            <div className="drawer__sections">
-              <section className="drawer-section drawer-section--form collateral-drawer">
-                <div className="collateral-drawer__group">
-                  <div className="drawer__panel-title">Event-Owned Collateral</div>
-                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
-                    <div className="field field--wide">
-                      <label htmlFor="collateral-item-name">Item Name</label>
-                      <input
-                        id="collateral-item-name"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { itemName: event.target.value })}
-                        value={selectedItem.itemName}
-                      />
-                    </div>
-                    <div className="field field--secondary">
-                      <label htmlFor="collateral-scope">Scope</label>
-                      <select
-                        id="collateral-scope"
-                        onChange={(event) =>
-                          patchCollateralItem(selectedItem.id, {
-                            subEventId:
-                              event.target.value === "event-wide"
-                                ? emptySubEventId
-                                : selectedSubEventOptions.find((subEvent) => subEvent.id !== emptySubEventId)?.id ?? emptySubEventId
-                          })
-                        }
-                        value={selectedItemScope}
-                      >
-                        <option value="event-wide">Event-wide</option>
-                        <option value="linked">Linked to sub-event</option>
-                      </select>
-                    </div>
-                    {selectedItemScope === "linked" ? (
-                      <div className="field field--secondary">
-                        <label htmlFor="collateral-sub-event">Linked Sub-Event</label>
-                        <select
-                          id="collateral-sub-event"
-                          onChange={(event) => patchCollateralItem(selectedItem.id, { subEventId: event.target.value })}
-                          value={selectedItem.subEventId}
-                        >
-                          {selectedSubEventOptions
-                            .filter((subEvent) => subEvent.id !== emptySubEventId)
-                            .map((subEvent) => (
-                              <option key={subEvent.id} value={subEvent.id}>
-                                {subEvent.name}
+            <div className="drawer__sections collateral-editor-modal__body">
+              <section className="drawer-section drawer-section--form collateral-drawer collateral-editor-tabs">
+                <div className="collateral-editor-tabs__nav" aria-label="Collateral editor sections" role="tablist">
+                  <button
+                    aria-selected={activeEditorTab === "details"}
+                    className={activeEditorTab === "details" ? "collateral-editor-tabs__tab collateral-editor-tabs__tab--active" : "collateral-editor-tabs__tab"}
+                    id="collateral-editor-tab-details"
+                    onClick={() => setActiveEditorTab("details")}
+                    role="tab"
+                    type="button"
+                  >
+                    Details
+                  </button>
+                  <button
+                    aria-selected={activeEditorTab === "production"}
+                    className={activeEditorTab === "production" ? "collateral-editor-tabs__tab collateral-editor-tabs__tab--active" : "collateral-editor-tabs__tab"}
+                    id="collateral-editor-tab-production"
+                    onClick={() => setActiveEditorTab("production")}
+                    role="tab"
+                    type="button"
+                  >
+                    Production
+                  </button>
+                  <button
+                    aria-selected={activeEditorTab === "notes"}
+                    className={activeEditorTab === "notes" ? "collateral-editor-tabs__tab collateral-editor-tabs__tab--active" : "collateral-editor-tabs__tab"}
+                    id="collateral-editor-tab-notes"
+                    onClick={() => setActiveEditorTab("notes")}
+                    role="tab"
+                    type="button"
+                  >
+                    Notes
+                  </button>
+                </div>
+
+                {activeEditorTab === "details" ? (
+                  <div
+                    aria-labelledby="collateral-editor-tab-details"
+                    className="collateral-editor-tabs__panel"
+                    role="tabpanel"
+                  >
+                    <div className="collateral-drawer__group">
+                      <div className="drawer__panel-title">Details</div>
+                      <div className="drawer__grid drawer__grid--form collateral-drawer__grid collateral-drawer__grid--dense">
+                        <div className="field field--wide">
+                          <label htmlFor="collateral-item-name">Item Name</label>
+                          <input
+                            id="collateral-item-name"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { itemName: event.target.value })}
+                            value={selectedItem.itemName}
+                          />
+                        </div>
+                        <div className="field field--secondary">
+                          <label htmlFor="collateral-scope">Scope</label>
+                          <select
+                            id="collateral-scope"
+                            onChange={(event) =>
+                              patchCollateralItem(selectedItem.id, {
+                                subEventId:
+                                  event.target.value === "event-wide"
+                                    ? emptySubEventId
+                                    : selectedSubEventOptions.find((subEvent) => subEvent.id !== emptySubEventId)?.id ?? emptySubEventId
+                              })
+                            }
+                            value={selectedItemScope}
+                          >
+                            <option value="event-wide">Event-wide</option>
+                            <option value="linked">Linked to sub-event</option>
+                          </select>
+                        </div>
+                        {selectedItemScope === "linked" ? (
+                          <div className="field field--secondary">
+                            <label htmlFor="collateral-sub-event">Linked Sub-Event</label>
+                            <select
+                              id="collateral-sub-event"
+                              onChange={(event) => patchCollateralItem(selectedItem.id, { subEventId: event.target.value })}
+                              value={selectedItem.subEventId}
+                            >
+                              {selectedSubEventOptions
+                                .filter((subEvent) => subEvent.id !== emptySubEventId)
+                                .map((subEvent) => (
+                                  <option key={subEvent.id} value={subEvent.id}>
+                                    {subEvent.name}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        ) : null}
+                        <div className="field field--priority">
+                          <label htmlFor="collateral-status">Status</label>
+                          <select
+                            id="collateral-status"
+                            onChange={(event) =>
+                              patchCollateralItem(selectedItem.id, {
+                                status: getStoredCollateralStatusForUi(
+                                  event.target.value as CollateralUiStatus,
+                                  selectedItem.status
+                                )
+                              })
+                            }
+                            value={getCollateralUiStatus(selectedItem.status)}
+                          >
+                            {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
                               </option>
                             ))}
-                        </select>
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label htmlFor="collateral-owner">Owner</label>
+                          <select
+                            id="collateral-owner"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { owner: event.target.value })}
+                            value={selectedItem.owner}
+                          >
+                            <option value="">No owner assigned</option>
+                            {getOwnerOptions(selectedItem.owner || defaultOwnerForNewItems).map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field field--priority">
+                          <label htmlFor="collateral-due-date">Due Date</label>
+                          <input
+                            id="collateral-due-date"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { dueDate: event.target.value })}
+                            type="date"
+                            value={selectedItem.dueDate}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="collateral-printer">Printer</label>
+                          <select
+                            id="collateral-printer"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { printer: event.target.value })}
+                            value={selectedItem.printer}
+                          >
+                            <option value="">Select printer</option>
+                            {COLLATERAL_PRINTER_OPTIONS.filter((option) => option.length > 0).map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field field--wide collateral-drawer__blocked-field">
+                          <label htmlFor="collateral-blocked-by">Blocked By</label>
+                          <input
+                            id="collateral-blocked-by"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { blockedBy: event.target.value })}
+                            placeholder="Optional blocker"
+                            value={selectedItem.blockedBy}
+                          />
+                        </div>
                       </div>
-                    ) : null}
-                    <div className="field field--priority">
-                      <label htmlFor="collateral-status">Status</label>
-                      <select
-                        id="collateral-status"
-                        onChange={(event) =>
-                          patchCollateralItem(selectedItem.id, {
-                            status: getStoredCollateralStatusForUi(
-                              event.target.value as CollateralUiStatus,
-                              selectedItem.status
-                            )
-                          })
-                        }
-                        value={getCollateralUiStatus(selectedItem.status)}
-                      >
-                        {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field field--wide">
-                      <label htmlFor="collateral-notes">Notes</label>
-                      <textarea
-                        id="collateral-notes"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { notes: event.target.value })}
-                        placeholder="Add production context, specs, or handoff notes."
-                        rows={3}
-                        value={selectedItem.notes ?? ""}
-                      />
                     </div>
                   </div>
-                </div>
+                ) : null}
 
-                <div className="collateral-drawer__group">
-                  <div className="drawer__panel-title">Sponsor Inputs</div>
-                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
-                    <label className="toggle">
-                      <input
-                        checked={selectedItem.requiresLogo === true}
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { requiresLogo: event.target.checked })}
-                        type="checkbox"
-                      />
-                      <span>Requires Logo</span>
-                    </label>
-                    <label className="toggle">
-                      <input
-                        checked={selectedItem.requiresCopy === true}
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { requiresCopy: event.target.checked })}
-                        type="checkbox"
-                      />
-                      <span>Requires Copy</span>
-                    </label>
-                    <label className="toggle">
-                      <input
-                        checked={selectedItem.requiresApproval === true}
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { requiresApproval: event.target.checked })}
-                        type="checkbox"
-                      />
-                      <span>Requires Approval</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="collateral-drawer__group">
-                  <div className="drawer__panel-title">Execution</div>
-                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid collateral-drawer__grid--dense">
-                    <div className="field">
-                      <label htmlFor="collateral-owner">Owner</label>
-                      <select
-                        id="collateral-owner"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { owner: event.target.value })}
-                        value={selectedItem.owner}
-                      >
-                        <option value="">No owner assigned</option>
-                        {getOwnerOptions(selectedItem.owner || defaultOwnerForNewItems).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field field--priority">
-                      <label htmlFor="collateral-due-date">Due Date</label>
-                      <input
-                        id="collateral-due-date"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { dueDate: event.target.value })}
-                        type="date"
-                        value={selectedItem.dueDate}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="collateral-printer">Printer</label>
-                      <select
-                        id="collateral-printer"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { printer: event.target.value })}
-                        value={selectedItem.printer}
-                      >
-                        <option value="">Select printer</option>
-                        {COLLATERAL_PRINTER_OPTIONS.filter((option) => option.length > 0).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field field--wide collateral-drawer__blocked-field">
-                      <label htmlFor="collateral-blocked-by">Blocked By</label>
-                      <input
-                        id="collateral-blocked-by"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { blockedBy: event.target.value })}
-                        placeholder="Optional blocker"
-                        value={selectedItem.blockedBy}
-                      />
+                {activeEditorTab === "production" ? (
+                  <div
+                    aria-labelledby="collateral-editor-tab-production"
+                    className="collateral-editor-tabs__panel"
+                    role="tabpanel"
+                  >
+                    <div className="collateral-drawer__group">
+                      <div className="drawer__panel-title">Production</div>
+                      <div className="drawer__grid drawer__grid--form collateral-drawer__grid collateral-drawer__grid--dense">
+                        <div className="field">
+                          <label htmlFor="collateral-quantity">Qty</label>
+                          <input
+                            id="collateral-quantity"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { quantity: event.target.value })}
+                            value={selectedItem.quantity}
+                          />
+                        </div>
+                        <div className="field field--wide">
+                          <label htmlFor="collateral-update-type">Update Type</label>
+                          <select
+                            id="collateral-update-type"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { updateType: event.target.value })}
+                            value={selectedItem.updateType}
+                          >
+                            <option value="">Select update type</option>
+                            {COLLATERAL_UPDATE_TYPE_OPTIONS.filter((option) => option.length > 0).map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <label className="toggle collateral-drawer__toggle">
+                          <input
+                            checked={selectedItem.requiresLogo === true}
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { requiresLogo: event.target.checked })}
+                            type="checkbox"
+                          />
+                          <span>Requires Logo</span>
+                        </label>
+                        <label className="toggle collateral-drawer__toggle">
+                          <input
+                            checked={selectedItem.requiresCopy === true}
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { requiresCopy: event.target.checked })}
+                            type="checkbox"
+                          />
+                          <span>Requires Copy</span>
+                        </label>
+                        <label className="toggle collateral-drawer__toggle">
+                          <input
+                            checked={selectedItem.requiresApproval === true}
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { requiresApproval: event.target.checked })}
+                            type="checkbox"
+                          />
+                          <span>Requires Approval</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : null}
 
-                <div className="collateral-drawer__group">
-                  <div className="drawer__panel-title">Production</div>
-                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid collateral-drawer__grid--dense">
-                    <div className="field">
-                      <label htmlFor="collateral-quantity">Qty</label>
-                      <input
-                        id="collateral-quantity"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { quantity: event.target.value })}
-                        value={selectedItem.quantity}
-                      />
+                {activeEditorTab === "notes" ? (
+                  <div
+                    aria-labelledby="collateral-editor-tab-notes"
+                    className="collateral-editor-tabs__panel collateral-editor-tabs__panel--notes"
+                    role="tabpanel"
+                  >
+                    <div className="collateral-drawer__group collateral-drawer__group--notes">
+                      <div className="drawer__panel-title">Notes</div>
+                      <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
+                        <div className="field field--wide">
+                          <label htmlFor="collateral-notes">Notes</label>
+                          <textarea
+                            id="collateral-notes"
+                            onChange={(event) => patchCollateralItem(selectedItem.id, { notes: event.target.value })}
+                            placeholder="Add production context, specs, or handoff notes."
+                            rows={6}
+                            value={selectedItem.notes ?? ""}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="field field--wide">
-                      <label htmlFor="collateral-update-type">Update Type</label>
-                      <select
-                        id="collateral-update-type"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { updateType: event.target.value })}
-                        value={selectedItem.updateType}
-                      >
-                        <option value="">Select update type</option>
-                        {COLLATERAL_UPDATE_TYPE_OPTIONS.filter((option) => option.length > 0).map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <ActionItemNotesPanel
+                      noteDraft={noteDraft}
+                      noteEntries={selectedItem.noteEntries}
+                      onAddNote={() => addNote(selectedItem)}
+                      onNoteDraftChange={setNoteDraft}
+                      title="Note History"
+                      subtitle="Timestamped update log for this collateral item."
+                    />
                   </div>
-                </div>
-
+                ) : null}
               </section>
-              <ActionItemNotesPanel
-                noteDraft={noteDraft}
-                noteEntries={selectedItem.noteEntries}
-                onAddNote={() => addNote(selectedItem)}
-                onNoteDraftChange={setNoteDraft}
-              />
             </div>
             {isDeleteConfirmOpen ? (
               <div className="drawer__confirm-bar">
@@ -1298,7 +1429,8 @@ export function CollateralView({
                 </div>
               </div>
             ) : null}
-          </aside>
+            </section>
+          </div>
         ) : null}
       </div>
 
