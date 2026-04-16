@@ -1193,7 +1193,7 @@ test("completed collateral execution rows appear only when completed visibility 
 
   assert.deepEqual(hiddenByDefault, []);
   assert.deepEqual(shownWhenEnabled.map((row) => row.collateralId), ["completed-collateral"]);
-  assert.equal(getCollateralExecutionRowClassName(shownWhenEnabled[0]!), "cut-row");
+  assert.equal(getCollateralExecutionRowClassName(shownWhenEnabled[0]!), undefined);
 });
 
 test("action view rows merge native and collateral execution work into one urgency-sorted list", () => {
@@ -5394,10 +5394,10 @@ test("collateral instance list keeps completed items visible in a separate secti
     showArchived: false
   });
   assert.equal(completedVisibleByDefault.visibleInstanceItems.some((item) => item.id === "completed-collateral"), false);
-  assert.equal(completedVisibleByDefault.completedInstanceItems.some((item) => item.id === "completed-collateral"), true);
+  assert.equal(completedVisibleByDefault.closedHistoryItems.some((item) => item.id === "completed-collateral"), true);
 });
 
-test("collateral instance list shows cut history only when explicitly requested", () => {
+test("collateral instance list keeps cut items visible in closed history without counting them as complete", () => {
   const state = createDefaultAppStateData();
   const workspace = getCollateralEventInstanceWorkspaceBundle({
     activeEventInstanceId: "legislative-day-2026",
@@ -5415,7 +5415,7 @@ test("collateral instance list shows cut history only when explicitly requested"
     }
   )[0]!;
 
-  const hiddenByDefault = getCollateralInstanceListView({
+  const listView = getCollateralInstanceListView({
     collateralItems: [...state.collateralItems, archivedCut],
     resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
     instanceSubEvents: workspace.instanceSubEvents,
@@ -5425,19 +5425,28 @@ test("collateral instance list shows cut history only when explicitly requested"
     draftCollateralItem: null,
     showArchived: false
   });
-  const shownWhenRequested = getCollateralInstanceListView({
-    collateralItems: [...state.collateralItems, archivedCut],
-    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
-    instanceSubEvents: workspace.instanceSubEvents,
-    activeProfile: workspace.activeProfile,
-    activeSummaryFilter: "all",
-    activeProfileDeadlineFilter: "none",
-    draftCollateralItem: null,
-    showArchived: true
-  });
 
-  assert.equal(hiddenByDefault.completedInstanceItems.some((item) => item.id === "cut-collateral"), false);
-  assert.equal(shownWhenRequested.completedInstanceItems.some((item) => item.id === "cut-collateral"), true);
+  assert.equal(listView.visibleInstanceItems.some((item) => item.id === "cut-collateral"), false);
+  assert.equal(listView.closedHistoryItems.some((item) => item.id === "cut-collateral"), true);
+  assert.equal(listView.summary.active, state.collateralItems.filter((item) => !isCollateralArchived(item)).length);
+});
+
+test("collateral item normalization rejects unknown collateral statuses but accepts cut", () => {
+  assert.equal(
+    normalizeCollateralItem({
+      ...createCollateralItem({ status: "Cut" }),
+      status: "Cut"
+    })?.status,
+    "Cut"
+  );
+
+  assert.equal(
+    normalizeCollateralItem({
+      ...createCollateralItem(),
+      status: "Done"
+    } as unknown as Partial<CollateralItem> & { subEvent?: unknown }),
+    null
+  );
 });
 
 test("selected collateral workspace query returns selected item and sub-event options only for the active instance", () => {

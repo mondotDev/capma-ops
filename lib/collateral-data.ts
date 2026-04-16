@@ -36,6 +36,10 @@ export const COLLATERAL_PRINTER_OPTIONS = [
 
 export type CollateralStatus = (typeof COLLATERAL_STATUS_OPTIONS)[number];
 
+export function isCollateralStatus(value: string): value is CollateralStatus {
+  return COLLATERAL_STATUS_OPTIONS.some((option) => option === value);
+}
+
 // Action View intentionally surfaces only the execution-relevant subset of
 // collateral work. Full inventory and planning statuses stay in Collateral.
 export const ACTION_VIEW_COLLATERAL_STATUS_OPTIONS = [
@@ -211,6 +215,10 @@ export function normalizeCollateralItem(
     return null;
   }
 
+  if (!isCollateralStatus(item.status)) {
+    return null;
+  }
+
   const eventInstanceId =
     typeof item.eventInstanceId === "string" && item.eventInstanceId.length > 0
       ? item.eventInstanceId
@@ -238,7 +246,7 @@ export function normalizeCollateralItem(
     requiresLogo: item.requiresLogo === true,
     requiresCopy: item.requiresCopy === true,
     requiresApproval: item.requiresApproval === true,
-    status: item.status as CollateralStatus,
+    status: item.status,
     owner: typeof item.owner === "string" && item.owner.length > 0 ? item.owner : DEFAULT_OWNER,
     blockedBy: typeof item.blockedBy === "string" ? item.blockedBy : "",
     dueDate:

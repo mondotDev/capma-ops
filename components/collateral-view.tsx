@@ -8,6 +8,7 @@ import { type CollateralProfileDeadlineFilter } from "@/components/collateral-pr
 import { type CollateralSummaryFilter } from "@/components/collateral-summary-strip";
 import { useAppActions, useAppStateValues } from "@/components/app-state";
 import {
+  COLLATERAL_STATUS_OPTIONS,
   COLLATERAL_PRINTER_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
   isCollateralArchived,
@@ -15,6 +16,7 @@ import {
   isCollateralDueSoon,
   isCollateralOverdue,
   normalizeCollateralWorkflowStatus,
+  type CollateralStatus,
   type CollateralItem,
 } from "@/lib/collateral-data";
 import {
@@ -55,16 +57,8 @@ const DRAFT_COLLATERAL_ID = "__draft-collateral__";
 
 type CollateralQuickAddScope = "event-wide" | "linked";
 
-type CollateralUiStatus = "Backlog" | "In Progress" | "Waiting" | "Done";
 type CollateralEditorTab = "details" | "production" | "notes";
 type CollateralEditorFocusTarget = "blockedBy" | null;
-
-const COLLATERAL_UI_STATUS_OPTIONS: readonly CollateralUiStatus[] = [
-  "Backlog",
-  "In Progress",
-  "Waiting",
-  "Done"
-];
 
 export function CollateralView({
   initialEventInstanceId,
@@ -310,7 +304,7 @@ export function CollateralView({
 
   const instanceItems = collateralListView.instanceItems;
   const visibleInstanceItems = collateralListView.visibleInstanceItems;
-  const completedInstanceItems = collateralListView.completedInstanceItems;
+  const closedHistoryItems = collateralListView.closedHistoryItems;
   const selectedItem = selectedWorkspace.selectedItem;
   const subEventNameById = selectedWorkspace.subEventNameById;
   const selectedSubEventOptions = selectedWorkspace.subEventOptions;
@@ -342,9 +336,9 @@ export function CollateralView({
     }),
     [visibleInstanceItems]
   );
-  const completedListItems = useMemo(
-    () => [...completedInstanceItems],
-    [completedInstanceItems]
+  const closedHistoryListItems = useMemo(
+    () => [...closedHistoryItems],
+    [closedHistoryItems]
   );
 
   useEffect(() => {
@@ -609,12 +603,12 @@ export function CollateralView({
     setShowArchived(false);
   }
 
-  function updateCollateralUiStatus(item: CollateralItem, uiStatus: CollateralUiStatus) {
+  function updateCollateralStatus(item: CollateralItem, status: CollateralStatus) {
     patchCollateralItem(item.id, {
-      status: getStoredCollateralStatusForUi(uiStatus, item.status)
+      status
     });
 
-    if (uiStatus !== "Waiting") {
+    if (status !== "Waiting") {
       return;
     }
 
@@ -749,12 +743,12 @@ export function CollateralView({
                   onChange={(event) => setShowArchived(event.target.checked)}
                   type="checkbox"
                 />
-                <span>Show Cut History</span>
+                <span>Show Hidden History</span>
               </label>
             {hasActiveCollateralFilters ? (
               <div className="collateral-filter-context collateral-filter-context--inline">
                 <span>
-                  Showing cut history alongside completed collateral.
+                  Showing closed and other hidden collateral history alongside the active lane.
                 </span>
                 <button
                   className="button-link button-link--inline-secondary"
@@ -849,10 +843,10 @@ export function CollateralView({
                             <select
                               aria-label={`Status for ${item.itemName}`}
                               className={getCollateralStatusClassName(item)}
-                              onChange={(event) => updateCollateralUiStatus(item, event.target.value as CollateralUiStatus)}
-                              value={getCollateralUiStatus(item.status)}
+                              onChange={(event) => updateCollateralStatus(item, event.target.value as CollateralStatus)}
+                              value={item.status}
                             >
-                              {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
+                              {COLLATERAL_STATUS_OPTIONS.map((status) => (
                                 <option key={status} value={status}>
                                   {status}
                                 </option>
@@ -865,21 +859,21 @@ export function CollateralView({
                   })}
                 </div>
             )}
-            {completedListItems.length > 0 ? (
+            {closedHistoryListItems.length > 0 ? (
               <section className="collateral-completed-section" aria-labelledby="collateral-completed-title">
                 <div className="collateral-completed-section__header">
                   <div>
-                    <div className="card__title" id="collateral-completed-title">COMPLETED</div>
+                    <div className="card__title" id="collateral-completed-title">CLOSED & HIDDEN</div>
                     <div className="collateral-working-list__copy">
-                      Finished collateral stays visible here for reference without crowding the active working lane.
+                      Completed, cut, and other hidden collateral stays visible here for reference without crowding the active working lane.
                     </div>
                   </div>
                   <div className="collateral-completed-section__count">
-                    {completedListItems.length} item{completedListItems.length === 1 ? "" : "s"}
+                    {closedHistoryListItems.length} item{closedHistoryListItems.length === 1 ? "" : "s"}
                   </div>
                 </div>
                 <div className="collateral-list collateral-list--flat collateral-list--completed">
-                  {completedListItems.map((item) => {
+                  {closedHistoryListItems.map((item) => {
                     const isSelected = item.id === selectedId;
                     const scopeLabel =
                       getCollateralScope(item.subEventId, emptySubEventId) === "event-wide"
@@ -915,10 +909,10 @@ export function CollateralView({
                             <select
                               aria-label={`Status for ${item.itemName}`}
                               className={getCollateralStatusClassName(item)}
-                              onChange={(event) => updateCollateralUiStatus(item, event.target.value as CollateralUiStatus)}
-                              value={getCollateralUiStatus(item.status)}
+                              onChange={(event) => updateCollateralStatus(item, event.target.value as CollateralStatus)}
+                              value={item.status}
                             >
-                              {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
+                              {COLLATERAL_STATUS_OPTIONS.map((status) => (
                                 <option key={status} value={status}>
                                   {status}
                                 </option>
@@ -1150,15 +1144,12 @@ export function CollateralView({
                             id="collateral-status"
                             onChange={(event) =>
                               patchCollateralItem(selectedItem.id, {
-                                status: getStoredCollateralStatusForUi(
-                                  event.target.value as CollateralUiStatus,
-                                  selectedItem.status
-                                )
+                                status: event.target.value as CollateralStatus
                               })
                             }
-                            value={getCollateralUiStatus(selectedItem.status)}
+                            value={selectedItem.status}
                           >
-                            {COLLATERAL_UI_STATUS_OPTIONS.map((status) => (
+                            {COLLATERAL_STATUS_OPTIONS.map((status) => (
                               <option key={status} value={status}>
                                 {status}
                               </option>
@@ -1541,21 +1532,25 @@ function getCollateralRowClassName(
 }
 
 function getCollateralStatusClassName(item: CollateralItem) {
-  const uiStatus = getCollateralUiStatus(item.status);
+  const normalizedStatus = normalizeCollateralWorkflowStatus(item.status);
 
   if (isCollateralBlocked(item)) {
     return "collateral-status collateral-status--blocked";
   }
 
-  if (uiStatus === "Waiting") {
+  if (normalizedStatus === "waiting") {
     return "collateral-status collateral-status--waiting";
   }
 
-  if (uiStatus === "In Progress") {
+  if (normalizedStatus === "ready") {
+    return "collateral-status collateral-status--ready";
+  }
+
+  if (item.status === "In Design" || item.status === "Sent to Printer") {
     return "collateral-status collateral-status--progress";
   }
 
-  if (uiStatus === "Done") {
+  if (normalizedStatus === "complete" || normalizedStatus === "cut") {
     return "collateral-status collateral-status--terminal";
   }
 
@@ -1582,44 +1577,4 @@ function getCollateralScope(subEventId: string, emptySubEventId: string) {
   return subEventId === emptySubEventId ? "event-wide" : "linked";
 }
 
-function getCollateralUiStatus(status: CollateralItem["status"]): CollateralUiStatus {
-  const normalizedStatus = normalizeCollateralWorkflowStatus(status);
-
-  if (normalizedStatus === "complete" || normalizedStatus === "cut") {
-    return "Done";
-  }
-
-  if (normalizedStatus === "waiting" || isBlockedStatus(status)) {
-    return "Waiting";
-  }
-
-  if (status === "In Design" || status === "Ready for Print" || status === "Sent to Printer") {
-    return "In Progress";
-  }
-
-  return "Backlog";
-}
-
-function getStoredCollateralStatusForUi(
-  uiStatus: CollateralUiStatus,
-  currentStatus: CollateralItem["status"]
-): CollateralItem["status"] {
-  if (uiStatus === "Done") {
-    return "Complete";
-  }
-
-  if (uiStatus === "Waiting") {
-    return currentStatus === "Blocked" ? "Blocked" : "Waiting";
-  }
-
-  if (uiStatus === "In Progress") {
-    return currentStatus === "Ready for Print" || currentStatus === "Sent to Printer" ? currentStatus : "In Design";
-  }
-
-  return "Backlog";
-}
-
-function isBlockedStatus(status: CollateralItem["status"]) {
-  return status === "Blocked";
-}
 

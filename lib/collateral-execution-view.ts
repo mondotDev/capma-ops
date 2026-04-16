@@ -135,7 +135,7 @@ export function getVisibleCollateralExecutionRows(input: {
 }
 
 export function getCollateralExecutionRowClassName(row: CollateralExecutionRow) {
-  if (row.status === "Complete") {
+  if (row.status === "Cut") {
     return "cut-row";
   }
 

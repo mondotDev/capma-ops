@@ -83,7 +83,7 @@ export type CollateralWorkspaceSummary = {
 export type CollateralInstanceListView = {
   instanceItems: CollateralItem[];
   visibleInstanceItems: CollateralItem[];
-  completedInstanceItems: CollateralItem[];
+  closedHistoryItems: CollateralItem[];
   groupedItems: Array<readonly [string, CollateralItem[]]>;
   summary: CollateralWorkspaceSummary;
 };
@@ -208,11 +208,11 @@ export function getCollateralInstanceListView(input: {
       matchesCollateralProfileDeadlineFilter(item, input.activeProfile, input.activeProfileDeadlineFilter)
   );
   const groupedItems = groupCollateralItems(filteredVisibleItems, input.instanceSubEvents, subEventNameById);
-  const completedInstanceItems = sortCollateralItems(
+  const closedHistoryItems = sortCollateralItems(
     instanceItems.filter(
       (item) =>
-        isCollateralTerminalStatus(item.status) &&
-        (item.status === "Complete" || input.showArchived)
+        isCollateralTerminalStatus(item.status) ||
+        (input.showArchived && Boolean(item.archivedAt) && !isCollateralTerminalStatus(item.status))
     )
   );
   const atPrinterItems = activeItems.filter((item) => item.status === "Sent to Printer");
@@ -230,7 +230,7 @@ export function getCollateralInstanceListView(input: {
   return {
     instanceItems,
     visibleInstanceItems,
-    completedInstanceItems,
+    closedHistoryItems,
     groupedItems,
     summary: {
       active: activeItems.length,
