@@ -1984,6 +1984,33 @@ textarea {
   gap: 14px;
 }
 
+.collateral-completed-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.collateral-completed-section__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.collateral-completed-section__count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: #536475;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .collateral-working-list__header {
   display: flex;
   align-items: flex-start;
@@ -2109,6 +2136,10 @@ textarea {
   gap: 10px;
 }
 
+.collateral-list--completed {
+  gap: 8px;
+}
+
 .collateral-row {
   appearance: none;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -2150,6 +2181,11 @@ textarea {
 
 .collateral-row--unassigned {
   border-style: dashed;
+}
+
+.collateral-row--completed {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, #f8fafc 0%, #f4f7fa 100%);
 }
 
 .collateral-row__main {
@@ -4159,6 +4195,7 @@ tr.blocked-row {
 }
 
 .drawer--collateral {
+  width: min(1100px, calc(100vw - 32px));
   background:
     radial-gradient(circle at top right, rgba(235, 244, 252, 0.9), transparent 26%),
     linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
@@ -4371,6 +4408,10 @@ tr.blocked-row {
 
 .collateral-drawer__grid {
   align-items: end;
+}
+
+.collateral-drawer__grid--dense {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
 }
 
 .collateral-drawer__blocked-field input {

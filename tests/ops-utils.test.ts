@@ -21,11 +21,13 @@ import {
 } from "../lib/firestore-native-action-item-store";
 import {
   ACTION_VIEW_COLLATERAL_STATUS_OPTIONS,
+  COLLATERAL_PRINTER_OPTIONS,
   isActionViewCollateralStatus,
   isCollateralArchived,
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
+  normalizeCollateralPrinter,
   normalizeCollateralItem,
   normalizeCollateralWorkflowStatus,
   type CollateralItem
@@ -401,6 +403,14 @@ test("collateral blocked helper treats status and blockedBy as the same blocked 
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Blocked", blockedBy: "" })), true);
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "Vendor proof" })), true);
   assert.equal(isCollateralBlocked(createCollateralItem({ status: "Backlog", blockedBy: "" })), false);
+});
+
+test("collateral printer values normalize onto the canonical select options", () => {
+  assert.deepEqual(COLLATERAL_PRINTER_OPTIONS.slice(1), ["Clark", "CAPMA", "Outside Vendor"]);
+  assert.equal(normalizeCollateralPrinter("CAPMA"), "CAPMA");
+  assert.equal(normalizeCollateralPrinter("Vendor"), "Outside Vendor");
+  assert.equal(normalizeCollateralPrinter("Local print shop"), "Outside Vendor");
+  assert.equal(normalizeCollateralPrinter(""), "");
 });
 
 test("collateral store archives complete and cut items without hard deleting them", () => {
@@ -5079,7 +5089,7 @@ test("collateral instance list query stays scoped to the active event instance",
   assert.equal(typeof listView.summary.active, "number");
 });
 
-test("collateral instance list hides completed and cut history by default", () => {
+test("collateral instance list keeps completed items visible in a separate section", () => {
   const state = createDefaultAppStateData();
   const workspace = getCollateralEventInstanceWorkspaceBundle({
     activeEventInstanceId: "legislative-day-2026",
@@ -5097,7 +5107,7 @@ test("collateral instance list hides completed and cut history by default", () =
     }
   )[0]!;
 
-  const hiddenByDefault = getCollateralInstanceListView({
+  const completedVisibleByDefault = getCollateralInstanceListView({
     collateralItems: [...state.collateralItems, archivedComplete],
     resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
     instanceSubEvents: workspace.instanceSubEvents,
@@ -5107,8 +5117,40 @@ test("collateral instance list hides completed and cut history by default", () =
     draftCollateralItem: null,
     showArchived: false
   });
+  assert.equal(completedVisibleByDefault.visibleInstanceItems.some((item) => item.id === "completed-collateral"), false);
+  assert.equal(completedVisibleByDefault.completedInstanceItems.some((item) => item.id === "completed-collateral"), true);
+});
+
+test("collateral instance list shows cut history only when explicitly requested", () => {
+  const state = createDefaultAppStateData();
+  const workspace = getCollateralEventInstanceWorkspaceBundle({
+    activeEventInstanceId: "legislative-day-2026",
+    collateralItems: state.collateralItems,
+    collateralProfiles: state.collateralProfiles,
+    eventInstances: state.eventInstances,
+    eventSubEvents: state.eventSubEvents,
+    eventTypes: state.eventTypes
+  });
+  const archivedCut = localCollateralStore.normalizeLoaded(
+    [createCollateralItem({ id: "cut-collateral", status: "Cut" })],
+    {
+      eventInstances: state.eventInstances,
+      eventSubEvents: state.eventSubEvents
+    }
+  )[0]!;
+
+  const hiddenByDefault = getCollateralInstanceListView({
+    collateralItems: [...state.collateralItems, archivedCut],
+    resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
+    instanceSubEvents: workspace.instanceSubEvents,
+    activeProfile: workspace.activeProfile,
+    activeSummaryFilter: "all",
+    activeProfileDeadlineFilter: "none",
+    draftCollateralItem: null,
+    showArchived: false
+  });
   const shownWhenRequested = getCollateralInstanceListView({
-    collateralItems: [...state.collateralItems, archivedComplete],
+    collateralItems: [...state.collateralItems, archivedCut],
     resolvedActiveEventInstanceId: workspace.resolvedActiveEventInstanceId,
     instanceSubEvents: workspace.instanceSubEvents,
     activeProfile: workspace.activeProfile,
@@ -5118,8 +5160,8 @@ test("collateral instance list hides completed and cut history by default", () =
     showArchived: true
   });
 
-  assert.equal(hiddenByDefault.visibleInstanceItems.some((item) => item.id === "completed-collateral"), false);
-  assert.equal(shownWhenRequested.visibleInstanceItems.some((item) => item.id === "completed-collateral"), true);
+  assert.equal(hiddenByDefault.completedInstanceItems.some((item) => item.id === "cut-collateral"), false);
+  assert.equal(shownWhenRequested.completedInstanceItems.some((item) => item.id === "cut-collateral"), true);
 });
 
 test("selected collateral workspace query returns selected item and sub-event options only for the active instance", () => {

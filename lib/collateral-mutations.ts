@@ -1,5 +1,6 @@
 import {
   normalizeCollateralItem,
+  normalizeCollateralPrinter,
   normalizeCollateralUpdateType,
   normalizeCollateralWorkflowStatus,
   type CollateralItem,
@@ -270,6 +271,7 @@ function reconcileCollateralFields(item: CollateralItem, context?: CollateralMut
     eventInstanceId,
     subEventId: normalizeSubEventId(item.subEventId, eventInstanceId, context?.eventSubEvents),
     owner: normalizeOwner(item.owner, context),
+    printer: normalizeCollateralPrinter(item.printer),
     updateType: normalizeCollateralUpdateType(item.updateType),
     notes: item.notes ?? "",
     requiresLogo: item.requiresLogo === true,

@@ -14,6 +14,7 @@ import {
 import { EventInstanceCreateModal } from "@/components/event-instance-create-modal";
 import { EventInstanceTemplatePrompt } from "@/components/event-instance-template-prompt";
 import {
+  COLLATERAL_PRINTER_OPTIONS,
   COLLATERAL_UPDATE_TYPE_OPTIONS,
   isCollateralArchived,
   isCollateralBlocked,
@@ -41,8 +42,7 @@ import {
   buildSponsorFulfillmentGenerationResult,
   ensureSponsorshipSetupForEventInstance,
   getSponsorCollateralPromotionDefaults,
-  getSponsorPlacementLabel,
-  supportsSponsorSetupForEventType
+  getSponsorPlacementLabel
 } from "@/lib/sponsor-fulfillment";
 import { resolveActiveEventInstanceId } from "@/lib/event-instances";
 
@@ -63,13 +63,6 @@ type PendingSponsorPromotionIntent = {
 };
 
 const DRAFT_COLLATERAL_ID = "__draft-collateral__";
-
-type SponsorGenerationPreview = {
-  readyCount: number;
-  skippedCount: number;
-  actionItemsToCreate: number;
-  previewTitles: string[];
-};
 
 type CollateralQuickAddScope = "event-wide" | "linked";
 
@@ -175,9 +168,6 @@ export function CollateralView({
           sponsorshipSetupByInstance[resolvedActiveEventInstanceId]
         )
       : null;
-  const supportsSponsorSetup = selectedEventInstance
-    ? supportsSponsorSetupForEventType(selectedEventInstance.eventTypeId)
-    : false;
   const creatableEventTypeDefinitions = useMemo(() => getAvailableEventTypeDefinitions(eventPrograms), [eventPrograms]);
   const eventTypeNameById = useMemo(
     () => new Map(eventPrograms.map((eventProgram) => [eventProgram.id, eventProgram.name])),
@@ -194,36 +184,6 @@ export function CollateralView({
   useEffect(() => {
     setSelectedEventInstanceId((current) => resolveActiveEventInstanceId(current, eventInstances));
   }, [eventInstances]);
-  const sponsorGenerationPreview = useMemo<SponsorGenerationPreview | null>(() => {
-    if (!selectedEventInstance || !supportsSponsorSetup) {
-      return null;
-    }
-
-    const readyCount =
-      sponsorshipSetup?.commitments.filter((commitment) => commitment.sponsorName.trim().length > 0).length ?? 0;
-    const generationResult = buildSponsorFulfillmentGenerationResult({
-      sponsorshipSetup: sponsorshipSetup ?? { opportunities: [], commitments: [] },
-      eventInstance: selectedEventInstance,
-      existingItems: items,
-      defaultOwner: defaultOwnerForNewItems,
-      eventSubEvents: workspaceBundle.instanceSubEvents
-    });
-
-    return {
-      readyCount,
-      skippedCount: generationResult.skipped,
-      actionItemsToCreate: generationResult.created.length,
-      previewTitles: generationResult.created.slice(0, 3).map((item) => item.title)
-    };
-  }, [
-    defaultOwnerForNewItems,
-    items,
-    selectedEventInstance,
-    sponsorshipSetup,
-    supportsSponsorSetup,
-    workspaceBundle.instanceSubEvents
-  ]);
-
   useEffect(() => {
     setIsActionsMenuOpen(false);
     setIsDeleteConfirmOpen(false);
@@ -362,6 +322,7 @@ export function CollateralView({
 
   const instanceItems = collateralListView.instanceItems;
   const visibleInstanceItems = collateralListView.visibleInstanceItems;
+  const completedInstanceItems = collateralListView.completedInstanceItems;
   const selectedItem = selectedWorkspace.selectedItem;
   const subEventNameById = selectedWorkspace.subEventNameById;
   const selectedSubEventOptions = selectedWorkspace.subEventOptions;
@@ -390,8 +351,12 @@ export function CollateralView({
         }
 
         return left.itemName.localeCompare(right.itemName);
-      }),
+    }),
     [visibleInstanceItems]
+  );
+  const completedListItems = useMemo(
+    () => [...completedInstanceItems],
+    [completedInstanceItems]
   );
 
   useEffect(() => {
@@ -676,11 +641,6 @@ export function CollateralView({
     setShowArchived(false);
   }
 
-  function handleOpenSponsorSetupInEvents() {
-    setActiveEventInstanceId(resolvedActiveEventInstanceId);
-    router.push("/events");
-  }
-
   function requestEventInstanceSwitch(nextEventInstanceId: string) {
     if (nextEventInstanceId === resolvedActiveEventInstanceId) {
       return;
@@ -817,12 +777,12 @@ export function CollateralView({
                   onChange={(event) => setShowArchived(event.target.checked)}
                   type="checkbox"
                 />
-                <span>Show Done</span>
+                <span>Show Cut History</span>
               </label>
             {hasActiveCollateralFilters ? (
               <div className="collateral-filter-context collateral-filter-context--inline">
                 <span>
-                  Showing done items in the working list.
+                  Showing cut history alongside completed collateral.
                 </span>
                 <button
                   className="button-link button-link--inline-secondary"
@@ -844,7 +804,7 @@ export function CollateralView({
                     ? defaultTemplatePack && isSelectedEventProgramSupported
                         ? `Apply the default template for ${currentEventProgram?.name ?? "this event"} or add your first collateral item manually.`
                         : "Add your first collateral item to start tracking event-wide or sub-event production work."
-                    : "Try a different summary view, show completed/cut items, or clear the filter to return to the active collateral list."}
+                    : "Try a different summary view or clear cut history to return to the active collateral list."}
                 </div>
                 <div className="empty-state__actions">
                   {!hasActiveCollateralFilters && defaultTemplatePack && isSelectedEventProgramSupported ? (
@@ -898,6 +858,7 @@ export function CollateralView({
                               No owner assigned
                             </span>
                           )}
+                          {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
                           <span>{item.dueDate ? `Due ${formatShortDate(item.dueDate)}` : "No due date"}</span>
                         </div>
                         {item.notes?.trim() ? (
@@ -914,6 +875,55 @@ export function CollateralView({
                 })}
               </div>
             )}
+            {completedListItems.length > 0 ? (
+              <section className="collateral-completed-section" aria-labelledby="collateral-completed-title">
+                <div className="collateral-completed-section__header">
+                  <div>
+                    <div className="card__title" id="collateral-completed-title">COMPLETED</div>
+                    <div className="collateral-working-list__copy">
+                      Finished collateral stays visible here for reference without crowding the active working lane.
+                    </div>
+                  </div>
+                  <div className="collateral-completed-section__count">
+                    {completedListItems.length} item{completedListItems.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="collateral-list collateral-list--flat collateral-list--completed">
+                  {completedListItems.map((item) => {
+                    const isSelected = item.id === selectedId;
+                    const scopeLabel =
+                      getCollateralScope(item.subEventId, emptySubEventId) === "event-wide"
+                        ? "Event-wide"
+                        : subEventNameById.get(item.subEventId) ?? "Linked sub-event";
+
+                    return (
+                      <button
+                        className={getCollateralRowClassName(item, isSelected, "completed")}
+                        key={item.id}
+                        onClick={() => setSelectedId(item.id)}
+                        type="button"
+                      >
+                        <div className="collateral-row__main">
+                          <div className="collateral-row__title">{item.itemName}</div>
+                          <div className="collateral-row__meta">
+                            <span>{scopeLabel}</span>
+                            {item.owner ? <span>Owner: {item.owner}</span> : null}
+                            {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
+                            <span>{item.status}</span>
+                          </div>
+                          {item.notes?.trim() ? (
+                            <div className="collateral-row__supporting">{item.notes.trim()}</div>
+                          ) : null}
+                        </div>
+                        <div className="collateral-row__signals">
+                          <span className={getCollateralStatusClassName(item)}>{item.status}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
           </div>
         </div>
 
@@ -1137,7 +1147,7 @@ export function CollateralView({
 
                 <div className="collateral-drawer__group">
                   <div className="drawer__panel-title">Execution</div>
-                  <div className="drawer__grid drawer__grid--form">
+                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid collateral-drawer__grid--dense">
                     <div className="field">
                       <label htmlFor="collateral-owner">Owner</label>
                       <select
@@ -1162,6 +1172,21 @@ export function CollateralView({
                         value={selectedItem.dueDate}
                       />
                     </div>
+                    <div className="field">
+                      <label htmlFor="collateral-printer">Printer</label>
+                      <select
+                        id="collateral-printer"
+                        onChange={(event) => patchCollateralItem(selectedItem.id, { printer: event.target.value })}
+                        value={selectedItem.printer}
+                      >
+                        <option value="">Select printer</option>
+                        {COLLATERAL_PRINTER_OPTIONS.filter((option) => option.length > 0).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="field field--wide collateral-drawer__blocked-field">
                       <label htmlFor="collateral-blocked-by">Blocked By</label>
                       <input
@@ -1176,15 +1201,7 @@ export function CollateralView({
 
                 <div className="collateral-drawer__group">
                   <div className="drawer__panel-title">Production</div>
-                  <div className="drawer__grid drawer__grid--form">
-                    <div className="field">
-                      <label htmlFor="collateral-printer">Printer</label>
-                      <input
-                        id="collateral-printer"
-                        onChange={(event) => patchCollateralItem(selectedItem.id, { printer: event.target.value })}
-                        value={selectedItem.printer}
-                      />
-                    </div>
+                  <div className="drawer__grid drawer__grid--form collateral-drawer__grid collateral-drawer__grid--dense">
                     <div className="field">
                       <label htmlFor="collateral-quantity">Qty</label>
                       <input
@@ -1284,48 +1301,6 @@ export function CollateralView({
           </aside>
         ) : null}
       </div>
-
-      {selectedEventInstance && supportsSponsorSetup ? (
-        <div className="card card--secondary collateral-sponsor-setup" role="status">
-          <div className="collateral-event-setup__header">
-            <div>
-              <div className="card__title">SPONSOR PRODUCTION CONTEXT</div>
-              <div className="collateral-event-setup__meta">
-                Sponsor onboarding and generation now start in Events. Collateral stays focused on the production pieces those sponsors affect.
-              </div>
-            </div>
-            <button
-              className="button-link button-link--inline-secondary"
-              onClick={handleOpenSponsorSetupInEvents}
-              type="button"
-            >
-              Open Events
-            </button>
-          </div>
-          {sponsorGenerationPreview ? (
-            <div className="sponsor-setup__summary" role="status">
-              <span>
-                {sponsorshipSetup && sponsorshipSetup.commitments.length > 0
-                  ? `${sponsorshipSetup.commitments.length} sponsor commitment${sponsorshipSetup.commitments.length === 1 ? "" : "s"} configured for this instance`
-                  : "No sponsor commitments configured for this instance yet"}
-              </span>
-              {sponsorGenerationPreview.actionItemsToCreate > 0 ? (
-                <span>
-                  {sponsorGenerationPreview.actionItemsToCreate} sponsor execution item{sponsorGenerationPreview.actionItemsToCreate === 1 ? "" : "s"} would flow into Action View from Events
-                </span>
-              ) : null}
-              {sponsorGenerationPreview.previewTitles.length > 0 ? (
-                <span>
-                  Upcoming sponsor work: {sponsorGenerationPreview.previewTitles.join(", ")}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="sponsor-setup__hint">
-            Use Events when you need to add sponsors, adjust placements, or rerun sponsor generation. Stay in Collateral to work the linked production assets.
-          </div>
-        </div>
-      ) : null}
 
       <EventInstanceCreateModal
         availableEventTypeDefinitions={creatableEventTypeDefinitions}
@@ -1464,7 +1439,11 @@ export function CollateralView({
     );
 }
 
-function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
+function getCollateralRowClassName(
+  item: CollateralItem,
+  isSelected: boolean,
+  variant: "default" | "completed" = "default"
+) {
   const classNames = ["collateral-row"];
 
   if (isSelected) {
@@ -1487,6 +1466,10 @@ function getCollateralRowClassName(item: CollateralItem, isSelected: boolean) {
 
   if (!item.owner.trim()) {
     classNames.push("collateral-row--unassigned");
+  }
+
+  if (variant === "completed") {
+    classNames.push("collateral-row--completed");
   }
 
   return classNames.join(" ");

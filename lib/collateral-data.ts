@@ -27,6 +27,13 @@ export const COLLATERAL_UPDATE_TYPE_OPTIONS = [
   "Net New"
 ] as const;
 
+export const COLLATERAL_PRINTER_OPTIONS = [
+  "",
+  "Clark",
+  "CAPMA",
+  "Outside Vendor"
+] as const;
+
 export type CollateralStatus = (typeof COLLATERAL_STATUS_OPTIONS)[number];
 
 // Action View intentionally surfaces only the execution-relevant subset of
@@ -101,9 +108,9 @@ export const initialLegDayCollateralItems: CollateralItem[] = [
   createSeedItem("master-slide-deck", "Multi-Event/All Days", "Master Slide Deck", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "master-slide-deck"),
   createSeedItem("briefing-breakfast-sign", "Thursday Breakfast", "Welcome to the Briefing Breakfast (Sponsored By Sign)", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Full Redesign", "", "briefing-breakfast-sign"),
   createSeedItem("briefing-breakfast-table-tents", "Thursday Breakfast", "Briefing Breakfast Table Tents", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "briefing-breakfast-table-tents"),
-  createSeedItem("briefing-breakfast-cups", "Thursday Breakfast", "Branded coffee cups with CAPMA and Sponsor", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Vendor", "", "Full Redesign", "", "briefing-breakfast-cups"),
+  createSeedItem("briefing-breakfast-cups", "Thursday Breakfast", "Branded coffee cups with CAPMA and Sponsor", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Outside Vendor", "", "Full Redesign", "", "briefing-breakfast-cups"),
   createSeedItem("luncheon-welcome-sign", "Thursday Luncheon", "Welcome to Legislative Luncheon - Sponsor thank you", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Full Redesign", "", "luncheon-welcome-sign"),
-  createSeedItem("luncheon-napkins", "Thursday Luncheon", "Branded napkins for Thurs afternoon, year specific", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Vendor", "", "Minor Update", "", "luncheon-napkins"),
+  createSeedItem("luncheon-napkins", "Thursday Luncheon", "Branded napkins for Thurs afternoon, year specific", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Outside Vendor", "", "Minor Update", "", "luncheon-napkins"),
   createSeedItem("luncheon-table-tents", "Thursday Luncheon", "Table tents", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Minor Update", "", "luncheon-table-tents"),
   createSeedItem("board-table-tents", "Wednesday Board Meeting", "Table tents", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "board-table-tents"),
   createSeedItem("board-agenda", "Wednesday Board Meeting", "Board Agenda", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "board-agenda"),
@@ -118,10 +125,10 @@ export const initialLegDayCollateralItems: CollateralItem[] = [
   createSeedItem("committee-qr-sheets", "Wednesday Committees", "Branded QR Sign-In Sheets", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "committee-qr-sheets"),
   createSeedItem("committee-agendas", "Wednesday Committees", "Committee Meeting agendas", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "", "", "committee-agendas"),
   createSeedItem("reception-table-tents", "Wednesday Reception", "Table Tents for Wednesday Night Reception", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Full Redesign", "", "reception-table-tents"),
-  createSeedItem("reception-napkins", "Wednesday Reception", "Branded Napkins for Wednesday Night Reception (Year-Specific)", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Vendor", "", "Full Redesign", "", "reception-napkins"),
+  createSeedItem("reception-napkins", "Wednesday Reception", "Branded Napkins for Wednesday Night Reception (Year-Specific)", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Outside Vendor", "", "Full Redesign", "", "reception-napkins"),
   createSeedItem("reception-raffle-tent", "Wed Night Reception", "Wed Reception Raffle Table Tent", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "CAPMA", "", "Full Redesign", "", "reception-raffle-tent"),
   createSeedItem("registration-welcome-sign", "Wednesday Registration", "Welcome to Leg Day Sign", "Backlog", DEFAULT_OWNER, "", "2026-03-27", "Clark", "1", "Full Redesign", "", "registration-welcome-sign"),
-  createSeedItem("registration-lanyards", "Wednesday Registration", "Custom Lanyards w/ CAPMA + Premier logos", "In Design", DEFAULT_OWNER, "", "2026-03-27", "Vendor", "", "Full Redesign", "", "registration-lanyards"),
+  createSeedItem("registration-lanyards", "Wednesday Registration", "Custom Lanyards w/ CAPMA + Premier logos", "In Design", DEFAULT_OWNER, "", "2026-03-27", "Outside Vendor", "", "Full Redesign", "", "registration-lanyards"),
   createSeedItem("registration-badges", "Wednesday Registration", "Name Badges w/ Premier Sponsor", "Backlog", DEFAULT_OWNER, "", "2026-04-10", "CAPMA", "", "Minor Update", "", "registration-badges")
 ];
 
@@ -239,7 +246,7 @@ export function normalizeCollateralItem(
         : typeof (item as { printerDeadline?: unknown }).printerDeadline === "string"
           ? ((item as { printerDeadline?: string }).printerDeadline ?? "")
           : "",
-    printer: item.printer,
+    printer: normalizeCollateralPrinter(item.printer),
     quantity: item.quantity,
     updateType: normalizeCollateralUpdateType(item.updateType),
     noteEntries: normalizeNoteEntries(
@@ -309,4 +316,26 @@ export function normalizeCollateralUpdateType(updateType: string) {
   }
 
   return "";
+}
+
+export function normalizeCollateralPrinter(printer: string | undefined) {
+  const trimmedPrinter = printer?.trim() ?? "";
+
+  if (!trimmedPrinter) {
+    return "";
+  }
+
+  if (
+    trimmedPrinter === "Clark" ||
+    trimmedPrinter === "CAPMA" ||
+    trimmedPrinter === "Outside Vendor"
+  ) {
+    return trimmedPrinter;
+  }
+
+  if (trimmedPrinter === "Vendor") {
+    return "Outside Vendor";
+  }
+
+  return "Outside Vendor";
 }

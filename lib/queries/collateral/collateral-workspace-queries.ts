@@ -4,6 +4,7 @@ import {
   isCollateralBlocked,
   isCollateralDueSoon,
   isCollateralOverdue,
+  isCollateralTerminalStatus,
   type LegDayCollateralProfile
 } from "@/lib/collateral-data";
 import { getDefaultTemplatePackForEventType, supportsCollateralEventType } from "@/lib/collateral-templates";
@@ -82,6 +83,7 @@ export type CollateralWorkspaceSummary = {
 export type CollateralInstanceListView = {
   instanceItems: CollateralItem[];
   visibleInstanceItems: CollateralItem[];
+  completedInstanceItems: CollateralItem[];
   groupedItems: Array<readonly [string, CollateralItem[]]>;
   summary: CollateralWorkspaceSummary;
 };
@@ -194,21 +196,25 @@ export function getCollateralInstanceListView(input: {
   const instanceItems = input.collateralItems.filter(
     (item) => item.eventInstanceId === input.resolvedActiveEventInstanceId
   );
-  const laneItems = input.showArchived
-    ? instanceItems
-    : instanceItems.filter((item) => !isCollateralArchived(item));
+  const activeItems = instanceItems.filter((item) => !isCollateralArchived(item));
   const visibleInstanceItems =
     input.draftCollateralItem && input.draftCollateralItem.eventInstanceId === input.resolvedActiveEventInstanceId
-      ? [input.draftCollateralItem, ...laneItems]
-      : laneItems;
+      ? [input.draftCollateralItem, ...activeItems]
+      : activeItems;
   const subEventNameById = new Map(input.instanceSubEvents.map((subEvent) => [subEvent.id, subEvent.name]));
-  const activeItems = instanceItems.filter((item) => !isCollateralArchived(item));
   const filteredVisibleItems = visibleInstanceItems.filter(
     (item) =>
       matchesCollateralSummaryFilter(item, input.activeSummaryFilter) &&
       matchesCollateralProfileDeadlineFilter(item, input.activeProfile, input.activeProfileDeadlineFilter)
   );
   const groupedItems = groupCollateralItems(filteredVisibleItems, input.instanceSubEvents, subEventNameById);
+  const completedInstanceItems = sortCollateralItems(
+    instanceItems.filter(
+      (item) =>
+        isCollateralTerminalStatus(item.status) &&
+        (item.status === "Complete" || input.showArchived)
+    )
+  );
   const atPrinterItems = activeItems.filter((item) => item.status === "Sent to Printer");
   const parsedAtPrinterQuantities = atPrinterItems.map((item) => {
     const trimmedQuantity = item.quantity.trim();
@@ -224,6 +230,7 @@ export function getCollateralInstanceListView(input: {
   return {
     instanceItems,
     visibleInstanceItems,
+    completedInstanceItems,
     groupedItems,
     summary: {
       active: activeItems.length,
@@ -235,6 +242,27 @@ export function getCollateralInstanceListView(input: {
       readyForPrint: activeItems.filter((item) => item.status === "Ready for Print").length
     }
   } satisfies CollateralInstanceListView;
+}
+
+function sortCollateralItems(items: CollateralItem[]) {
+  return [...items].sort((a, b) => {
+    const aHasDeadline = a.dueDate.length > 0;
+    const bHasDeadline = b.dueDate.length > 0;
+
+    if (aHasDeadline !== bHasDeadline) {
+      return aHasDeadline ? -1 : 1;
+    }
+
+    if (aHasDeadline && bHasDeadline) {
+      const dateCompare = a.dueDate.localeCompare(b.dueDate);
+
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+    }
+
+    return a.itemName.localeCompare(b.itemName);
+  });
 }
 
 export function getSelectedCollateralItemWorkspace(input: {
@@ -277,24 +305,7 @@ function groupCollateralItems(
   return Array.from(grouped.entries())
     .map(([subEvent, groupedItems]) => [
       subEvent,
-      [...groupedItems].sort((a, b) => {
-        const aHasDeadline = a.dueDate.length > 0;
-        const bHasDeadline = b.dueDate.length > 0;
-
-        if (aHasDeadline !== bHasDeadline) {
-          return aHasDeadline ? -1 : 1;
-        }
-
-        if (aHasDeadline && bHasDeadline) {
-          const dateCompare = a.dueDate.localeCompare(b.dueDate);
-
-          if (dateCompare !== 0) {
-            return dateCompare;
-          }
-        }
-
-        return a.itemName.localeCompare(b.itemName);
-      })
+      sortCollateralItems(groupedItems)
     ] as const)
     .filter(([, groupedItems]) => groupedItems.length > 0);
 }
