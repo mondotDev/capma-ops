@@ -8,6 +8,7 @@ import type { EventSubEventScheduleMode } from "@/lib/event-instances";
 import { deriveEventDateRange } from "@/lib/event-instances";
 import type { ActionItem } from "@/lib/sample-data";
 import {
+  createSponsorOpportunityDeliverableDraft,
   createSponsorCommitmentDraft,
   createSponsorOpportunityDraft,
   ensureSponsorshipSetupForEventInstance,
@@ -803,7 +804,7 @@ function SponsorOpportunitiesSection(input: {
   function addDeliverable(opportunity: SponsorOpportunity) {
     input.onUpsert({
       ...opportunity,
-      deliverables: [...(opportunity.deliverables ?? []), createEmptyPlacementDeliverable()]
+      deliverables: [...(opportunity.deliverables ?? []), createSponsorOpportunityDeliverableDraft()]
     });
   }
 
@@ -1557,22 +1558,6 @@ function Field({ children, label, wide = false }: { children: ReactNode; label: 
   return <div className={`field${wide ? " field--wide" : ""}`}><label>{label}</label>{children}</div>;
 }
 
-function createEmptyPlacementDeliverable(): SponsorOpportunityDeliverable {
-  return {
-    id: `placement-deliverable-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    deliverableName: "",
-    category: "",
-    channel: "",
-    timingType: "",
-    offsetDays: "",
-    fixedMonth: "",
-    eventDayOffset: "",
-    requiresLogo: false,
-    requiresCopy: false,
-    requiresApproval: false
-  };
-}
-
 function buildFulfillmentPreviewActionItem(input: {
   definitionLabel: string;
   eventInstanceId: string;
@@ -1681,7 +1666,7 @@ function buildSponsorFulfillmentPreviewRows(
       id: [
         commitment.id,
         opportunity.id,
-        deliverable.id,
+        deliverable.key,
         sponsorName,
         opportunity.label,
         deliverable.deliverableName,
@@ -1699,7 +1684,7 @@ function buildSponsorFulfillmentPreviewRows(
         eventInstanceId: commitment.eventInstanceId,
         placementId: opportunity.id,
         sponsorId: commitment.id,
-        deliverableId: deliverable.id
+        deliverableId: deliverable.key
       }),
       sponsorId: commitment.id,
       sponsorName,
@@ -1710,7 +1695,7 @@ function buildSponsorFulfillmentPreviewRows(
       placementNotes: opportunity.notes,
       logoReceived: commitment.logoReceived,
       deliverableName: deliverable.deliverableName,
-      deliverableId: deliverable.id,
+      deliverableId: deliverable.key,
       category: deliverable.category,
       channel: deliverable.channel,
       timingType: deliverable.timingType,

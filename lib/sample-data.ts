@@ -13,6 +13,16 @@ export type ActionNoteEntry = {
   author: ActionNoteAuthor;
 };
 
+export type SponsorFulfillmentLink = {
+  sourceId: string;
+  eventInstanceId: string;
+  sponsorOpportunityId: string;
+  sponsorCommitmentId: string;
+  deliverableKey: string;
+  subEventId?: string;
+  generationKind: "sponsorFulfillment" | "sponsorFulfillmentFallback";
+};
+
 export type ActionItem = {
   id: string;
   title: string;
@@ -46,6 +56,7 @@ export type ActionItem = {
    */
   lastUpdated: string;
   noteEntries: ActionNoteEntry[];
+  sponsorFulfillment?: SponsorFulfillmentLink;
   /**
    * Legacy import-only note text. Active app code should use noteEntries instead.
    */

@@ -11,7 +11,7 @@ import {
   initialEventTypes
 } from "@/lib/event-instances";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
-import type { SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
+import type { FulfillmentStateByInstance, SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
 import { initialActionItems } from "@/lib/sample-data";
 import {
   DEFAULT_OWNER,
@@ -60,6 +60,14 @@ export function createDefaultSponsorshipSetupByInstance(): SponsorshipSetupByIns
 }
 
 export function createEmptySponsorshipSetupByInstance(): SponsorshipSetupByInstance {
+  return {};
+}
+
+export function createDefaultFulfillmentStateByInstance(): FulfillmentStateByInstance {
+  return {};
+}
+
+export function createEmptyFulfillmentStateByInstance(): FulfillmentStateByInstance {
   return {};
 }
 
@@ -114,6 +122,7 @@ export function createDefaultAppStateData(): AppStateData {
     collateralItems: createDefaultCollateralItems(),
     collateralProfiles: createDefaultCollateralProfiles(),
     sponsorshipSetupByInstance: createDefaultSponsorshipSetupByInstance(),
+    fulfillmentStateByInstance: createDefaultFulfillmentStateByInstance(),
     activeEventInstanceId: getDefaultActiveEventInstanceId(),
     defaultOwnerForNewItems: getDefaultOwnerForNewItems(),
     eventFamilies: createDefaultEventFamilies(),
@@ -131,6 +140,7 @@ export function createEmptyAppStateData(): AppStateData {
     collateralItems: createEmptyCollateralItems(),
     collateralProfiles: createEmptyCollateralProfiles(),
     sponsorshipSetupByInstance: createEmptySponsorshipSetupByInstance(),
+    fulfillmentStateByInstance: createEmptyFulfillmentStateByInstance(),
     activeEventInstanceId: getEmptyActiveEventInstanceId(),
     defaultOwnerForNewItems: getDefaultOwnerForNewItems(),
     eventFamilies: createEmptyEventFamilies(),

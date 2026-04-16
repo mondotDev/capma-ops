@@ -12,10 +12,13 @@ import {
   type CollateralPersistenceContext,
   type PersistedCollateralState
 } from "@/lib/collateral-persisted-state";
-import type { ActionNoteEntry } from "@/lib/sample-data";
+import type { ActionNoteEntry, SponsorFulfillmentLink } from "@/lib/sample-data";
 import {
+  normalizeFulfillmentStateByInstance,
   normalizeSponsorCommitment,
   normalizeSponsorOpportunity,
+  type FulfillmentStateByInstance,
+  type SponsorFulfillmentStateRecord,
   type SponsorCommitment,
   type SponsorOpportunity,
   type SponsorshipSetupByInstance
@@ -49,6 +52,7 @@ type FirestoreCollateralItemDocument = {
   quantity: string;
   updateType: string;
   noteEntries?: FirestoreActionNoteEntryDocument[];
+  sponsorFulfillment?: SponsorFulfillmentLink;
   fileLink?: string;
   lastUpdated: string;
   archivedAt?: string;
@@ -77,10 +81,13 @@ type FirestoreSponsorshipSetupDocument = {
   commitments: FirestoreSponsorCommitmentDocument[];
 };
 
+type FirestoreFulfillmentStateRecordDocument = SponsorFulfillmentStateRecord;
+
 type FirestoreCollateralStateDocument = {
   collateralItems: FirestoreCollateralItemDocument[];
   collateralProfiles: Record<string, FirestoreLegDayCollateralProfileDocument>;
   sponsorshipSetupByInstance?: Record<string, FirestoreSponsorshipSetupDocument>;
+  fulfillmentStateByInstance?: Record<string, Record<string, FirestoreFulfillmentStateRecordDocument>>;
   sponsorPlacementsByInstance?: Record<string, FirestoreSponsorCommitmentDocument[]>;
   eventInstances: FirestoreEventInstanceDocument[];
   eventSubEvents: FirestoreEventSubEventDocument[];
@@ -181,6 +188,14 @@ export function mapPersistedCollateralStateToFirestoreDocument(
         }
       ])
     ),
+    fulfillmentStateByInstance: Object.fromEntries(
+      Object.entries(state.fulfillmentStateByInstance ?? {}).map(([instanceId, records]) => [
+        instanceId,
+        Object.fromEntries(
+          Object.entries(records).map(([sourceId, record]) => [sourceId, { ...record }])
+        )
+      ])
+    ),
     eventInstances: state.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: state.eventSubEvents.map((subEvent) => ({ ...subEvent })),
     schemaVersion: 1,
@@ -203,6 +218,11 @@ export function parseFirestoreCollateralStateDocument(value: unknown): Firestore
     !Array.isArray(document.eventSubEvents) ||
     !document.eventSubEvents.every(isFirestoreEventSubEventDocument) ||
     !isCollateralProfileMap(document.collateralProfiles) ||
+    !isFulfillmentStateByInstanceDocument(
+      document.fulfillmentStateByInstance ?? {},
+      document.eventInstances,
+      document.eventSubEvents
+    ) ||
     !isSponsorshipSetupMap(
       document.sponsorshipSetupByInstance ?? {},
       document.eventInstances,
@@ -235,6 +255,14 @@ export function parseFirestoreCollateralStateDocument(value: unknown): Firestore
         }
       ])
     ),
+    fulfillmentStateByInstance: Object.fromEntries(
+      Object.entries(document.fulfillmentStateByInstance ?? {}).map(([instanceId, records]) => [
+        instanceId,
+        Object.fromEntries(
+          Object.entries(records).map(([sourceId, record]) => [sourceId, { ...record }])
+        )
+      ])
+    ),
     sponsorPlacementsByInstance: document.sponsorPlacementsByInstance,
     eventInstances: document.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: document.eventSubEvents.map((subEvent) => ({ ...subEvent })),
@@ -260,6 +288,20 @@ function mapPersistedCollateralStateDocument(
         }
       ])
     ),
+    fulfillmentStateByInstance: normalizeFulfillmentStateByInstance(
+      Object.fromEntries(
+        Object.entries(document.fulfillmentStateByInstance ?? {}).map(([instanceId, records]) => [
+          instanceId,
+          Object.fromEntries(
+            Object.entries(records).map(([sourceId, record]) => [sourceId, { ...record }])
+          )
+        ])
+      ) as FulfillmentStateByInstance,
+      {
+        eventInstances: document.eventInstances,
+        eventSubEvents: document.eventSubEvents
+      }
+    ),
     sponsorPlacementsByInstance: document.sponsorPlacementsByInstance,
     eventInstances: document.eventInstances.map((instance) => ({ ...instance })),
     eventSubEvents: document.eventSubEvents.map((subEvent) => ({ ...subEvent }))
@@ -280,6 +322,7 @@ function mapCollateralItemToFirestoreDocument(item: CollateralItem): FirestoreCo
     owner: item.owner,
     printer: item.printer,
     quantity: item.quantity,
+    sponsorFulfillment: item.sponsorFulfillment ? { ...item.sponsorFulfillment } : undefined,
     status: item.status,
     subEventId: item.subEventId,
     templateOriginId: item.templateOriginId,
@@ -301,6 +344,7 @@ function mapFirestoreDocumentToCollateralItem(document: FirestoreCollateralItemD
     owner: document.owner,
     printer: document.printer,
     quantity: document.quantity,
+    sponsorFulfillment: document.sponsorFulfillment ? { ...document.sponsorFulfillment } : undefined,
     status: document.status as CollateralItem["status"],
     subEventId: document.subEventId,
     templateOriginId: document.templateOriginId,
@@ -342,7 +386,8 @@ function parseFirestoreCollateralItemDocument(value: unknown): FirestoreCollater
     (item.archivedAt !== undefined && typeof item.archivedAt !== "string") ||
     (item.templateOriginId !== undefined && typeof item.templateOriginId !== "string") ||
     (item.fileLink !== undefined && typeof item.fileLink !== "string") ||
-    (item.noteEntries !== undefined && !isFirestoreActionNoteEntryList(item.noteEntries))
+    (item.noteEntries !== undefined && !isFirestoreActionNoteEntryList(item.noteEntries)) ||
+    (item.sponsorFulfillment !== undefined && !isSponsorFulfillmentLinkDocument(item.sponsorFulfillment))
   ) {
     return null;
   }
@@ -360,6 +405,7 @@ function parseFirestoreCollateralItemDocument(value: unknown): FirestoreCollater
     owner: item.owner,
     printer: item.printer,
     quantity: item.quantity,
+    sponsorFulfillment: item.sponsorFulfillment ? { ...item.sponsorFulfillment } : undefined,
     status: item.status,
     subEventId: item.subEventId,
     templateOriginId: item.templateOriginId,
@@ -416,6 +462,24 @@ function isFirestoreActionNoteEntryDocument(value: unknown): value is FirestoreA
     (entry.author.displayName === null ||
       entry.author.displayName === undefined ||
       typeof entry.author.displayName === "string")
+  );
+}
+
+function isSponsorFulfillmentLinkDocument(value: unknown): value is SponsorFulfillmentLink {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const link = value as Partial<SponsorFulfillmentLink>;
+
+  return (
+    typeof link.sourceId === "string" &&
+    typeof link.eventInstanceId === "string" &&
+    typeof link.sponsorOpportunityId === "string" &&
+    typeof link.sponsorCommitmentId === "string" &&
+    typeof link.deliverableKey === "string" &&
+    (link.subEventId === undefined || typeof link.subEventId === "string") &&
+    (link.generationKind === "sponsorFulfillment" || link.generationKind === "sponsorFulfillmentFallback")
   );
 }
 
@@ -487,6 +551,37 @@ function isSponsorshipSetupMap(
         }) !== null
       )
     );
+  });
+}
+
+function isFulfillmentStateByInstanceDocument(
+  value: unknown,
+  eventInstances: FirestoreEventInstanceDocument[],
+  eventSubEvents: FirestoreEventSubEventDocument[]
+): value is Record<string, Record<string, FirestoreFulfillmentStateRecordDocument>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const normalized = normalizeFulfillmentStateByInstance(
+    value as FulfillmentStateByInstance,
+    {
+      eventInstances,
+      eventSubEvents
+    }
+  );
+
+  return Object.entries(value).every(([instanceId, records]) => {
+    if (!records || typeof records !== "object" || Array.isArray(records)) {
+      return false;
+    }
+
+    if (!eventInstances.some((instance) => instance.id === instanceId)) {
+      return false;
+    }
+
+    const normalizedRecords = normalized[instanceId] ?? {};
+    return Object.keys(normalizedRecords).length === Object.keys(records).length;
   });
 }
 

@@ -10,7 +10,7 @@ import { getFirestoreDb, isFirebaseConfigured } from "@/lib/firebase";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import { normalizeNoteEntries } from "@/lib/ops-utils";
 import type { ActionItemMutationContext, NewActionItemInput } from "@/lib/action-item-mutations";
-import type { ActionItem, ActionNoteEntry } from "@/lib/sample-data";
+import type { ActionItem, ActionNoteEntry, SponsorFulfillmentLink } from "@/lib/sample-data";
 
 const ACTION_ITEMS_COLLECTION = "actionItems";
 
@@ -44,6 +44,7 @@ type FirestoreActionItemDocument = {
   blockedBy?: string;
   issue?: string;
   noteEntries?: FirestoreActionNoteEntryDocument[];
+  sponsorFulfillment?: SponsorFulfillmentLink;
 };
 
 export function createFirestoreNativeActionItemStore(input?: {
@@ -124,6 +125,7 @@ export function mapActionItemToFirestoreDocument(item: ActionItem): FirestoreAct
     noteEntries: item.noteEntries.map(mapActionNoteEntryToFirestoreDocument),
     operationalBucket: item.operationalBucket,
     owner: item.owner,
+    sponsorFulfillment: item.sponsorFulfillment ? { ...item.sponsorFulfillment } : undefined,
     status: item.status,
     subEventId: item.subEventId,
     title: item.title,
@@ -159,6 +161,7 @@ export function mapFirestoreDocumentToActionItem(id: string, value: unknown): Ac
       ),
       operationalBucket: document.operationalBucket,
       owner: document.owner,
+      sponsorFulfillment: document.sponsorFulfillment ? { ...document.sponsorFulfillment } : undefined,
       status: document.status,
       subEventId: document.subEventId,
       title: document.title,
@@ -199,7 +202,8 @@ export function parseFirestoreActionItemDocument(value: unknown): FirestoreActio
     (item.isBlocked !== undefined && typeof item.isBlocked !== "boolean") ||
     (item.blockedBy !== undefined && typeof item.blockedBy !== "string") ||
     (item.issue !== undefined && typeof item.issue !== "string") ||
-    (item.noteEntries !== undefined && !isFirestoreActionNoteEntryList(item.noteEntries))
+    (item.noteEntries !== undefined && !isFirestoreActionNoteEntryList(item.noteEntries)) ||
+    (item.sponsorFulfillment !== undefined && !isSponsorFulfillmentLinkDocument(item.sponsorFulfillment))
   ) {
     return null;
   }
@@ -217,6 +221,7 @@ export function parseFirestoreActionItemDocument(value: unknown): FirestoreActio
     noteEntries: item.noteEntries?.map((entry) => ({ ...entry, author: { ...entry.author } })),
     operationalBucket: item.operationalBucket,
     owner: item.owner,
+    sponsorFulfillment: item.sponsorFulfillment ? { ...item.sponsorFulfillment } : undefined,
     status: item.status,
     subEventId: item.subEventId,
     title: item.title,
@@ -275,6 +280,24 @@ function isFirestoreActionNoteEntryDocument(value: unknown): value is FirestoreA
     (entry.author.displayName === null ||
       entry.author.displayName === undefined ||
       typeof entry.author.displayName === "string")
+  );
+}
+
+function isSponsorFulfillmentLinkDocument(value: unknown): value is SponsorFulfillmentLink {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const link = value as Partial<SponsorFulfillmentLink>;
+
+  return (
+    typeof link.sourceId === "string" &&
+    typeof link.eventInstanceId === "string" &&
+    typeof link.sponsorOpportunityId === "string" &&
+    typeof link.sponsorCommitmentId === "string" &&
+    typeof link.deliverableKey === "string" &&
+    (link.subEventId === undefined || typeof link.subEventId === "string") &&
+    (link.generationKind === "sponsorFulfillment" || link.generationKind === "sponsorFulfillmentFallback")
   );
 }
 

@@ -83,8 +83,13 @@ import {
 } from "../lib/native-action-item-bootstrap";
 import {
   buildSponsorFulfillmentGenerationResult,
+  buildFulfillmentSourceId,
+  createSponsorCommitmentDraft,
+  createSponsorOpportunityDeliverableDraft,
+  createSponsorOpportunityDraft,
   getSponsorCollateralLinkFromItem,
   getSponsorCollateralPromotionDefaults,
+  getSponsorFulfillmentSourceFromActionItem,
   getSponsorPlacementDeliverables,
   getSponsorPlacementLabel,
   getSponsorFulfillmentTaskTitle,
@@ -2787,9 +2792,30 @@ test("firestore collateral persistence document parser accepts the minimal valid
 
 test("firestore collateral persistence store maps a valid remote payload into normalized collateral state", async () => {
   const defaultState = createDefaultAppStateData();
+  const sourceId = buildFulfillmentSourceId({
+    eventInstanceId: defaultState.eventInstances[0]!.id,
+    sponsorOpportunityId: "opp-1",
+    sponsorCommitmentId: "commit-1",
+    deliverableKey: "briefing-breakfast-table-tents-displayed",
+    subEventId: "leg-day-thursday-breakfast"
+  });
   const persistedState = {
     collateralItems: defaultState.collateralItems.slice(0, 1),
     collateralProfiles: defaultState.collateralProfiles,
+    fulfillmentStateByInstance: {
+      [defaultState.eventInstances[0]!.id]: {
+        [sourceId]: {
+          sourceId,
+          eventInstanceId: defaultState.eventInstances[0]!.id,
+          sponsorOpportunityId: "opp-1",
+          sponsorCommitmentId: "commit-1",
+          deliverableKey: "briefing-breakfast-table-tents-displayed",
+          subEventId: "leg-day-thursday-breakfast",
+          approved: true,
+          linkedActionItemId: "action-1"
+        }
+      }
+    },
     eventInstances: defaultState.eventInstances,
     eventSubEvents: defaultState.eventSubEvents
   };
@@ -2807,6 +2833,10 @@ test("firestore collateral persistence store maps a valid remote payload into no
 
   assert.equal(loadedState.collateralItems.length, 1);
   assert.equal(loadedState.collateralItems[0]?.id, persistedState.collateralItems[0]?.id);
+  assert.equal(
+    loadedState.fulfillmentStateByInstance?.[defaultState.eventInstances[0]!.id]?.[sourceId]?.linkedActionItemId,
+    "action-1"
+  );
   assert.equal(loadedState.eventInstances[0]?.id, defaultState.eventInstances[0]?.id);
   assert.ok(loadedState.eventSubEvents.some((subEvent) => subEvent.id.endsWith("-unassigned")));
 });
@@ -2877,12 +2907,31 @@ test("default app state factory returns a normalized local-first state shape", (
 test("local app state repository saves and reloads the same normalized state", () => {
   withMockedWindowStorage(() => {
     const state = createDefaultAppStateData();
+    const sourceId = buildFulfillmentSourceId({
+      eventInstanceId: "legislative-day-2026",
+      sponsorOpportunityId: "opp-1",
+      sponsorCommitmentId: "commit-1",
+      deliverableKey: "spotlight-post"
+    });
     state.items = [createItem({ eventGroup: "Legislative Day" })];
     state.eventSubEvents = state.eventSubEvents.map((subEvent) =>
       subEvent.id === "leg-day-thursday-breakfast"
         ? { ...subEvent, date: "2026-04-23", startTime: "07:30", endTime: "09:00" }
         : subEvent
     );
+    state.fulfillmentStateByInstance = {
+      "legislative-day-2026": {
+        [sourceId]: {
+          sourceId,
+          eventInstanceId: "legislative-day-2026",
+          sponsorOpportunityId: "opp-1",
+          sponsorCommitmentId: "commit-1",
+          deliverableKey: "spotlight-post",
+          approved: true,
+          linkedActionItemId: "action-1"
+        }
+      }
+    };
 
     localAppStateRepository.save(state);
     const loaded = localAppStateRepository.load();
@@ -2899,6 +2948,10 @@ test("local app state repository saves and reloads the same normalized state", (
     assert.equal(
       loaded.state?.eventSubEvents.find((subEvent) => subEvent.id === "leg-day-thursday-breakfast")?.startTime,
       "07:30"
+    );
+    assert.equal(
+      loaded.state?.fulfillmentStateByInstance["legislative-day-2026"]?.[sourceId]?.linkedActionItemId,
+      "action-1"
     );
   });
 });
@@ -4962,6 +5015,10 @@ test("sponsor placements keep linked sub-event anchors when they belong to the s
 test("sponsor fulfillment title preview matches radar-style action item naming", () => {
   assert.equal(getSponsorPlacementLabel("Thursday Briefing Breakfast"), "Thursday Briefing Breakfast");
   assert.equal(getSponsorPlacementDeliverables("Thursday Briefing Breakfast").length > 0, true);
+  assert.equal(
+    getSponsorPlacementDeliverables("Thursday Briefing Breakfast").every((deliverable) => deliverable.key.length > 0),
+    true
+  );
 
   assert.equal(
     getSponsorFulfillmentTaskTitle({
@@ -4978,6 +5035,21 @@ test("sponsor fulfillment title preview matches radar-style action item naming",
     }),
     "Acme Pest - March NewsBrief Recognition"
   );
+});
+
+test("new sponsor drafts use stable UUID-backed ids and deliverable keys", () => {
+  const setup = {
+    opportunities: [createSponsorOpportunityDraft("legislative-day-2026", "legislative-day")],
+    commitments: []
+  };
+  const opportunityDraft = createSponsorOpportunityDraft("legislative-day-2026", "legislative-day");
+  const commitmentDraft = createSponsorCommitmentDraft("legislative-day-2026", setup);
+  const deliverableDraft = createSponsorOpportunityDeliverableDraft();
+
+  assert.match(opportunityDraft.id, /^sponsor-opportunity-/);
+  assert.match(commitmentDraft.id, /^sponsor-commitment-/);
+  assert.match(deliverableDraft.id, /^deliverable-/);
+  assert.equal(deliverableDraft.key, deliverableDraft.id);
 });
 
 test("sponsor setup generation creates radar-style native action items and skips matching reruns", () => {
@@ -5005,12 +5077,22 @@ test("sponsor setup generation creates radar-style native action items and skips
   });
 
   assert.equal(generation.created.length, 12);
-  assert.equal(generation.created[0]?.title, "Acme Pest - Spotlight Post");
-  assert.equal(generation.created[0]?.eventInstanceId, "legislative-day-2026");
-  assert.equal(generation.created[0]?.type, "Deliverable");
-  assert.equal(generation.created[0]?.status, "Waiting");
-  assert.equal(generation.created[0]?.waitingOn, "Sponsor logo");
-  assert.equal(generation.created[0]?.dueDate, "2026-03-22");
+  const spotlightItem = generation.created.find((item) => item.title === "Acme Pest - Spotlight Post");
+  assert.equal(spotlightItem?.eventInstanceId, "legislative-day-2026");
+  assert.equal(spotlightItem?.type, "Deliverable");
+  assert.equal(spotlightItem?.status, "Waiting");
+  assert.equal(spotlightItem?.waitingOn, "Sponsor logo");
+  assert.equal(spotlightItem?.dueDate, "2026-03-22");
+  assert.equal(spotlightItem?.sponsorFulfillment?.generationKind, "sponsorFulfillment");
+  assert.equal(spotlightItem?.sponsorFulfillment?.deliverableKey.length > 0, true);
+  assert.equal(
+    spotlightItem?.noteEntries.some((entry) => entry.text.includes('"fulfillmentSourceId":')),
+    true
+  );
+  assert.equal(
+    spotlightItem?.noteEntries.some((entry) => entry.text.includes('"sponsorCommitmentId":')),
+    true
+  );
   assert.equal(
     generation.created.some(
       (item) =>
@@ -5051,6 +5133,55 @@ test("sponsor setup generation creates radar-style native action items and skips
 
   assert.equal(rerun.created.length, 11);
   assert.equal(rerun.skipped, 1);
+
+  const structuredMatchRerun = buildSponsorFulfillmentGenerationResult({
+    placements: [
+      {
+        id: "placement-1",
+        eventInstanceId: "legislative-day-2026",
+        sponsorName: "Acme Pest",
+        placement: "Thursday Briefing Breakfast",
+        logoReceived: true
+      }
+    ],
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [
+      {
+        ...createItem({
+          title: "Acme Pest - Spotlight Post",
+          type: "Deliverable",
+          workstream: "Legislative Day",
+          eventInstanceId: "legislative-day-2026"
+        }),
+        sponsorFulfillment: spotlightItem?.sponsorFulfillment
+      }
+    ],
+    defaultOwner: "Melissa"
+  });
+
+  assert.equal(structuredMatchRerun.created.length, 11);
+  assert.equal(structuredMatchRerun.skipped, 1);
+});
+
+test("fulfillment source ids are deterministic from stable ids only", () => {
+  const sourceId = buildFulfillmentSourceId({
+    eventInstanceId: "legislative-day-2026",
+    sponsorOpportunityId: "opp-1",
+    sponsorCommitmentId: "commit-1",
+    deliverableKey: "briefing-breakfast-table-tents-displayed",
+    subEventId: "leg-day-thursday-breakfast"
+  });
+
+  assert.equal(
+    sourceId,
+    JSON.stringify({
+      eventInstanceId: "legislative-day-2026",
+      sponsorOpportunityId: "opp-1",
+      sponsorCommitmentId: "commit-1",
+      deliverableKey: "briefing-breakfast-table-tents-displayed",
+      subEventId: "leg-day-thursday-breakfast"
+    })
+  );
 });
 
 test("sponsor generation uses scheduled sub-event dates when the event type defines sub-event timing", () => {
@@ -5080,6 +5211,101 @@ test("sponsor generation uses scheduled sub-event dates when the event type defi
     ),
     true
   );
+});
+
+test("sponsor generation prefers persisted linked action records for deterministic reruns", () => {
+  const baselineGeneration = buildSponsorFulfillmentGenerationResult({
+    sponsorshipSetup: {
+      opportunities: [
+        {
+          id: "opp-1",
+          eventInstanceId: "legislative-day-2026",
+          label: "Thursday Briefing Breakfast",
+          placementType: "Thursday Briefing Breakfast",
+          isActive: true,
+          deliverables: []
+        }
+      ],
+      commitments: [
+        {
+          id: "commitment-1",
+          eventInstanceId: "legislative-day-2026",
+          sponsorName: "Acme Pest",
+          opportunityId: "opp-1",
+          logoReceived: true,
+          isActive: true
+        }
+      ]
+    },
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [],
+    existingCollateralItems: [],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+  const spotlightTemplate = baselineGeneration.plans.find((plan) => plan.actionItem.title === "Acme Pest - Spotlight Post");
+  const sourceId = spotlightTemplate?.sourceId ?? "";
+  const existingLinkedItem = createItem({
+    id: "linked-sponsor-action",
+    title: "Acme Pest - Spotlight Post",
+    type: "Deliverable",
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026",
+    sponsorFulfillment: {
+      sourceId,
+      eventInstanceId: "legislative-day-2026",
+      sponsorOpportunityId: "opp-1",
+      sponsorCommitmentId: "commitment-1",
+      deliverableKey: spotlightTemplate?.actionItem.sponsorFulfillment?.deliverableKey ?? "",
+      generationKind: "sponsorFulfillment"
+    }
+  });
+
+  const generation = buildSponsorFulfillmentGenerationResult({
+    sponsorshipSetup: {
+      opportunities: [
+        {
+          id: "opp-1",
+          eventInstanceId: "legislative-day-2026",
+          label: "Thursday Briefing Breakfast",
+          placementType: "Thursday Briefing Breakfast",
+          isActive: true,
+          deliverables: []
+        }
+      ],
+      commitments: [
+        {
+          id: "commitment-1",
+          eventInstanceId: "legislative-day-2026",
+          sponsorName: "Acme Pest",
+          opportunityId: "opp-1",
+          logoReceived: true,
+          isActive: true
+        }
+      ]
+    },
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [createItem({ id: "unrelated-item", title: "Unrelated" }), existingLinkedItem],
+    existingCollateralItems: [],
+    fulfillmentStateForInstance: {
+      [sourceId]: {
+        sourceId,
+        eventInstanceId: "legislative-day-2026",
+        sponsorOpportunityId: "opp-1",
+        sponsorCommitmentId: "commitment-1",
+        deliverableKey: spotlightTemplate?.actionItem.sponsorFulfillment?.deliverableKey ?? "",
+        approved: true,
+        linkedActionItemId: "linked-sponsor-action"
+      }
+    },
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+
+  const spotlightPlan = generation.plans.find((plan) => plan.sourceId === sourceId);
+
+  assert.equal(spotlightPlan?.existingActionItemId, "linked-sponsor-action");
+  assert.equal(generation.created.some((item) => item.sponsorFulfillment?.sourceId === sourceId), false);
 });
 
 test("sponsor generation matches existing collateral before planning fallback collateral creation", () => {
@@ -5150,6 +5376,147 @@ test("sponsor generation plans fallback collateral when no production target exi
   assert.equal(generation.fallbackCollateralToCreate.length, 1);
   assert.equal(generation.fallbackCollateralToCreate[0]?.itemName, "Golf Hole Signs");
   assert.equal(generation.fallbackCollateralToCreate[0]?.subEventId, "leg-day-golf-tournament");
+  assert.equal(
+    generation.fallbackCollateralToCreate[0]?.input.sponsorFulfillment?.generationKind,
+    "sponsorFulfillmentFallback"
+  );
+  assert.equal(
+    generation.fallbackCollateralToCreate[0]?.input.sponsorFulfillment?.deliverableKey.length > 0,
+    true
+  );
+});
+
+test("sponsor generation reuses existing structured fallback collateral instead of planning duplicates", () => {
+  const baselineGeneration = buildSponsorFulfillmentGenerationResult({
+    sponsorshipSetup: {
+      opportunities: [
+        {
+          id: "opp-golf",
+          eventInstanceId: "legislative-day-2026",
+          label: "Golf Hole",
+          placementType: "Golf Hole",
+          isActive: true,
+          deliverables: []
+        }
+      ],
+      commitments: [
+        {
+          id: "commit-golf",
+          eventInstanceId: "legislative-day-2026",
+          sponsorName: "Acme Pest",
+          opportunityId: "opp-golf",
+          linkedSubEventId: "leg-day-golf-tournament",
+          logoReceived: true,
+          isActive: true
+        }
+      ]
+    },
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [],
+    existingCollateralItems: [],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+  const fallbackPlan = baselineGeneration.fallbackCollateralToCreate[0];
+  const sourceId = fallbackPlan?.sourceId ?? "";
+
+  const generation = buildSponsorFulfillmentGenerationResult({
+    sponsorshipSetup: {
+      opportunities: [
+        {
+          id: "opp-golf",
+          eventInstanceId: "legislative-day-2026",
+          label: "Golf Hole",
+          placementType: "Golf Hole",
+          isActive: true,
+          deliverables: []
+        }
+      ],
+      commitments: [
+        {
+          id: "commit-golf",
+          eventInstanceId: "legislative-day-2026",
+          sponsorName: "Acme Pest",
+          opportunityId: "opp-golf",
+          linkedSubEventId: "leg-day-golf-tournament",
+          logoReceived: true,
+          isActive: true
+        }
+      ]
+    },
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [],
+    existingCollateralItems: [
+      createCollateralItem({
+        id: "existing-golf-signs",
+        eventInstanceId: "legislative-day-2026",
+        subEventId: "leg-day-golf-tournament",
+        itemName: "Golf Hole Signs",
+        sponsorFulfillment: {
+          sourceId,
+          eventInstanceId: "legislative-day-2026",
+          sponsorOpportunityId: "opp-golf",
+          sponsorCommitmentId: "commit-golf",
+          deliverableKey: fallbackPlan?.input.sponsorFulfillment?.deliverableKey ?? "",
+          subEventId: "leg-day-golf-tournament",
+          generationKind: "sponsorFulfillmentFallback"
+        }
+      })
+    ],
+    fulfillmentStateForInstance: {
+      [sourceId]: {
+        sourceId,
+        eventInstanceId: "legislative-day-2026",
+        sponsorOpportunityId: "opp-golf",
+        sponsorCommitmentId: "commit-golf",
+        deliverableKey: fallbackPlan?.input.sponsorFulfillment?.deliverableKey ?? "",
+        subEventId: "leg-day-golf-tournament",
+        approved: true,
+        linkedCollateralItemId: "existing-golf-signs"
+      }
+    },
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.equal(generation.fallbackCollateralToCreate.length, 0);
+  assert.equal(generation.plans[0]?.collateralLink?.collateralItemId, "existing-golf-signs");
+  assert.equal(generation.plans[0]?.collateralLink?.source, "fallback_created");
+});
+
+test("sponsor fulfillment source extraction prefers structured linkage over note parsing", () => {
+  const item = createItem({
+    title: "Acme Pest - Spotlight Post",
+    type: "Deliverable",
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026",
+    noteEntries: [
+      createActionNoteEntry(
+        'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legacy-event","sponsorName":"legacy sponsor","opportunityId":"legacy-opportunity","placementType":"Premier","deliverableName":"Legacy Deliverable"}.'
+      )!
+    ],
+    sponsorFulfillment: {
+      sourceId: buildFulfillmentSourceId({
+        eventInstanceId: "legislative-day-2026",
+        sponsorOpportunityId: "opp-1",
+        sponsorCommitmentId: "commit-1",
+        deliverableKey: "spotlight-post"
+      }),
+      eventInstanceId: "legislative-day-2026",
+      sponsorOpportunityId: "opp-1",
+      sponsorCommitmentId: "commit-1",
+      deliverableKey: "spotlight-post",
+      generationKind: "sponsorFulfillment"
+    }
+  });
+
+  const source = getSponsorFulfillmentSourceFromActionItem(item);
+
+  assert.equal(source?.eventInstanceId, "legislative-day-2026");
+  assert.equal(source?.sponsorOpportunityId, "opp-1");
+  assert.equal(source?.sponsorCommitmentId, "commit-1");
+  assert.equal(source?.deliverableKey, "spotlight-post");
+  assert.equal(source?.sponsorName, "legacy sponsor");
 });
 
 test("sponsor generation reports obsolete generated action and fallback collateral without deleting them", () => {

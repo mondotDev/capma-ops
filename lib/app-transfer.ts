@@ -22,7 +22,9 @@ import {
   type EventType
 } from "@/lib/event-instances";
 import {
+  normalizeFulfillmentStateByInstance,
   normalizeSponsorshipSetupByInstance,
+  type FulfillmentStateByInstance,
   type SponsorshipSetupByInstance
 } from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
@@ -41,6 +43,7 @@ export type AppStateSnapshot = {
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
   sponsorshipSetupByInstance?: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance?: FulfillmentStateByInstance;
   sponsorPlacementsByInstance?: Record<string, unknown[]>;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
@@ -57,6 +60,7 @@ export function createAppStateSnapshot(
   collateralItems: CollateralItem[],
   collateralProfiles: Record<string, LegDayCollateralProfile>,
   sponsorshipSetupByInstance: SponsorshipSetupByInstance,
+  fulfillmentStateByInstance: FulfillmentStateByInstance,
   activeEventInstanceId: string,
   defaultOwnerForNewItems: string,
   eventFamilies: EventFamily[],
@@ -83,6 +87,14 @@ export function createAppStateSnapshot(
         }
       ])
     ),
+    fulfillmentStateByInstance: Object.fromEntries(
+      Object.entries(fulfillmentStateByInstance).map(([instanceId, records]) => [
+        instanceId,
+        Object.fromEntries(
+          Object.entries(records).map(([sourceId, record]) => [sourceId, { ...record }])
+        )
+      ])
+    ),
     activeEventInstanceId,
     defaultOwnerForNewItems,
     eventFamilies: eventFamilies.map((family) => ({ ...family })),
@@ -101,6 +113,7 @@ export function parseImportedAppState(
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
   sponsorshipSetupByInstance: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance: FulfillmentStateByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -122,6 +135,7 @@ export function parseImportedAppState(
       collateralItems: [],
       collateralProfiles: { [initialEventInstances[0].id]: { ...initialLegDayCollateralProfile } },
       sponsorshipSetupByInstance: {},
+      fulfillmentStateByInstance: {},
       activeEventInstanceId: initialEventInstances[0].id,
       defaultOwnerForNewItems: "Melissa",
       eventFamilies: initialEventFamilies.map((family) => ({ ...family })),
@@ -170,6 +184,10 @@ export function parseImportedAppState(
     sponsorshipSetupByInstance:
       snapshot.sponsorshipSetupByInstance && typeof snapshot.sponsorshipSetupByInstance === "object"
         ? snapshot.sponsorshipSetupByInstance
+        : {},
+    fulfillmentStateByInstance:
+      snapshot.fulfillmentStateByInstance && typeof snapshot.fulfillmentStateByInstance === "object"
+        ? snapshot.fulfillmentStateByInstance
         : {},
     sponsorPlacementsByInstance:
       snapshot.sponsorPlacementsByInstance && typeof snapshot.sponsorPlacementsByInstance === "object"
@@ -226,6 +244,7 @@ function normalizeEventScopedState(input: {
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
   sponsorshipSetupByInstance?: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance?: FulfillmentStateByInstance;
   sponsorPlacementsByInstance?: Record<string, unknown[]>;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
@@ -274,6 +293,13 @@ function normalizeEventScopedState(input: {
       legacyPlacementsByInstance: input.sponsorPlacementsByInstance
     }
   );
+  const fulfillmentStateByInstance = normalizeFulfillmentStateByInstance(
+    input.fulfillmentStateByInstance,
+    {
+      eventInstances: normalizedEventInstances,
+      eventSubEvents
+    }
+  );
   const eventInstances =
     normalizedEventInstances.length > 0 || shouldPreserveEmptyEventGraph
       ? normalizedEventInstances
@@ -297,6 +323,7 @@ function normalizeEventScopedState(input: {
     collateralItems: resolvedCollateralItems,
     collateralProfiles: resolvedCollateralProfiles,
     sponsorshipSetupByInstance,
+    fulfillmentStateByInstance,
     eventTypes: input.eventTypes,
     eventInstances,
     eventSubEvents: resolvedEventSubEvents
@@ -331,7 +358,8 @@ function isActionItemRecord(value: unknown): value is ActionItem {
     (item.eventGroup === undefined || typeof item.eventGroup === "string") &&
     (item.legacyEventGroupMigrated === undefined || typeof item.legacyEventGroupMigrated === "boolean") &&
     (item.eventInstanceId === undefined || typeof item.eventInstanceId === "string") &&
-    (item.subEventId === undefined || typeof item.subEventId === "string");
+    (item.subEventId === undefined || typeof item.subEventId === "string") &&
+    (item.sponsorFulfillment === undefined || isSponsorFulfillmentLinkRecord(item.sponsorFulfillment));
 }
 
 function isCollateralProfileRecord(value: unknown): value is LegDayCollateralProfile {
@@ -435,6 +463,32 @@ function isNoteEntryList(value: unknown) {
           typeof noteEntry.author?.displayName === "string")
       );
     })
+  );
+}
+
+function isSponsorFulfillmentLinkRecord(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const link = value as {
+    sourceId?: unknown;
+    eventInstanceId?: unknown;
+    sponsorOpportunityId?: unknown;
+    sponsorCommitmentId?: unknown;
+    deliverableKey?: unknown;
+    subEventId?: unknown;
+    generationKind?: unknown;
+  };
+
+  return (
+    typeof link.sourceId === "string" &&
+    typeof link.eventInstanceId === "string" &&
+    typeof link.sponsorOpportunityId === "string" &&
+    typeof link.sponsorCommitmentId === "string" &&
+    typeof link.deliverableKey === "string" &&
+    (link.subEventId === undefined || typeof link.subEventId === "string") &&
+    (link.generationKind === "sponsorFulfillment" || link.generationKind === "sponsorFulfillmentFallback")
   );
 }
 

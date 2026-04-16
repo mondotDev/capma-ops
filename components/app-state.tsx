@@ -62,6 +62,8 @@ import {
   createDefaultSponsorshipSetupForEventInstance,
   ensureSponsorshipSetupForEventInstance,
   getSponsorCollateralLinkFromItem,
+  type FulfillmentStateByInstance,
+  type SponsorFulfillmentStateRecord,
   upsertSponsorFulfillmentSourceNoteEntries,
   supportsSponsorSetupForEventType,
   type SponsorCommitment,
@@ -69,7 +71,7 @@ import {
   type SponsorshipSetup,
   type SponsorshipSetupByInstance
 } from "@/lib/sponsor-fulfillment";
-import type { ActionItem } from "@/lib/sample-data";
+import type { ActionItem, SponsorFulfillmentLink } from "@/lib/sample-data";
 import {
   type IssueRecord,
   type IssueStatus,
@@ -82,6 +84,7 @@ import {
   createDefaultAppStateData,
   createDefaultCollateralItems,
   createDefaultCollateralProfiles,
+  createDefaultFulfillmentStateByInstance,
   createDefaultEventFamilies,
   createDefaultEventInstances,
   createDefaultEventSubEvents,
@@ -101,6 +104,60 @@ import type {
 } from "@/lib/state/app-state-types";
 
 const APP_STATE_PERSIST_DEBOUNCE_MS = 250;
+
+type FulfillmentRecordUpsertInput = {
+  link: SponsorFulfillmentLink;
+  approved?: boolean;
+  generatedAt?: string;
+  linkedActionItemId?: string;
+  linkedCollateralItemId?: string;
+};
+
+function upsertFulfillmentStateRecord(
+  currentState: FulfillmentStateByInstance,
+  input: FulfillmentRecordUpsertInput
+): { nextState: FulfillmentStateByInstance; changed: boolean } {
+  const existingRecord = currentState[input.link.eventInstanceId]?.[input.link.sourceId];
+  const nextRecord: SponsorFulfillmentStateRecord = {
+    sourceId: input.link.sourceId,
+    eventInstanceId: input.link.eventInstanceId,
+    sponsorOpportunityId: input.link.sponsorOpportunityId,
+    sponsorCommitmentId: input.link.sponsorCommitmentId,
+    deliverableKey: input.link.deliverableKey,
+    subEventId: input.link.subEventId,
+    approved: input.approved ?? existingRecord?.approved ?? false,
+    generatedAt: input.generatedAt ?? existingRecord?.generatedAt,
+    linkedActionItemId: input.linkedActionItemId ?? existingRecord?.linkedActionItemId,
+    linkedCollateralItemId: input.linkedCollateralItemId ?? existingRecord?.linkedCollateralItemId
+  };
+
+  if (
+    existingRecord &&
+    existingRecord.sourceId === nextRecord.sourceId &&
+    existingRecord.eventInstanceId === nextRecord.eventInstanceId &&
+    existingRecord.sponsorOpportunityId === nextRecord.sponsorOpportunityId &&
+    existingRecord.sponsorCommitmentId === nextRecord.sponsorCommitmentId &&
+    existingRecord.deliverableKey === nextRecord.deliverableKey &&
+    existingRecord.subEventId === nextRecord.subEventId &&
+    existingRecord.approved === nextRecord.approved &&
+    existingRecord.generatedAt === nextRecord.generatedAt &&
+    existingRecord.linkedActionItemId === nextRecord.linkedActionItemId &&
+    existingRecord.linkedCollateralItemId === nextRecord.linkedCollateralItemId
+  ) {
+    return { nextState: currentState, changed: false };
+  }
+
+  return {
+    nextState: {
+      ...currentState,
+      [input.link.eventInstanceId]: {
+        ...(currentState[input.link.eventInstanceId] ?? {}),
+        [input.link.sourceId]: nextRecord
+      }
+    },
+    changed: true
+  };
+}
 
 export function clearPersistedAppState() {
   getAppStateRepository().clear();
@@ -123,6 +180,7 @@ type AppStateContextValue = {
   collateralItems: CollateralItem[];
   collateralProfiles: CollateralProfilesByInstance;
   sponsorshipSetupByInstance: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance: FulfillmentStateByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];
@@ -190,6 +248,7 @@ type AppStateValuesContextValue = Pick<
   | "collateralItems"
   | "collateralProfiles"
   | "sponsorshipSetupByInstance"
+  | "fulfillmentStateByInstance"
   | "defaultOwnerForNewItems"
   | "eventFamilies"
   | "eventInstances"
@@ -213,6 +272,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [collateralItems, setCollateralItems] = useState<CollateralItem[]>(createDefaultCollateralItems);
   const [collateralProfiles, setCollateralProfiles] = useState<CollateralProfilesByInstance>(createDefaultCollateralProfiles);
   const [sponsorshipSetupByInstance, setSponsorshipSetupByInstance] = useState<SponsorshipSetupByInstance>({});
+  const [fulfillmentStateByInstance, setFulfillmentStateByInstance] =
+    useState<FulfillmentStateByInstance>(createDefaultFulfillmentStateByInstance);
   const [activeEventInstanceId, setActiveEventInstanceIdState] = useState<string>(getDefaultActiveEventInstanceId);
   const [defaultOwnerForNewItems, setDefaultOwnerForNewItemsState] = useState<string>(getDefaultOwnerForNewItems);
   const [eventFamilies, setEventFamilies] = useState<EventFamily[]>(createDefaultEventFamilies);
@@ -247,6 +308,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const collateralItemsRef = useRef(collateralItems);
   const collateralProfilesRef = useRef(collateralProfiles);
   const sponsorshipSetupByInstanceRef = useRef(sponsorshipSetupByInstance);
+  const fulfillmentStateByInstanceRef = useRef(fulfillmentStateByInstance);
   const activeEventInstanceIdRef = useRef(activeEventInstanceId);
   const defaultOwnerForNewItemsRef = useRef(defaultOwnerForNewItems);
   const eventFamiliesRef = useRef(eventFamilies);
@@ -260,6 +322,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   collateralItemsRef.current = collateralItems;
   collateralProfilesRef.current = collateralProfiles;
   sponsorshipSetupByInstanceRef.current = sponsorshipSetupByInstance;
+  fulfillmentStateByInstanceRef.current = fulfillmentStateByInstance;
   activeEventInstanceIdRef.current = activeEventInstanceId;
   defaultOwnerForNewItemsRef.current = defaultOwnerForNewItems;
   eventFamiliesRef.current = eventFamilies;
@@ -300,7 +363,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       overrides?: Partial<
         Pick<
           AppStateData,
-          "collateralItems" | "collateralProfiles" | "sponsorshipSetupByInstance" | "eventInstances" | "eventSubEvents"
+          | "collateralItems"
+          | "collateralProfiles"
+          | "sponsorshipSetupByInstance"
+          | "fulfillmentStateByInstance"
+          | "eventInstances"
+          | "eventSubEvents"
         >
       >
     ): PersistedCollateralState => ({
@@ -308,6 +376,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralProfiles: overrides?.collateralProfiles ?? collateralProfilesRef.current,
       sponsorshipSetupByInstance:
         overrides?.sponsorshipSetupByInstance ?? sponsorshipSetupByInstanceRef.current,
+      fulfillmentStateByInstance:
+        overrides?.fulfillmentStateByInstance ?? fulfillmentStateByInstanceRef.current,
       eventInstances: overrides?.eventInstances ?? eventInstancesRef.current,
       eventSubEvents: overrides?.eventSubEvents ?? eventSubEventsRef.current
     }),
@@ -353,6 +423,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     );
     setCollateralProfiles(state.collateralProfiles);
     setSponsorshipSetupByInstance(state.sponsorshipSetupByInstance);
+    setFulfillmentStateByInstance(state.fulfillmentStateByInstance);
     setActiveEventInstanceIdState(state.activeEventInstanceId);
     setDefaultOwnerForNewItemsState(state.defaultOwnerForNewItems);
     setEventFamilies(state.eventFamilies);
@@ -383,6 +454,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         collateralItems: baseState.collateralItems,
         collateralProfiles: baseState.collateralProfiles,
         sponsorshipSetupByInstance: baseState.sponsorshipSetupByInstance,
+        fulfillmentStateByInstance: baseState.fulfillmentStateByInstance,
         eventInstances: baseState.eventInstances,
         eventSubEvents: baseState.eventSubEvents
       };
@@ -394,6 +466,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             collateralItems: baseState.collateralItems,
             collateralProfiles: baseState.collateralProfiles,
             sponsorshipSetupByInstance: baseState.sponsorshipSetupByInstance,
+            fulfillmentStateByInstance: baseState.fulfillmentStateByInstance,
             eventInstances: baseState.eventInstances,
             eventSubEvents: baseState.eventSubEvents
           }),
@@ -487,6 +560,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           collateralItems,
           collateralProfiles,
           sponsorshipSetupByInstance,
+          fulfillmentStateByInstance,
           eventInstances,
           eventSubEvents
         },
@@ -504,6 +578,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralItems: persistableCollateralState.collateralItems,
       collateralProfiles: persistableCollateralState.collateralProfiles,
       sponsorshipSetupByInstance: persistableCollateralState.sponsorshipSetupByInstance ?? {},
+      fulfillmentStateByInstance: persistableCollateralState.fulfillmentStateByInstance ?? {},
       activeEventInstanceId,
       defaultOwnerForNewItems,
       eventFamilies,
@@ -518,6 +593,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralItems,
       collateralProfiles,
       sponsorshipSetupByInstance,
+      fulfillmentStateByInstance,
       collateralPersistenceStoreMode,
       defaultOwnerForNewItems,
       eventFamilies,
@@ -1119,6 +1195,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralItems: nextState.collateralItems,
       collateralProfiles: nextState.collateralProfiles,
       sponsorshipSetupByInstance: nextState.sponsorshipSetupByInstance,
+      fulfillmentStateByInstance: nextState.fulfillmentStateByInstance,
       eventInstances: nextState.eventInstances,
       eventSubEvents: nextState.eventSubEvents
     };
@@ -1129,6 +1206,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           collateralItems: nextState.collateralItems,
           collateralProfiles: nextState.collateralProfiles,
           sponsorshipSetupByInstance: nextState.sponsorshipSetupByInstance,
+          fulfillmentStateByInstance: nextState.fulfillmentStateByInstance,
           eventInstances: nextState.eventInstances,
           eventSubEvents: nextState.eventSubEvents
         }), getCollateralPersistenceContext({
@@ -1172,6 +1250,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralItems: nextState.collateralItems,
       collateralProfiles: nextState.collateralProfiles,
       sponsorshipSetupByInstance: nextState.sponsorshipSetupByInstance,
+      fulfillmentStateByInstance: nextState.fulfillmentStateByInstance,
       eventInstances: nextState.eventInstances,
       eventSubEvents: nextState.eventSubEvents
     };
@@ -1183,6 +1262,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             collateralItems: nextState.collateralItems,
             collateralProfiles: nextState.collateralProfiles,
             sponsorshipSetupByInstance: nextState.sponsorshipSetupByInstance,
+            fulfillmentStateByInstance: nextState.fulfillmentStateByInstance,
             eventInstances: nextState.eventInstances,
             eventSubEvents: nextState.eventSubEvents
           }),
@@ -1249,6 +1329,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         collateralItems: collateralItemsRef.current,
         collateralProfiles: collateralProfilesRef.current,
         sponsorshipSetupByInstance: sponsorshipSetupByInstanceRef.current,
+        fulfillmentStateByInstance: fulfillmentStateByInstanceRef.current,
         activeEventInstanceId: activeEventInstanceIdRef.current,
         defaultOwnerForNewItems: defaultOwnerForNewItemsRef.current,
         eventFamilies: eventFamiliesRef.current,
@@ -1268,6 +1349,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralItems: importedState.collateralItems,
       collateralProfiles: importedState.collateralProfiles,
       sponsorshipSetupByInstance: importedState.sponsorshipSetupByInstance,
+      fulfillmentStateByInstance: importedState.fulfillmentStateByInstance,
       eventInstances: importedState.eventInstances,
       eventSubEvents: importedState.eventSubEvents
     };
@@ -1279,6 +1361,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             collateralItems: importedState.collateralItems,
             collateralProfiles: importedState.collateralProfiles,
             sponsorshipSetupByInstance: importedState.sponsorshipSetupByInstance,
+            fulfillmentStateByInstance: importedState.fulfillmentStateByInstance,
             eventInstances: importedState.eventInstances,
             eventSubEvents: importedState.eventSubEvents
           }),
@@ -1575,6 +1658,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       eventInstance,
       existingItems: itemsRef.current,
       existingCollateralItems: collateralItemsRef.current,
+      fulfillmentStateForInstance: fulfillmentStateByInstanceRef.current[instanceId],
       defaultOwner: defaultOwnerForNewItemsRef.current,
       eventSubEvents: eventSubEventsRef.current
     });
@@ -1599,8 +1683,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
 
     let nextCollateralItems = collateralItemsRef.current;
+    let nextFulfillmentState = fulfillmentStateByInstanceRef.current;
+    let fulfillmentStateChanged = false;
     let createdCollateral = 0;
-    const collateralLinkBySourceKey = new Map<string, ReturnType<typeof getSponsorCollateralLinkFromItem>>();
+    const collateralLinkBySourceId = new Map<string, ReturnType<typeof getSponsorCollateralLinkFromItem>>();
+    const generationTimestamp = new Date().toISOString();
 
     for (const fallbackCollateral of result.fallbackCollateralToCreate) {
       nextCollateralItems = localCollateralStore.create(nextCollateralItems, fallbackCollateral.input, getCollateralContext());
@@ -1611,13 +1698,26 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
 
       createdCollateral += 1;
-      collateralLinkBySourceKey.set(fallbackCollateral.sourceKey, {
+      collateralLinkBySourceId.set(fallbackCollateral.sourceId, {
         collateralItemId: createdItem.id,
         collateralItemName: createdItem.itemName,
         subEventId: createdItem.subEventId,
         subEventName: eventSubEventsRef.current.find((subEvent) => subEvent.id === createdItem.subEventId)?.name ?? null,
         source: "fallback_created"
       });
+
+      if (createdItem.sponsorFulfillment) {
+        const upsertResult = upsertFulfillmentStateRecord(nextFulfillmentState, {
+          link: createdItem.sponsorFulfillment,
+          approved: true,
+          generatedAt:
+            nextFulfillmentState[createdItem.sponsorFulfillment.eventInstanceId]?.[createdItem.sponsorFulfillment.sourceId]
+              ?.generatedAt ?? generationTimestamp,
+          linkedCollateralItemId: createdItem.id
+        });
+        nextFulfillmentState = upsertResult.nextState;
+        fulfillmentStateChanged = fulfillmentStateChanged || upsertResult.changed;
+      }
     }
 
     if (result.obsoleteCollateralItems.length > 0) {
@@ -1636,15 +1736,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    if (createdCollateral > 0 || result.obsoleteCollateralItems.length > 0) {
-      setCollateralItems(nextCollateralItems);
-      enqueueCollateralPersistenceWrite(() =>
-        collateralPersistenceStore
-          .replaceAll(getPersistedCollateralState({ collateralItems: nextCollateralItems }), getCollateralPersistenceContext())
-          .then(() => undefined)
-      );
-    }
-
     let updatedActions = 0;
     setItems((current) => {
       const context = getNativeActionItemContext();
@@ -1652,7 +1743,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
       for (const plan of result.plans) {
         const resolvedCollateralLink =
-          plan.collateralLink ?? collateralLinkBySourceKey.get(plan.sourceKey) ?? null;
+          plan.collateralLink ?? collateralLinkBySourceId.get(plan.sourceId) ?? null;
 
         if (plan.existingActionItemId) {
           const existingItem = nextItems.find((item) => item.id === plan.existingActionItemId) ?? null;
@@ -1665,15 +1756,34 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             upsertSponsorFulfillmentSourceNoteEntries(existingItem.noteEntries, plan.sourceKey),
             resolvedCollateralLink
           );
+          const shouldUpdateStructuredLink =
+            existingItem.sponsorFulfillment?.sourceId !== plan.actionItem.sponsorFulfillment?.sourceId;
 
-          if (nextNoteEntries !== existingItem.noteEntries) {
+          if (nextNoteEntries !== existingItem.noteEntries || shouldUpdateStructuredLink) {
             nextItems = nativeActionItemMutator.update(
               nextItems,
               existingItem.id,
-              { noteEntries: nextNoteEntries },
+              {
+                noteEntries: nextNoteEntries,
+                sponsorFulfillment: plan.actionItem.sponsorFulfillment
+              },
               context
             );
             updatedActions += 1;
+          }
+
+          const actionLink = plan.actionItem.sponsorFulfillment ?? existingItem.sponsorFulfillment;
+          if (actionLink) {
+            const upsertResult = upsertFulfillmentStateRecord(nextFulfillmentState, {
+              link: actionLink,
+              approved: true,
+              generatedAt:
+                nextFulfillmentState[actionLink.eventInstanceId]?.[actionLink.sourceId]?.generatedAt ?? generationTimestamp,
+              linkedActionItemId: existingItem.id,
+              linkedCollateralItemId: resolvedCollateralLink?.collateralItemId
+            });
+            nextFulfillmentState = upsertResult.nextState;
+            fulfillmentStateChanged = fulfillmentStateChanged || upsertResult.changed;
           }
 
           continue;
@@ -1684,6 +1794,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           noteEntries: appendSponsorCollateralLinkNoteEntries(plan.actionItem.noteEntries ?? [], resolvedCollateralLink)
         };
         nextItems = nativeActionItemMutator.create(nextItems, nextActionItem, context);
+        const createdActionItem = nextItems[0] ?? null;
+
+        if (createdActionItem?.sponsorFulfillment) {
+          const upsertResult = upsertFulfillmentStateRecord(nextFulfillmentState, {
+            link: createdActionItem.sponsorFulfillment,
+            approved: true,
+            generatedAt:
+              nextFulfillmentState[createdActionItem.sponsorFulfillment.eventInstanceId]?.[
+                createdActionItem.sponsorFulfillment.sourceId
+              ]?.generatedAt ?? generationTimestamp,
+            linkedActionItemId: createdActionItem.id,
+            linkedCollateralItemId: resolvedCollateralLink?.collateralItemId
+          });
+          nextFulfillmentState = upsertResult.nextState;
+          fulfillmentStateChanged = fulfillmentStateChanged || upsertResult.changed;
+        }
       }
 
       for (const obsoleteAction of result.obsoleteActionItems) {
@@ -1704,6 +1830,21 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           );
           updatedActions += 1;
         }
+
+        if (existingItem.sponsorFulfillment) {
+          const upsertResult = upsertFulfillmentStateRecord(nextFulfillmentState, {
+            link: existingItem.sponsorFulfillment,
+            approved: true,
+            generatedAt:
+              nextFulfillmentState[existingItem.sponsorFulfillment.eventInstanceId]?.[
+                existingItem.sponsorFulfillment.sourceId
+              ]?.generatedAt ?? generationTimestamp,
+            linkedActionItemId: existingItem.id,
+            linkedCollateralItemId: getSponsorCollateralLinkFromItem(existingItem)?.collateralItemId
+          });
+          nextFulfillmentState = upsertResult.nextState;
+          fulfillmentStateChanged = fulfillmentStateChanged || upsertResult.changed;
+        }
       }
 
       enqueueNativeActionItemStoreWrite(() =>
@@ -1711,6 +1852,29 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       );
       return nextItems;
     });
+
+    if (createdCollateral > 0 || result.obsoleteCollateralItems.length > 0) {
+      setCollateralItems(nextCollateralItems);
+    }
+
+    if (fulfillmentStateChanged) {
+      setFulfillmentStateByInstance(nextFulfillmentState);
+      fulfillmentStateByInstanceRef.current = nextFulfillmentState;
+    }
+
+    if (createdCollateral > 0 || result.obsoleteCollateralItems.length > 0 || fulfillmentStateChanged) {
+      enqueueCollateralPersistenceWrite(() =>
+        collateralPersistenceStore
+          .replaceAll(
+            getPersistedCollateralState({
+              collateralItems: nextCollateralItems,
+              fulfillmentStateByInstance: nextFulfillmentState
+            }),
+            getCollateralPersistenceContext()
+          )
+          .then(() => undefined)
+      );
+    }
 
     return {
       createdActions: result.created.length,
@@ -1761,6 +1925,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     collateralItems,
     collateralProfiles,
     sponsorshipSetupByInstance,
+    fulfillmentStateByInstance,
     activeEventInstanceId,
     defaultOwnerForNewItems,
     eventFamilies,
@@ -1776,6 +1941,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       collateralItems,
       collateralProfiles,
       sponsorshipSetupByInstance,
+      fulfillmentStateByInstance,
       defaultOwnerForNewItems,
       eventFamilies,
       eventInstances,
