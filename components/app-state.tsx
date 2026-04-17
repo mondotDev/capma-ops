@@ -58,9 +58,11 @@ import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
 import {
   appendSponsorCollateralLinkNoteEntries,
   appendSponsorGeneratedWorkReviewNoteEntries,
+  buildSponsorFulfillmentActionRepairUpdates,
   buildSponsorFulfillmentGenerationResult,
   createDefaultSponsorshipSetupForEventInstance,
   ensureSponsorshipSetupForEventInstance,
+  hasSponsorFulfillmentReconciliationWork,
   getSponsorCollateralLinkFromItem,
   type FulfillmentStateByInstance,
   type SponsorFulfillmentStateRecord,
@@ -1663,7 +1665,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       eventSubEvents: eventSubEventsRef.current
     });
 
-    if (result.plans.length === 0) {
+    if (!hasSponsorFulfillmentReconciliationWork(result)) {
       return {
         createdActions: 0,
         updatedActions: 0,
@@ -1752,21 +1754,24 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             continue;
           }
 
-          const nextNoteEntries = appendSponsorCollateralLinkNoteEntries(
-            upsertSponsorFulfillmentSourceNoteEntries(existingItem.noteEntries, plan.sourceKey),
-            resolvedCollateralLink
-          );
-          const shouldUpdateStructuredLink =
-            existingItem.sponsorFulfillment?.sourceId !== plan.actionItem.sponsorFulfillment?.sourceId;
+          const repairUpdates = buildSponsorFulfillmentActionRepairUpdates({
+            existingItem,
+            generatedTask: plan.actionItem,
+            sourceKey: plan.sourceKey,
+            collateralLink: resolvedCollateralLink
+          });
+          const repairedPreview = nativeActionItemMutator.update(
+            [existingItem],
+            existingItem.id,
+            repairUpdates,
+            context
+          )[0];
 
-          if (nextNoteEntries !== existingItem.noteEntries || shouldUpdateStructuredLink) {
+          if (repairedPreview && repairedPreview !== existingItem) {
             nextItems = nativeActionItemMutator.update(
               nextItems,
               existingItem.id,
-              {
-                noteEntries: nextNoteEntries,
-                sponsorFulfillment: plan.actionItem.sponsorFulfillment
-              },
+              repairUpdates,
               context
             );
             updatedActions += 1;

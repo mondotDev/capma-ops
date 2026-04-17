@@ -138,6 +138,13 @@ export type SponsorGeneratedWorkReviewRecord = {
   hasMeaningfulProgress: boolean;
 };
 
+type SponsorFulfillmentActionRepairInput = {
+  existingItem: ActionItem;
+  generatedTask: NewActionItemInput;
+  sourceKey: string;
+  collateralLink: SponsorCollateralLink | null;
+};
+
 export type SponsorCollateralPromotionDefaults = {
   eventInstanceId: string;
   sponsorName: string;
@@ -146,6 +153,13 @@ export type SponsorCollateralPromotionDefaults = {
   collateralItemName: string;
   subEventId: string;
   subEventName: string | null;
+};
+
+export type FulfillmentPreviewSourceLink = {
+  eventInstanceId: string;
+  placementId: string;
+  sponsorId: string;
+  deliverableId: string;
 };
 
 const DEFAULT_SPONSOR_EVENT_TYPE_ID = "legislative-day";
@@ -1244,6 +1258,87 @@ function getCanonicalSourceIdFromParsedSponsorSource(
   }
 
   return null;
+}
+
+export function getFulfillmentPreviewSourceLink(
+  item: Pick<ActionItem, "noteEntries" | "sponsorFulfillment">
+): FulfillmentPreviewSourceLink | null {
+  if (item.sponsorFulfillment) {
+    return {
+      eventInstanceId: item.sponsorFulfillment.eventInstanceId,
+      placementId: item.sponsorFulfillment.sponsorOpportunityId,
+      sponsorId: item.sponsorFulfillment.sponsorCommitmentId,
+      deliverableId: item.sponsorFulfillment.deliverableKey
+    };
+  }
+
+  for (const entry of item.noteEntries) {
+    const markerStart = entry.text.indexOf("Fulfillment preview source: ");
+
+    if (markerStart < 0) {
+      continue;
+    }
+
+    const sourceStart = markerStart + "Fulfillment preview source: ".length;
+    const sourceEnd = entry.text.indexOf(".", sourceStart);
+
+    if (sourceEnd < 0) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(entry.text.slice(sourceStart, sourceEnd)) as Partial<FulfillmentPreviewSourceLink>;
+
+      if (
+        typeof parsed.eventInstanceId === "string" &&
+        typeof parsed.placementId === "string" &&
+        typeof parsed.sponsorId === "string" &&
+        typeof parsed.deliverableId === "string"
+      ) {
+        return {
+          eventInstanceId: parsed.eventInstanceId,
+          placementId: parsed.placementId,
+          sponsorId: parsed.sponsorId,
+          deliverableId: parsed.deliverableId
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+export function hasSponsorFulfillmentReconciliationWork(result: SponsorFulfillmentGenerationResult) {
+  return result.plans.length > 0 || result.obsoleteActionItems.length > 0 || result.obsoleteCollateralItems.length > 0;
+}
+
+export function buildSponsorFulfillmentActionRepairUpdates(
+  input: SponsorFulfillmentActionRepairInput
+): Partial<ActionItem> {
+  const nextNoteEntries = appendSponsorCollateralLinkNoteEntries(
+    upsertSponsorFulfillmentSourceNoteEntries(input.existingItem.noteEntries, input.sourceKey),
+    input.collateralLink
+  );
+  const nextUpdates: Partial<ActionItem> = {
+    title: input.generatedTask.title,
+    type: input.generatedTask.type,
+    workstream: input.generatedTask.workstream,
+    eventInstanceId: input.generatedTask.eventInstanceId,
+    operationalBucket: input.generatedTask.operationalBucket,
+    issue: input.generatedTask.issue,
+    dueDate: input.generatedTask.dueDate,
+    noteEntries: nextNoteEntries,
+    sponsorFulfillment: input.generatedTask.sponsorFulfillment
+  };
+
+  if (input.existingItem.status === "Not Started" || input.existingItem.status === "Waiting") {
+    nextUpdates.status = input.generatedTask.status;
+    nextUpdates.waitingOn = input.generatedTask.waitingOn;
+  }
+
+  return nextUpdates;
 }
 
 function resolveSponsorDeliverableDueDate(

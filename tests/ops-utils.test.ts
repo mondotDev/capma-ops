@@ -82,11 +82,14 @@ import {
   mapBootstrapStatus
 } from "../lib/native-action-item-bootstrap";
 import {
+  buildSponsorFulfillmentActionRepairUpdates,
   buildSponsorFulfillmentGenerationResult,
   buildFulfillmentSourceId,
   createSponsorCommitmentDraft,
   createSponsorOpportunityDeliverableDraft,
   createSponsorOpportunityDraft,
+  getFulfillmentPreviewSourceLink,
+  hasSponsorFulfillmentReconciliationWork,
   getSponsorCollateralLinkFromItem,
   getSponsorCollateralPromotionDefaults,
   getSponsorFulfillmentSourceFromActionItem,
@@ -5182,6 +5185,178 @@ test("fulfillment source ids are deterministic from stable ids only", () => {
       subEventId: "leg-day-thursday-breakfast"
     })
   );
+});
+
+test("obsolete-only sponsor reruns still count as reconciliation work", () => {
+  const generation = buildSponsorFulfillmentGenerationResult({
+    sponsorshipSetup: {
+      opportunities: [],
+      commitments: []
+    },
+    eventInstance: initialEventInstances[0]!,
+    existingItems: [
+      createItem({
+        id: "obsolete-sponsor-action",
+        title: "Acme Pest - Legacy Deliverable",
+        type: "Deliverable",
+        workstream: "Legislative Day",
+        eventInstanceId: "legislative-day-2026",
+        noteEntries: [
+          createActionNoteEntry(
+            'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"eventInstanceId":"legislative-day-2026","sponsorName":"acme pest","opportunityId":"retired-opportunity","placementType":"Premier","deliverableName":"Legacy Deliverable"}.'
+          )!
+        ]
+      })
+    ],
+    existingCollateralItems: [],
+    defaultOwner: "Melissa",
+    eventSubEvents: initialEventSubEvents
+  });
+
+  assert.equal(generation.plans.length, 0);
+  assert.equal(generation.obsoleteActionItems.length, 1);
+  assert.equal(hasSponsorFulfillmentReconciliationWork(generation), true);
+});
+
+test("sponsor action repair updates refresh generated fields without clobbering progressed work", () => {
+  const generatedTask = {
+    type: "Deliverable",
+    title: "Acme Pest - Updated Spotlight Post",
+    workstream: "Legislative Day",
+    eventInstanceId: "legislative-day-2026",
+    operationalBucket: undefined,
+    issue: "April 2026 News Brief",
+    dueDate: "2026-04-20",
+    owner: "Melissa",
+    status: "Waiting",
+    waitingOn: "Sponsor logo",
+    isBlocked: undefined,
+    blockedBy: "",
+    noteEntries: [
+      createActionNoteEntry(
+        'Generated from sponsor setup for Legislative Day 2026. Sponsor radar source: {"fulfillmentSourceId":"new-source","eventInstanceId":"legislative-day-2026","sponsorOpportunityId":"opp-1","sponsorCommitmentId":"commit-1","deliverableKey":"spotlight-post","sponsorName":"acme pest","opportunityId":"opp-1","placementType":"Thursday Briefing Breakfast","deliverableName":"Updated Spotlight Post"}.'
+      )!
+    ],
+    sponsorFulfillment: {
+      sourceId: "new-source",
+      eventInstanceId: "legislative-day-2026",
+      sponsorOpportunityId: "opp-1",
+      sponsorCommitmentId: "commit-1",
+      deliverableKey: "spotlight-post",
+      generationKind: "sponsorFulfillment" as const
+    }
+  };
+
+  const waitingUpdates = buildSponsorFulfillmentActionRepairUpdates({
+    existingItem: createItem({
+      id: "generated-item",
+      title: "Acme Pest - Old Spotlight Post",
+      type: "Deliverable",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      issue: "March 2026 News Brief",
+      dueDate: "2026-03-20",
+      status: "Not Started",
+      waitingOn: "",
+      sponsorFulfillment: {
+        sourceId: "old-source",
+        eventInstanceId: "legislative-day-2026",
+        sponsorOpportunityId: "opp-1",
+        sponsorCommitmentId: "commit-1",
+        deliverableKey: "spotlight-post",
+        generationKind: "sponsorFulfillment"
+      }
+    }),
+    generatedTask,
+    sourceKey: '{"fulfillmentSourceId":"new-source"}',
+    collateralLink: null
+  });
+
+  assert.equal(waitingUpdates.title, "Acme Pest - Updated Spotlight Post");
+  assert.equal(waitingUpdates.issue, "April 2026 News Brief");
+  assert.equal(waitingUpdates.dueDate, "2026-04-20");
+  assert.equal(waitingUpdates.status, "Waiting");
+  assert.equal(waitingUpdates.waitingOn, "Sponsor logo");
+  assert.equal(waitingUpdates.sponsorFulfillment?.sourceId, "new-source");
+
+  const progressedUpdates = buildSponsorFulfillmentActionRepairUpdates({
+    existingItem: createItem({
+      id: "progressed-item",
+      title: "Acme Pest - Old Spotlight Post",
+      type: "Deliverable",
+      workstream: "Legislative Day",
+      eventInstanceId: "legislative-day-2026",
+      issue: "March 2026 News Brief",
+      dueDate: "2026-03-20",
+      status: "In Progress",
+      waitingOn: "Manual dependency",
+      sponsorFulfillment: {
+        sourceId: "old-source",
+        eventInstanceId: "legislative-day-2026",
+        sponsorOpportunityId: "opp-1",
+        sponsorCommitmentId: "commit-1",
+        deliverableKey: "spotlight-post",
+        generationKind: "sponsorFulfillment"
+      }
+    }),
+    generatedTask,
+    sourceKey: '{"fulfillmentSourceId":"new-source"}',
+    collateralLink: null
+  });
+
+  assert.equal(progressedUpdates.title, "Acme Pest - Updated Spotlight Post");
+  assert.equal(progressedUpdates.status, undefined);
+  assert.equal(progressedUpdates.waitingOn, undefined);
+});
+
+test("fulfillment preview source extraction recognizes canonical structured sponsor fulfillment linkage", () => {
+  const source = getFulfillmentPreviewSourceLink(
+    createItem({
+      eventInstanceId: "legislative-day-2026",
+      sponsorFulfillment: {
+        sourceId: buildFulfillmentSourceId({
+          eventInstanceId: "legislative-day-2026",
+          sponsorOpportunityId: "opp-1",
+          sponsorCommitmentId: "commit-1",
+          deliverableKey: "spotlight-post",
+          subEventId: "leg-day-thursday-breakfast"
+        }),
+        eventInstanceId: "legislative-day-2026",
+        sponsorOpportunityId: "opp-1",
+        sponsorCommitmentId: "commit-1",
+        deliverableKey: "spotlight-post",
+        subEventId: "leg-day-thursday-breakfast",
+        generationKind: "sponsorFulfillment"
+      },
+      noteEntries: []
+    })
+  );
+
+  assert.deepEqual(source, {
+    eventInstanceId: "legislative-day-2026",
+    placementId: "opp-1",
+    sponsorId: "commit-1",
+    deliverableId: "spotlight-post"
+  });
+});
+
+test("fulfillment preview source extraction still falls back to legacy preview markers", () => {
+  const source = getFulfillmentPreviewSourceLink(
+    createItem({
+      noteEntries: [
+        createActionNoteEntry(
+          'Generated from approved fulfillment preview for Acme Pest. Fulfillment preview source: {"eventInstanceId":"legislative-day-2026","placementId":"opp-1","sponsorId":"commit-1","deliverableId":"spotlight-post"}.'
+        )!
+      ]
+    })
+  );
+
+  assert.deepEqual(source, {
+    eventInstanceId: "legislative-day-2026",
+    placementId: "opp-1",
+    sponsorId: "commit-1",
+    deliverableId: "spotlight-post"
+  });
 });
 
 test("sponsor generation uses scheduled sub-event dates when the event type defines sub-event timing", () => {
