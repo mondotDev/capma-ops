@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedInGoogleUser() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == "google.com";
+    }
+
+    function isInternalBetaUser() {
+      return isSignedInGoogleUser()
+        && exists(/databases/$(database)/documents/internalBetaUsers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/internalBetaUsers/$(request.auth.uid)).data.enabled == true;
+    }
+
+    match /internalBetaUsers/{userId} {
+      allow read: if isSignedInGoogleUser() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /actionItems/{document=**} {
+      allow read, write: if isInternalBetaUser();
+    }
+
+    match /appStateSlices/{document=**} {
+      allow read, write: if isInternalBetaUser();
+    }
+
+    match /dashboardProjections/{document=**} {
+      allow read: if isInternalBetaUser();
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

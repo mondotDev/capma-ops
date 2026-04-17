@@ -1,4 +1,5 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 type FirebaseWebConfig = {
@@ -11,6 +12,7 @@ type FirebaseWebConfig = {
 };
 
 let firebaseAppInstance: FirebaseApp | null | undefined;
+let firebaseAuthInstance: Auth | null | undefined;
 let firestoreDbInstance: Firestore | null | undefined;
 
 function getFirebaseConfigFromEnv(): FirebaseWebConfig | null {
@@ -43,6 +45,10 @@ export function isDashboardReadsEnabled() {
   return process.env.NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED === "true";
 }
 
+export function isFirebaseAuthEnabled() {
+  return process.env.NEXT_PUBLIC_FIREBASE_AUTH_ENABLED === "true";
+}
+
 export function getFirebaseApp(): FirebaseApp | null {
   if (firebaseAppInstance !== undefined) {
     return firebaseAppInstance;
@@ -59,6 +65,22 @@ export function getFirebaseApp(): FirebaseApp | null {
   return firebaseAppInstance;
 }
 
+export function getFirebaseAuth(): Auth | null {
+  if (firebaseAuthInstance !== undefined) {
+    return firebaseAuthInstance;
+  }
+
+  const firebaseApp = getFirebaseApp();
+
+  if (!firebaseApp) {
+    firebaseAuthInstance = null;
+    return firebaseAuthInstance;
+  }
+
+  firebaseAuthInstance = getAuth(firebaseApp);
+  return firebaseAuthInstance;
+}
+
 export function getFirestoreDb(): Firestore | null {
   if (firestoreDbInstance !== undefined) {
     return firestoreDbInstance;
@@ -73,4 +95,26 @@ export function getFirestoreDb(): Firestore | null {
 
   firestoreDbInstance = getFirestore(firebaseApp);
   return firestoreDbInstance;
+}
+
+export async function signInWithGooglePopup() {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    throw new Error("Firebase Auth is not available.");
+  }
+
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithPopup(auth, provider);
+}
+
+export async function signOutFromFirebase() {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    return;
+  }
+
+  await signOut(auth);
 }

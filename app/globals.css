@@ -19,6 +19,9 @@
   --sidebar-width: 220px;
   --topbar-height: 72px;
   --drawer-width: 760px;
+  --font-title: "Arial Narrow", Impact, "Segoe UI", sans-serif;
+  --font-heading: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Segoe UI", "Helvetica Neue", Arial, Helvetica, sans-serif;
   font-family: var(--font-body), Arial, Helvetica, sans-serif;
 }
 

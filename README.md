@@ -2,6 +2,8 @@
 
 CAPMA Ops Hub is a local-first Next.js operations workspace for CAPMA planning, execution, publication issue tracking, and event collateral coordination.
 
+The production build no longer depends on runtime Google font fetches. Typography now uses deployment-safe local/system font stacks, which keeps Firebase-hosted builds deterministic.
+
 ## Current model
 
 `ActionItem` in [`lib/sample-data.ts`](C:/Users/melis/Documents/git-repos/capma-ops/lib/sample-data.ts) is the core native work record. Important fields:
@@ -76,12 +78,65 @@ Required Firebase config:
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_NATIVE_ACTION_ITEM_STORE_MODE`
 - `NEXT_PUBLIC_COLLATERAL_STORE_MODE`
+- `NEXT_PUBLIC_FIREBASE_AUTH_ENABLED`
 
 Optional dashboard flag:
 
 - `NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED`
 
 If the dashboard flag is missing or `false`, the dashboard stays on the existing local-first read path.
+
+## Firebase hosting readiness
+
+This repo now includes the minimum Firebase deployment config for a first internal beta:
+
+- [`firebase.json`](C:/dev/capma-ops/firebase.json)
+- [`firestore.rules`](C:/dev/capma-ops/firestore.rules)
+- [`firestore.indexes.json`](C:/dev/capma-ops/firestore.indexes.json)
+
+`.firebaserc` is intentionally not committed because it is project-specific. Use `--project <firebase-project-id>` in commands below or create your own local alias with `firebase use --add`.
+
+Hosted internal beta access now expects:
+
+- Firebase Authentication enabled with Google as a sign-in provider
+- a Firestore allowlist document at `internalBetaUsers/{uid}` for each approved tester
+
+Minimal allowlist document shape:
+
+```json
+{
+  "enabled": true,
+  "email": "user@example.com",
+  "displayName": "Internal Tester"
+}
+```
+
+On a fresh Firebase project, the first allowlisted signed-in user now auto-initializes the missing
+`appStateSlices/collateralState` document from the app's canonical collateral state shape during
+startup. No separate one-off collateral bootstrap step is required for first hosted use.
+
+## Firebase deploy
+
+Install dependencies and verify the app:
+
+```powershell
+npm install
+npx tsc --noEmit
+npm test
+npm run build
+```
+
+Deploy Firestore config and the Next.js app to Firebase Hosting:
+
+```powershell
+npx firebase-tools@latest login
+npx firebase-tools@latest use --add <firebase-project-id>
+npx firebase-tools@latest deploy --only firestore --project <firebase-project-id>
+npx firebase-tools@latest experiments:enable webframeworks
+npx firebase-tools@latest deploy --only hosting --project <firebase-project-id>
+```
+
+If the project is already selected locally through `.firebaserc`, you can omit `--project <firebase-project-id>`.
 
 ## Native action-item bootstrap import
 

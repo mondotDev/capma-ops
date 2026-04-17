@@ -140,6 +140,7 @@ import {
   resetDashboardSessionReadSelectionForTests,
   type DashboardSessionReadSelection
 } from "../lib/firebase-dashboard-source";
+import { parseInternalBetaAccessDocument } from "../lib/firebase-access";
 import {
   getActionListViewData,
   getPublicationIssueWorkspaceSummary,
@@ -2554,6 +2555,16 @@ test("native action item store mode defaults to firebase and supports explicit l
   assert.equal(getNativeActionItemStoreMode("firebase"), "firebase");
   assert.equal(getNativeActionItemStoreMode("local"), "local");
   assert.equal(getNativeActionItemStoreMode(" LOCAL "), "local");
+});
+
+test("internal beta access documents require an enabled boolean and only optional string metadata", () => {
+  assert.deepEqual(parseInternalBetaAccessDocument({ enabled: true, email: "tester@example.com" }), {
+    enabled: true,
+    email: "tester@example.com",
+    displayName: undefined
+  });
+  assert.equal(parseInternalBetaAccessDocument({ enabled: "yes" }), null);
+  assert.equal(parseInternalBetaAccessDocument({ enabled: true, email: 42 }), null);
 });
 
 test("collateral persistence store mode defaults to local and supports explicit firebase override", () => {
@@ -5040,6 +5051,142 @@ test("sponsor fulfillment title preview matches radar-style action item naming",
   );
 });
 
+test("firestore collateral persistence store bootstraps missing remote collateral state from the provided canonical state", async () => {
+  const defaultState = createDefaultAppStateData();
+  const persistedState = {
+    collateralItems: defaultState.collateralItems.slice(0, 1),
+    collateralProfiles: defaultState.collateralProfiles,
+    sponsorshipSetupByInstance: {},
+    fulfillmentStateByInstance: {},
+    eventInstances: defaultState.eventInstances,
+    eventSubEvents: defaultState.eventSubEvents
+  };
+  let writeCount = 0;
+  let writtenValue: unknown = null;
+
+  const store = createFirestoreCollateralPersistenceStore({
+    getDb: () => ({}) as never,
+    isConfigured: () => true,
+    getDocument: async () => null,
+    setDocument: async (_firestore, _collectionName, _documentName, value) => {
+      writeCount += 1;
+      writtenValue = value;
+    }
+  });
+
+  const loadedState = await store.load(persistedState, {
+    defaultOwner: defaultState.defaultOwnerForNewItems,
+    eventTypes: defaultState.eventTypes
+  });
+
+  assert.equal(writeCount, 1);
+  assert.deepEqual(loadedState, normalizePersistedCollateralState(persistedState, {
+    defaultOwner: defaultState.defaultOwnerForNewItems,
+    eventTypes: defaultState.eventTypes
+  }));
+  assert.ok(parseFirestoreCollateralStateDocument(writtenValue));
+});
+
+test("firestore collateral bootstrap payload strips nested undefined values before setDoc", () => {
+  const defaultState = createDefaultAppStateData();
+  const primaryInstanceId = defaultState.eventInstances[0]!.id;
+  const persistedState = normalizePersistedCollateralState(
+    {
+      collateralItems: defaultState.collateralItems.slice(0, 1).map((item) => ({
+        ...item,
+        sponsorFulfillment: {
+          sourceId: "source-1",
+          eventInstanceId: item.eventInstanceId,
+          sponsorOpportunityId: "opportunity-1",
+          sponsorCommitmentId: "commitment-1",
+          deliverableKey: "deliverable-1",
+          subEventId: undefined,
+          generationKind: "sponsorFulfillmentFallback"
+        }
+      })),
+      collateralProfiles: defaultState.collateralProfiles,
+      sponsorshipSetupByInstance: {
+        [primaryInstanceId]: {
+          opportunities: [
+            {
+              id: "opportunity-1",
+              eventInstanceId: primaryInstanceId,
+              label: "Premier",
+              placementType: "premier",
+              linkedSubEventId: undefined,
+              isActive: true,
+              notes: undefined,
+              deliverables: [
+                {
+                  id: "deliverable-1",
+                  key: "deliverable-1",
+                  deliverableName: "Stage Signage",
+                  category: "Print",
+                  channel: "Onsite",
+                  timingType: "event_day",
+                  offsetDays: "",
+                  fixedMonth: "",
+                  eventDayOffset: "",
+                  requiresLogo: true,
+                  requiresCopy: false,
+                  requiresApproval: false
+                }
+              ]
+            }
+          ],
+          commitments: [
+            {
+              id: "commitment-1",
+              eventInstanceId: primaryInstanceId,
+              sponsorName: "Acme Pest",
+              opportunityId: "opportunity-1",
+              linkedSubEventId: undefined,
+              isActive: true,
+              logoReceived: false,
+              notes: undefined
+            }
+          ]
+        }
+      },
+      fulfillmentStateByInstance: {
+        [primaryInstanceId]: {
+          "source-1": {
+            sourceId: "source-1",
+            eventInstanceId: primaryInstanceId,
+            sponsorOpportunityId: "opportunity-1",
+            sponsorCommitmentId: "commitment-1",
+            deliverableKey: "deliverable-1",
+            subEventId: undefined,
+            approved: true,
+            generatedAt: undefined,
+            linkedActionItemId: undefined,
+            linkedCollateralItemId: defaultState.collateralItems[0]!.id
+          }
+        }
+      },
+      eventInstances: defaultState.eventInstances.map((instance) => ({
+        ...instance,
+        endDate: instance.endDate ?? undefined
+      })),
+      eventSubEvents: defaultState.eventSubEvents.map((subEvent) => ({
+        ...subEvent,
+        date: subEvent.date ?? undefined,
+        endDate: subEvent.endDate ?? undefined,
+        startTime: subEvent.startTime ?? undefined,
+        endTime: subEvent.endTime ?? undefined
+      }))
+    },
+    {
+      defaultOwner: defaultState.defaultOwnerForNewItems,
+      eventTypes: defaultState.eventTypes
+    }
+  );
+
+  const document = mapPersistedCollateralStateToFirestoreDocument(persistedState);
+
+  assert.equal(containsUndefinedDeep(document), false);
+});
+
 test("new sponsor drafts use stable UUID-backed ids and deliverable keys", () => {
   const setup = {
     opportunities: [createSponsorOpportunityDraft("legislative-day-2026", "legislative-day")],
@@ -6051,3 +6198,19 @@ test("bootstrap import keeps linked event mapping narrow and explicit", () => {
   assert.equal(mapBootstrapLinkedEvent("Unknown Event"), null);
   assert.equal(mapBootstrapStatus("Ready"), "In Progress");
 });
+
+function containsUndefinedDeep(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsUndefinedDeep(entry));
+  }
+
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.values(value).some((entry) => containsUndefinedDeep(entry));
+}

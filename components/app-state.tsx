@@ -452,26 +452,31 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     async function hydrateFromSelectedNativeActionItemStore() {
       const loadResult = appStateRepository.load();
       const baseState = loadResult.state ?? createDefaultAppStateData();
-      collateralBootstrapSourceRef.current = {
-        collateralItems: baseState.collateralItems,
-        collateralProfiles: baseState.collateralProfiles,
-        sponsorshipSetupByInstance: baseState.sponsorshipSetupByInstance,
-        fulfillmentStateByInstance: baseState.fulfillmentStateByInstance,
-        eventInstances: baseState.eventInstances,
-        eventSubEvents: baseState.eventSubEvents
-      };
+      const defaultCollateralBootstrapState = createDefaultAppStateData();
+      const initialCollateralBootstrapState =
+        collateralPersistenceStoreMode === "firebase"
+          ? {
+              collateralItems: defaultCollateralBootstrapState.collateralItems,
+              collateralProfiles: defaultCollateralBootstrapState.collateralProfiles,
+              sponsorshipSetupByInstance: defaultCollateralBootstrapState.sponsorshipSetupByInstance,
+              fulfillmentStateByInstance: defaultCollateralBootstrapState.fulfillmentStateByInstance,
+              eventInstances: defaultCollateralBootstrapState.eventInstances,
+              eventSubEvents: defaultCollateralBootstrapState.eventSubEvents
+            }
+          : {
+              collateralItems: baseState.collateralItems,
+              collateralProfiles: baseState.collateralProfiles,
+              sponsorshipSetupByInstance: baseState.sponsorshipSetupByInstance,
+              fulfillmentStateByInstance: baseState.fulfillmentStateByInstance,
+              eventInstances: baseState.eventInstances,
+              eventSubEvents: baseState.eventSubEvents
+            };
+      collateralBootstrapSourceRef.current = initialCollateralBootstrapState;
       setShouldPersist(loadResult.shouldPersist);
 
       try {
         const loadedCollateralState = await collateralPersistenceStore.load(
-          getPersistedCollateralState({
-            collateralItems: baseState.collateralItems,
-            collateralProfiles: baseState.collateralProfiles,
-            sponsorshipSetupByInstance: baseState.sponsorshipSetupByInstance,
-            fulfillmentStateByInstance: baseState.fulfillmentStateByInstance,
-            eventInstances: baseState.eventInstances,
-            eventSubEvents: baseState.eventSubEvents
-          }),
+          initialCollateralBootstrapState,
           getCollateralPersistenceContext({
             defaultOwnerForNewItems: baseState.defaultOwnerForNewItems,
             eventTypes: baseState.eventTypes

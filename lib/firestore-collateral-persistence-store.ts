@@ -125,14 +125,19 @@ export function createFirestoreCollateralPersistenceStore(input?: {
 
   return {
     mode: "firebase" as const,
-    async load(_state: PersistedCollateralState, context: CollateralPersistenceContext) {
+    async load(state: PersistedCollateralState, context: CollateralPersistenceContext) {
       const firestore = getConfiguredDb(getDb, isConfigured);
       const rawDocument = await getDocument(firestore, collectionName, documentName);
 
       if (!rawDocument) {
-        throw new Error(
-          "Collateral persistence mode is set to Firestore, but persisted collateral state has not been bootstrapped."
+        const normalizedInitialState = normalizePersistedCollateralState(state, context);
+        await setDocument(
+          firestore,
+          collectionName,
+          documentName,
+          mapPersistedCollateralStateToFirestoreDocument(normalizedInitialState)
         );
+        return normalizedInitialState;
       }
 
       const parsedDocument = parseFirestoreCollateralStateDocument(rawDocument);
@@ -174,7 +179,7 @@ export async function loadExistingFirestoreCollateralStateDocument(input?: {
 export function mapPersistedCollateralStateToFirestoreDocument(
   state: PersistedCollateralState
 ): FirestoreCollateralStateDocument {
-  return {
+  return removeUndefinedFieldsDeep({
     collateralItems: state.collateralItems.map(mapCollateralItemToFirestoreDocument),
     collateralProfiles: Object.fromEntries(
       Object.entries(state.collateralProfiles).map(([instanceId, profile]) => [instanceId, { ...profile }])
@@ -200,7 +205,7 @@ export function mapPersistedCollateralStateToFirestoreDocument(
     eventSubEvents: state.eventSubEvents.map((subEvent) => ({ ...subEvent })),
     schemaVersion: 1,
     updatedAt: new Date().toISOString()
-  };
+  });
 }
 
 export function parseFirestoreCollateralStateDocument(value: unknown): FirestoreCollateralStateDocument | null {
@@ -620,4 +625,22 @@ function getConfiguredDb(getDb: () => Firestore | null, isConfigured: () => bool
 
 function removeUndefinedFields<T extends object>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function removeUndefinedFieldsDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => entry !== undefined)
+      .map((entry) => removeUndefinedFieldsDeep(entry)) as T;
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, removeUndefinedFieldsDeep(entry)])
+  ) as T;
 }
