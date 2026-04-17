@@ -145,13 +145,13 @@ export function ActionView({
   const blockedByInputRef = useRef<HTMLInputElement | null>(null);
   const deleteConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
   const filtersMenuRef = useRef<HTMLDivElement | null>(null);
-  const activeFilter = getActionFilterValue(initialFilter);
-  const activeFocus = getActionFocusValue(initialFocus);
-  const activeLens = getActionLensValue(initialLens);
-  const activeDueDate = getActionDueDateValue(initialDueDate);
-  const activeEventGroup = getActionEventGroupValue(initialEventGroup);
+  const activeFilter = getActionFilterValue(searchParams.get("filter") ?? initialFilter);
+  const activeFocus = getActionFocusValue(searchParams.get("focus") ?? initialFocus);
+  const activeLens = getActionLensValue(searchParams.get("lens") ?? initialLens);
+  const activeDueDate = getActionDueDateValue(searchParams.get("dueDate") ?? initialDueDate);
+  const activeEventGroup = getActionEventGroupValue(searchParams.get("eventGroup") ?? initialEventGroup);
   const activeQuery = getActionQueryValue(searchParams.get("q") ?? initialQuery);
-  const activeIssue = initialIssue?.trim() || "";
+  const activeIssue = searchParams.get("issue")?.trim() || initialIssue?.trim() || "";
   const actionListFilters = useMemo(
     () => ({
       activeDueDate,

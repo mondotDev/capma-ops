@@ -102,17 +102,17 @@ export function CollateralView({
   const [activeEditorTab, setActiveEditorTab] = useState<CollateralEditorTab>("details");
   const [pendingEditorFocusTarget, setPendingEditorFocusTarget] = useState<CollateralEditorFocusTarget>(null);
   const [selectedEventInstanceId, setSelectedEventInstanceId] = useState(
-    () => initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? activeEventInstanceId
+    () => searchParams.get("eventInstanceId") ?? initialEventInstanceId ?? activeEventInstanceId
   );
   const blockedByInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingOpenIntent, setPendingOpenIntent] = useState<PendingCollateralOpenIntent>(() => ({
-    collateralId: initialSelectedCollateralId ?? searchParams.get("collateralId") ?? "",
-    eventInstanceId: initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? ""
+    collateralId: searchParams.get("collateralId") ?? initialSelectedCollateralId ?? "",
+    eventInstanceId: searchParams.get("eventInstanceId") ?? initialEventInstanceId ?? ""
   }));
   const [pendingSponsorPromotionIntent, setPendingSponsorPromotionIntent] =
     useState<PendingSponsorPromotionIntent | null>(() => {
       const actionItemId = searchParams.get("promoteActionItemId") ?? "";
-      const eventInstanceId = initialEventInstanceId ?? searchParams.get("eventInstanceId") ?? "";
+      const eventInstanceId = searchParams.get("eventInstanceId") ?? initialEventInstanceId ?? "";
 
       if (!actionItemId || !eventInstanceId) {
         return null;

@@ -292,7 +292,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar__brand">CAPMA Ops Hub</div>
         <nav className="sidebar__nav" aria-label="Primary">
-          <Link className={pathname === "/" || pathname === "/events" ? "sidebar__link active" : "sidebar__link"} href="/">
+          <Link className={pathname === "/" ? "sidebar__link active" : "sidebar__link"} href="/">
             Dashboard
           </Link>
           <Link

@@ -5,15 +5,6 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "function": {
-          "functionId": "ssrcapmaops",
-          "region": "us-central1"
-        }
-      }
     ]
   },
   "firestore": {
