@@ -358,6 +358,17 @@ function serializeCollateralItem(item: CollateralItem) {
     requiresApproval: item.requiresApproval === true,
     requiresCopy: item.requiresCopy === true,
     requiresLogo: item.requiresLogo === true,
+    sponsorFulfillment: item.sponsorFulfillment
+      ? {
+          deliverableKey: item.sponsorFulfillment.deliverableKey,
+          eventInstanceId: item.sponsorFulfillment.eventInstanceId,
+          generationKind: item.sponsorFulfillment.generationKind,
+          sourceId: item.sponsorFulfillment.sourceId,
+          sponsorCommitmentId: item.sponsorFulfillment.sponsorCommitmentId,
+          sponsorOpportunityId: item.sponsorFulfillment.sponsorOpportunityId,
+          subEventId: item.sponsorFulfillment.subEventId ?? ""
+        }
+      : null,
     status: item.status,
     subEventId: item.subEventId,
     templateOriginId: item.templateOriginId ?? "",

@@ -6,12 +6,16 @@ import { sortSubEventsForEventWorkspace } from "@/lib/events/sub-event-ordering"
 import type { EventOnboardingSelectedInstance } from "@/lib/events/event-onboarding";
 import type { EventSubEventScheduleMode } from "@/lib/event-instances";
 import { deriveEventDateRange } from "@/lib/event-instances";
-import type { ActionItem } from "@/lib/sample-data";
+import type { ActionItem, SponsorFulfillmentLink } from "@/lib/sample-data";
 import {
+  buildFulfillmentSourceId,
+  createSponsorOpportunityDeliverableDraft,
   createSponsorCommitmentDraft,
   createSponsorOpportunityDraft,
   ensureSponsorshipSetupForEventInstance,
+  getFulfillmentPreviewSourceLink,
   getSponsorCommitmentOpportunityOptions,
+  type FulfillmentPreviewSourceLink,
   type SponsorCommitment,
   type SponsorFulfillmentGenerationResult,
   type SponsorOpportunityDeliverable,
@@ -74,13 +78,6 @@ type SponsorFulfillmentPreviewRow = {
   requiresLogo: boolean;
   requiresCopy: boolean;
   requiresApproval: boolean;
-};
-
-type FulfillmentPreviewSourceLink = {
-  eventInstanceId: string;
-  placementId: string;
-  sponsorId: string;
-  deliverableId: string;
 };
 
 type FulfillmentRollup = {
@@ -803,7 +800,7 @@ function SponsorOpportunitiesSection(input: {
   function addDeliverable(opportunity: SponsorOpportunity) {
     input.onUpsert({
       ...opportunity,
-      deliverables: [...(opportunity.deliverables ?? []), createEmptyPlacementDeliverable()]
+      deliverables: [...(opportunity.deliverables ?? []), createSponsorOpportunityDeliverableDraft()]
     });
   }
 
@@ -1416,12 +1413,21 @@ function FulfillmentPreviewSection(input: {
       new Map(
         previewRows.flatMap((row) => {
           const existingItem =
-            input.items.find((item) => hasFulfillmentPreviewSourceMarker(item, row.sourceKey)) ?? null;
+            input.items.find((item) => {
+              const source = getFulfillmentPreviewSourceLink(item);
+
+              return (
+                source?.eventInstanceId === input.eventInstanceId &&
+                source.placementId === row.placementId &&
+                source.sponsorId === row.sponsorId &&
+                source.deliverableId === row.deliverableId
+              );
+            }) ?? null;
 
           return existingItem ? [[row.id, existingItem.id] as const] : [];
         })
       ),
-    [input.items, previewRows]
+    [input.eventInstanceId, input.items, previewRows]
   );
   const [approvedRowIds, setApprovedRowIds] = useState<Record<string, true>>({});
 
@@ -1557,22 +1563,6 @@ function Field({ children, label, wide = false }: { children: ReactNode; label: 
   return <div className={`field${wide ? " field--wide" : ""}`}><label>{label}</label>{children}</div>;
 }
 
-function createEmptyPlacementDeliverable(): SponsorOpportunityDeliverable {
-  return {
-    id: `placement-deliverable-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    deliverableName: "",
-    category: "",
-    channel: "",
-    timingType: "",
-    offsetDays: "",
-    fixedMonth: "",
-    eventDayOffset: "",
-    requiresLogo: false,
-    requiresCopy: false,
-    requiresApproval: false
-  };
-}
-
 function buildFulfillmentPreviewActionItem(input: {
   definitionLabel: string;
   eventInstanceId: string;
@@ -1601,6 +1591,21 @@ function buildFulfillmentPreviewActionItem(input: {
       .join(" "),
     { author: LOCAL_FALLBACK_NOTE_AUTHOR }
   );
+  const sponsorFulfillment: SponsorFulfillmentLink = {
+    sourceId: buildFulfillmentSourceId({
+      eventInstanceId: input.eventInstanceId,
+      sponsorOpportunityId: input.row.placementId,
+      sponsorCommitmentId: input.row.sponsorId,
+      deliverableKey: input.row.deliverableId,
+      subEventId: input.row.linkedSubEventId
+    }),
+    eventInstanceId: input.eventInstanceId,
+    sponsorOpportunityId: input.row.placementId,
+    sponsorCommitmentId: input.row.sponsorId,
+    deliverableKey: input.row.deliverableId,
+    subEventId: input.row.linkedSubEventId,
+    generationKind: "sponsorFulfillment"
+  };
 
   return {
     type: "Deliverable",
@@ -1616,51 +1621,9 @@ function buildFulfillmentPreviewActionItem(input: {
     waitingOn: input.row.requiresLogo && !input.row.logoReceived ? "Sponsor logo" : "",
     isBlocked: undefined,
     blockedBy: "",
-    noteEntries: noteEntry ? [noteEntry] : []
+    noteEntries: noteEntry ? [noteEntry] : [],
+    sponsorFulfillment
   };
-}
-
-function hasFulfillmentPreviewSourceMarker(item: Pick<ActionItem, "noteEntries">, sourceKey: string) {
-  return item.noteEntries.some((entry) => entry.text.includes(`Fulfillment preview source: ${sourceKey}.`));
-}
-
-function getFulfillmentPreviewSourceLink(item: Pick<ActionItem, "noteEntries">): FulfillmentPreviewSourceLink | null {
-  for (const entry of item.noteEntries) {
-    const markerStart = entry.text.indexOf("Fulfillment preview source: ");
-
-    if (markerStart < 0) {
-      continue;
-    }
-
-    const sourceStart = markerStart + "Fulfillment preview source: ".length;
-    const sourceEnd = entry.text.indexOf(".", sourceStart);
-
-    if (sourceEnd < 0) {
-      continue;
-    }
-
-    try {
-      const parsed = JSON.parse(entry.text.slice(sourceStart, sourceEnd)) as Partial<FulfillmentPreviewSourceLink>;
-
-      if (
-        typeof parsed.eventInstanceId === "string" &&
-        typeof parsed.placementId === "string" &&
-        typeof parsed.sponsorId === "string" &&
-        typeof parsed.deliverableId === "string"
-      ) {
-        return {
-          eventInstanceId: parsed.eventInstanceId,
-          placementId: parsed.placementId,
-          sponsorId: parsed.sponsorId,
-          deliverableId: parsed.deliverableId
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
 }
 
 function buildSponsorFulfillmentPreviewRows(
@@ -1681,7 +1644,7 @@ function buildSponsorFulfillmentPreviewRows(
       id: [
         commitment.id,
         opportunity.id,
-        deliverable.id,
+        deliverable.key,
         sponsorName,
         opportunity.label,
         deliverable.deliverableName,
@@ -1699,7 +1662,7 @@ function buildSponsorFulfillmentPreviewRows(
         eventInstanceId: commitment.eventInstanceId,
         placementId: opportunity.id,
         sponsorId: commitment.id,
-        deliverableId: deliverable.id
+        deliverableId: deliverable.key
       }),
       sponsorId: commitment.id,
       sponsorName,
@@ -1710,7 +1673,7 @@ function buildSponsorFulfillmentPreviewRows(
       placementNotes: opportunity.notes,
       logoReceived: commitment.logoReceived,
       deliverableName: deliverable.deliverableName,
-      deliverableId: deliverable.id,
+      deliverableId: deliverable.key,
       category: deliverable.category,
       channel: deliverable.channel,
       timingType: deliverable.timingType,

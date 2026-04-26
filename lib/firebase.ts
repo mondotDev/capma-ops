@@ -1,5 +1,5 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 type FirebaseWebConfig = {
@@ -72,9 +72,13 @@ export function isAnyFirebaseOperationalDataModeEnabled() {
 export function isAnyFirebaseDataModeEnabled() {
   return (
     isAnyFirebaseOperationalDataModeEnabled() ||
-    isDashboardReadsEnabled() ||
+    isDashboardReadsExplicitlyEnabled() ||
     isFirebaseAuthExplicitlyEnabled()
   );
+}
+
+export function isFirebaseAuthEnabled() {
+  return isAnyFirebaseDataModeEnabled();
 }
 
 export function isDashboardDiagnosticsEnabled() {
@@ -127,4 +131,26 @@ export function getFirestoreDb(): Firestore | null {
 
   firestoreDbInstance = getFirestore(firebaseApp);
   return firestoreDbInstance;
+}
+
+export async function signInWithGooglePopup() {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    throw new Error("Firebase Auth is not available.");
+  }
+
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithPopup(auth, provider);
+}
+
+export async function signOutFromFirebase() {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    return;
+  }
+
+  await signOut(auth);
 }

@@ -1,183 +1,161 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
+import type { User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { INTERNAL_BETA_USERS_COLLECTION, parseInternalBetaAccessDocument } from "@/lib/firebase-access";
 import {
   getFirebaseAuth,
   getFirestoreDb,
-  isAnyFirebaseDataModeEnabled,
-  isFirebaseConfigured
+  isFirebaseAuthEnabled,
+  signInWithGooglePopup,
+  signOutFromFirebase
 } from "@/lib/firebase";
 
-type AuthGateStatus =
-  | "checking"
-  | "pass-through"
-  | "configuration-error"
-  | "signed-out"
-  | "checking-access"
-  | "authorized"
-  | "unauthorized"
-  | "error";
+type AuthGateState =
+  | { status: "disabled" }
+  | { status: "loading" }
+  | { status: "config-error"; message: string }
+  | { status: "signed-out"; error: string | null }
+  | { status: "unauthorized"; user: User; error: string }
+  | { status: "authorized" };
 
 export function FirebaseAuthGate({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<AuthGateStatus>("checking");
-  const [user, setUser] = useState<User | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [state, setState] = useState<AuthGateState>(() =>
+    isFirebaseAuthEnabled() ? { status: "loading" } : { status: "disabled" }
+  );
 
   useEffect(() => {
-    if (!isAnyFirebaseDataModeEnabled()) {
-      setStatus("pass-through");
-      return;
-    }
-
-    if (!isFirebaseConfigured()) {
-      setStatus("configuration-error");
-      setErrorMessage("Firebase data mode is enabled, but Firebase is not configured for this environment.");
+    if (!isFirebaseAuthEnabled()) {
+      setState({ status: "disabled" });
       return;
     }
 
     const auth = getFirebaseAuth();
+    const firestore = getFirestoreDb();
 
-    if (!auth) {
-      setStatus("configuration-error");
-      setErrorMessage("Firebase Auth could not be initialized.");
+    if (!auth || !firestore) {
+      setState({
+        status: "config-error",
+        message: "Firebase data mode is enabled, but Firebase is not configured correctly for this app."
+      });
       return;
     }
 
-    return onAuthStateChanged(auth, (nextUser) => {
-      setUser(nextUser);
-      setErrorMessage("");
-      setStatus(nextUser ? "checking-access" : "signed-out");
-    });
-  }, []);
+    let isActive = true;
 
-  useEffect(() => {
-    if (status !== "checking-access" || !user) {
-      return;
-    }
-
-    let cancelled = false;
-    const signedInUser = user;
-
-    async function verifyAccess() {
-      const db = getFirestoreDb();
-
-      if (!db) {
-        setStatus("configuration-error");
-        setErrorMessage("Firestore could not be initialized for access verification.");
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (!isActive) {
         return;
       }
 
-      try {
-        const accessSnapshot = await getDoc(doc(db, "internalBetaUsers", signedInUser.uid));
-        const accessData = accessSnapshot.exists() ? accessSnapshot.data() : null;
-
-        if (cancelled) {
-          return;
-        }
-
-        setStatus(accessData?.enabled === true ? "authorized" : "unauthorized");
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        if (isPermissionDeniedError(error)) {
-          setStatus("unauthorized");
-          return;
-        }
-
-        setStatus("error");
-        setErrorMessage(
-          error instanceof Error && error.message.trim().length > 0
-            ? error.message
-            : "CAPMA Ops Hub could not verify Firebase access."
-        );
+      if (!user) {
+        setState({ status: "signed-out", error: null });
+        return;
       }
-    }
 
-    void verifyAccess();
+      setState({ status: "loading" });
+
+      try {
+        const accessSnapshot = await getDoc(doc(firestore, INTERNAL_BETA_USERS_COLLECTION, user.uid));
+
+        if (!isActive) {
+          return;
+        }
+
+        const accessRecord = accessSnapshot.exists()
+          ? parseInternalBetaAccessDocument(accessSnapshot.data())
+          : null;
+
+        if (accessRecord?.enabled) {
+          setState({ status: "authorized" });
+          return;
+        }
+
+        setState({
+          status: "unauthorized",
+          user,
+          error: accessSnapshot.exists()
+            ? "This signed-in account is not enabled for the internal beta."
+            : "This signed-in account has not been allowlisted for the internal beta."
+        });
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setState({
+          status: "unauthorized",
+          user,
+          error: isPermissionDeniedError(error)
+            ? "This signed-in account is not enabled for the internal beta."
+            : "CAPMA Ops could not verify internal beta access for this account."
+        });
+      }
+    });
 
     return () => {
-      cancelled = true;
+      isActive = false;
+      unsubscribe();
     };
-  }, [status, user]);
+  }, []);
 
   async function handleSignIn() {
-    const auth = getFirebaseAuth();
-
-    if (!auth) {
-      setStatus("configuration-error");
-      setErrorMessage("Firebase Auth could not be initialized.");
-      return;
-    }
-
-    setErrorMessage("");
-
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      setState({ status: "loading" });
+      await signInWithGooglePopup();
     } catch (error) {
-      setStatus("error");
-      setErrorMessage(
-        error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : "CAPMA Ops Hub could not complete Google sign-in."
+      setState({
+        status: "signed-out",
+        error: error instanceof Error ? error.message : "Google sign-in failed."
+      });
+    }
+  }
+
+  async function handleSignOut(user?: User) {
+    try {
+      await signOutFromFirebase();
+      setState({ status: "signed-out", error: null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Sign-out failed.";
+      setState(
+        user
+          ? { status: "unauthorized", user, error: message }
+          : { status: "signed-out", error: message }
       );
     }
   }
 
-  async function handleSignOut() {
-    const auth = getFirebaseAuth();
-
-    if (auth) {
-      await signOut(auth);
-    }
-  }
-
-  if (status === "pass-through" || status === "authorized") {
+  if (state.status === "disabled" || state.status === "authorized") {
     return <>{children}</>;
   }
 
-  if (status === "signed-out") {
+  if (state.status === "loading") {
+    return <AuthGateShell title="Checking Access" copy="Verifying your internal beta access..." />;
+  }
+
+  if (state.status === "config-error") {
+    return <AuthGateShell title="Firebase Auth Unavailable" copy={state.message} />;
+  }
+
+  if (state.status === "signed-out") {
     return (
       <AuthGateShell title="Sign In Required" copy="Sign in with an enabled CAPMA Ops account to load Firestore-backed data.">
         <button className="topbar__button" onClick={handleSignIn} type="button">
           Sign in with Google
         </button>
-        {errorMessage ? <p className="app-loading-copy">{errorMessage}</p> : null}
-      </AuthGateShell>
-    );
-  }
-
-  if (status === "unauthorized") {
-    return (
-      <AuthGateShell
-        title="Access Not Enabled"
-        copy="Your Google account is signed in, but it is not enabled for CAPMA Ops Hub."
-      >
-        <button className="button-link button-link--inline-secondary" onClick={handleSignOut} type="button">
-          Sign out
-        </button>
-      </AuthGateShell>
-    );
-  }
-
-  if (status === "configuration-error" || status === "error") {
-    return (
-      <AuthGateShell title="Firebase Auth Unavailable" copy={errorMessage || "CAPMA Ops Hub could not initialize Firebase Auth."}>
-        <button className="button-link button-link--inline-secondary" onClick={handleSignOut} type="button">
-          Sign out
-        </button>
+        {state.error ? <p className="app-loading-copy">{state.error}</p> : null}
       </AuthGateShell>
     );
   }
 
   return (
-    <AuthGateShell
-      title={status === "checking-access" ? "Checking Access" : "Loading CAPMA Ops"}
-      copy={status === "checking-access" ? "Verifying your internal beta access..." : "Preparing the app..."}
-    />
+    <AuthGateShell title="Access Not Enabled" copy={state.error}>
+      <p>Signed in as {state.user.email ?? state.user.uid}.</p>
+      <button className="button-link button-link--inline-secondary" onClick={() => handleSignOut(state.user)} type="button">
+        Sign out
+      </button>
+    </AuthGateShell>
   );
 }
 

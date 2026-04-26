@@ -1,4 +1,4 @@
-import type { ActionNoteEntry } from "@/lib/sample-data";
+import type { ActionNoteEntry, SponsorFulfillmentLink } from "@/lib/sample-data";
 import { type NormalizedWorkflowStatus, isNormalizedTerminalStatus } from "@/lib/workflow-status";
 import {
   LEGISLATIVE_DAY_2026_INSTANCE_ID,
@@ -36,6 +36,10 @@ export const COLLATERAL_PRINTER_OPTIONS = [
 
 export type CollateralStatus = (typeof COLLATERAL_STATUS_OPTIONS)[number];
 
+export function isCollateralStatus(value: string): value is CollateralStatus {
+  return COLLATERAL_STATUS_OPTIONS.some((option) => option === value);
+}
+
 // Action View intentionally surfaces only the execution-relevant subset of
 // collateral work. Full inventory and planning statuses stay in Collateral.
 export const ACTION_VIEW_COLLATERAL_STATUS_OPTIONS = [
@@ -64,6 +68,7 @@ export type CollateralItem = {
   quantity: string;
   updateType: string;
   noteEntries: ActionNoteEntry[];
+  sponsorFulfillment?: SponsorFulfillmentLink;
   fileLink?: string;
   lastUpdated: string;
   archivedAt?: string;
@@ -211,6 +216,10 @@ export function normalizeCollateralItem(
     return null;
   }
 
+  if (!isCollateralStatus(item.status)) {
+    return null;
+  }
+
   const eventInstanceId =
     typeof item.eventInstanceId === "string" && item.eventInstanceId.length > 0
       ? item.eventInstanceId
@@ -238,7 +247,7 @@ export function normalizeCollateralItem(
     requiresLogo: item.requiresLogo === true,
     requiresCopy: item.requiresCopy === true,
     requiresApproval: item.requiresApproval === true,
-    status: item.status as CollateralStatus,
+    status: item.status,
     owner: typeof item.owner === "string" && item.owner.length > 0 ? item.owner : DEFAULT_OWNER,
     blockedBy: typeof item.blockedBy === "string" ? item.blockedBy : "",
     dueDate:
@@ -255,6 +264,7 @@ export function normalizeCollateralItem(
       Array.isArray(item.noteEntries) ? "" : typeof item.notes === "string" ? item.notes : "",
       item.lastUpdated
     ),
+    sponsorFulfillment: normalizeSponsorFulfillmentLink(item.sponsorFulfillment, "sponsorFulfillmentFallback"),
     fileLink: typeof item.fileLink === "string" ? item.fileLink : undefined,
     lastUpdated: item.lastUpdated,
     archivedAt: typeof item.archivedAt === "string" && item.archivedAt.length > 0 ? item.archivedAt : undefined
@@ -293,8 +303,42 @@ function createSeedItem(
     quantity,
     updateType: normalizeCollateralUpdateType(updateType),
     noteEntries: normalizeNoteEntries(undefined, "", "2026-03-28"),
+    sponsorFulfillment: undefined,
     lastUpdated: "2026-03-28",
     archivedAt: undefined
+  };
+}
+
+function normalizeSponsorFulfillmentLink(
+  value: unknown,
+  expectedGenerationKind: SponsorFulfillmentLink["generationKind"]
+): SponsorFulfillmentLink | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const link = value as Partial<SponsorFulfillmentLink>;
+
+  if (
+    typeof link.sourceId !== "string" ||
+    typeof link.eventInstanceId !== "string" ||
+    typeof link.sponsorOpportunityId !== "string" ||
+    typeof link.sponsorCommitmentId !== "string" ||
+    typeof link.deliverableKey !== "string" ||
+    (link.subEventId !== undefined && typeof link.subEventId !== "string") ||
+    link.generationKind !== expectedGenerationKind
+  ) {
+    return undefined;
+  }
+
+  return {
+    sourceId: link.sourceId,
+    eventInstanceId: link.eventInstanceId,
+    sponsorOpportunityId: link.sponsorOpportunityId,
+    sponsorCommitmentId: link.sponsorCommitmentId,
+    deliverableKey: link.deliverableKey,
+    subEventId: link.subEventId,
+    generationKind: link.generationKind
   };
 }
 

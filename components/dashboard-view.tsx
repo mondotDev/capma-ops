@@ -26,6 +26,7 @@ export function DashboardView() {
     eventInstances,
     eventSubEvents,
     eventTypes,
+    fulfillmentStateByInstance,
     items,
     sponsorshipSetupByInstance
   } = useAppStateValues();
@@ -103,6 +104,7 @@ export function DashboardView() {
       eventInstance: selectedWorkspaceInstance.instance,
       existingItems: items,
       existingCollateralItems: collateralItems,
+      fulfillmentStateForInstance: fulfillmentStateByInstance[selectedWorkspaceInstance.instance.id],
       defaultOwner: defaultOwnerForNewItems,
       eventSubEvents
     });
@@ -110,6 +112,7 @@ export function DashboardView() {
     collateralItems,
     defaultOwnerForNewItems,
     eventSubEvents,
+    fulfillmentStateByInstance,
     items,
     selectedSponsorshipSetup,
     selectedWorkspaceInstance

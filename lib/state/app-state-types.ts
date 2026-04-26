@@ -10,7 +10,7 @@ import type {
   EventSubEvent,
   EventType
 } from "@/lib/event-instances";
-import type { SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
+import type { FulfillmentStateByInstance, SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import type { IssueStatus, WorkstreamSchedule } from "@/lib/ops-utils";
 
@@ -22,6 +22,7 @@ export type AppStateData = {
   collateralItems: CollateralItem[];
   collateralProfiles: CollateralProfilesByInstance;
   sponsorshipSetupByInstance: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance: FulfillmentStateByInstance;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
   eventFamilies: EventFamily[];

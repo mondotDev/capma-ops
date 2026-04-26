@@ -329,6 +329,17 @@ function serializeComparableActionItem(item: ActionItem) {
     noteEntries: item.noteEntries.map(serializeComparableNoteEntry),
     operationalBucket: item.operationalBucket ?? "",
     owner: item.owner,
+    sponsorFulfillment: item.sponsorFulfillment
+      ? {
+          deliverableKey: item.sponsorFulfillment.deliverableKey,
+          eventInstanceId: item.sponsorFulfillment.eventInstanceId,
+          generationKind: item.sponsorFulfillment.generationKind,
+          sourceId: item.sponsorFulfillment.sourceId,
+          sponsorCommitmentId: item.sponsorFulfillment.sponsorCommitmentId,
+          sponsorOpportunityId: item.sponsorFulfillment.sponsorOpportunityId,
+          subEventId: item.sponsorFulfillment.subEventId ?? ""
+        }
+      : null,
     status: item.status,
     subEventId: item.subEventId ?? "",
     title: item.title,

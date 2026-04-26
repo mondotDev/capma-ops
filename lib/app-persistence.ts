@@ -18,7 +18,12 @@ import {
   type EventSubEvent,
   type EventType
 } from "@/lib/event-instances";
-import { normalizeSponsorshipSetupByInstance, type SponsorshipSetupByInstance } from "@/lib/sponsor-fulfillment";
+import {
+  normalizeFulfillmentStateByInstance,
+  normalizeSponsorshipSetupByInstance,
+  type FulfillmentStateByInstance,
+  type SponsorshipSetupByInstance
+} from "@/lib/sponsor-fulfillment";
 import type { ActionItem } from "@/lib/sample-data";
 import { getDefaultWorkstreamSchedules, normalizeWorkstreamSchedules, type IssueStatus, type WorkstreamSchedule } from "@/lib/ops-utils";
 import type { AppStateSnapshot } from "@/lib/app-transfer";
@@ -29,6 +34,7 @@ export type PersistedAppState = {
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
   sponsorshipSetupByInstance?: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance?: FulfillmentStateByInstance;
   sponsorPlacementsByInstance?: Record<string, unknown[]>;
   activeEventInstanceId: string;
   defaultOwnerForNewItems: string;
@@ -126,6 +132,14 @@ export function savePersistedAppState(state: PersistedAppState): SavePersistedAp
           opportunities: setup.opportunities.map((opportunity) => ({ ...opportunity })),
           commitments: setup.commitments.map((commitment) => ({ ...commitment }))
         }
+      ])
+    ),
+    fulfillmentStateByInstance: Object.fromEntries(
+      Object.entries(state.fulfillmentStateByInstance ?? {}).map(([instanceId, records]) => [
+        instanceId,
+        Object.fromEntries(
+          Object.entries(records).map(([sourceId, record]) => [sourceId, { ...record }])
+        )
       ])
     ),
     activeEventInstanceId: state.activeEventInstanceId,
@@ -403,6 +417,10 @@ function parseStoredAppState(
             parsedState.sponsorshipSetupByInstance && typeof parsedState.sponsorshipSetupByInstance === "object"
               ? parsedState.sponsorshipSetupByInstance
               : {},
+          fulfillmentStateByInstance:
+            parsedState.fulfillmentStateByInstance && typeof parsedState.fulfillmentStateByInstance === "object"
+              ? parsedState.fulfillmentStateByInstance
+              : {},
           sponsorPlacementsByInstance:
             parsedState.sponsorPlacementsByInstance && typeof parsedState.sponsorPlacementsByInstance === "object"
               ? parsedState.sponsorPlacementsByInstance
@@ -454,6 +472,7 @@ function normalizeEventScopedState(input: {
   collateralItems: CollateralItem[];
   collateralProfiles: Record<string, LegDayCollateralProfile>;
   sponsorshipSetupByInstance?: SponsorshipSetupByInstance;
+  fulfillmentStateByInstance?: FulfillmentStateByInstance;
   sponsorPlacementsByInstance?: Record<string, unknown[]>;
   eventInstances: EventInstance[];
   eventSubEvents: EventSubEvent[];
@@ -494,6 +513,13 @@ function normalizeEventScopedState(input: {
       legacyPlacementsByInstance: input.sponsorPlacementsByInstance
     }
   );
+  const fulfillmentStateByInstance = normalizeFulfillmentStateByInstance(
+    input.fulfillmentStateByInstance,
+    {
+      eventInstances: normalizedEventInstances,
+      eventSubEvents
+    }
+  );
   const eventInstances =
     normalizedEventInstances.length > 0 || shouldPreserveEmptyEventGraph
       ? normalizedEventInstances
@@ -517,6 +543,7 @@ function normalizeEventScopedState(input: {
     collateralItems: resolvedCollateralItems,
     collateralProfiles: resolvedCollateralProfiles,
     sponsorshipSetupByInstance,
+    fulfillmentStateByInstance,
     eventTypes: input.eventTypes,
     eventInstances,
     eventSubEvents: resolvedEventSubEvents

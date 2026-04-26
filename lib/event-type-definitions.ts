@@ -9,6 +9,7 @@ import {
 export type SponsorTimingType = "Pre_Event" | "Event_Day" | "Post_Event" | "Fixed_Month" | "Sub_Event";
 
 export type SponsorDeliverableRule = {
+  key: string;
   deliverableName: string;
   timingType: SponsorTimingType;
   offsetDays?: number;
@@ -26,6 +27,7 @@ export type SponsorPlacementDefinition = {
 
 export type SponsorCollateralPromotionRule = {
   placement: string;
+  deliverableKey: string;
   deliverableName: string;
   collateralItemName: string;
   preferredSubEventName?: string;
@@ -81,103 +83,103 @@ const LEGISLATIVE_DAY_SPONSOR_MODEL: SponsorModelDefinition = {
   ],
   deliverableRulesByPlacement: {
     Premier: [
-      createSponsorRule("Spotlight Post 1", "Pre_Event", { offsetDays: 45, requiresLogo: true, requiresCopy: true }),
-      createSponsorRule("Spotlight Post 2", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: true }),
-      createSponsorRule("CAPMA Event Post Mention 1", "Pre_Event", { offsetDays: 21, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("CAPMA Event Post Mention 2", "Pre_Event", { offsetDays: 10, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("April NewsBrief Digital Advertorial", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: true }),
-      createSponsorRule("Logo on Registration Page", "Pre_Event", { offsetDays: 60, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Registration Confirmation Emails", "Pre_Event", { offsetDays: 45, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Registration Reminder Emails", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Slide Deck Logo", "Event_Day", { requiresLogo: true, requiresCopy: false, subEventName: "Multi-Event/All Days" }),
-      createSponsorRule("Event Badge + Lanyard Logo", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Registration" }),
-      createSponsorRule("Verbal Recognition During Program", "Event_Day", { requiresLogo: false, requiresCopy: false }),
-      createSponsorRule("Includes 10 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false }),
-      createSponsorRule("Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
+      createSponsorRule("premier-spotlight-post-1", "Spotlight Post 1", "Pre_Event", { offsetDays: 45, requiresLogo: true, requiresCopy: true }),
+      createSponsorRule("premier-spotlight-post-2", "Spotlight Post 2", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: true }),
+      createSponsorRule("premier-capma-event-post-mention-1", "CAPMA Event Post Mention 1", "Pre_Event", { offsetDays: 21, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-capma-event-post-mention-2", "CAPMA Event Post Mention 2", "Pre_Event", { offsetDays: 10, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-march-news-brief-recognition", "March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-april-news-brief-recognition", "April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-april-news-brief-digital-advertorial", "April NewsBrief Digital Advertorial", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: true }),
+      createSponsorRule("premier-logo-on-registration-page", "Logo on Registration Page", "Pre_Event", { offsetDays: 60, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-logo-in-registration-confirmation-emails", "Logo in Registration Confirmation Emails", "Pre_Event", { offsetDays: 45, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-logo-in-registration-reminder-emails", "Logo in Registration Reminder Emails", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-slide-deck-logo", "Slide Deck Logo", "Event_Day", { requiresLogo: true, requiresCopy: false, subEventName: "Multi-Event/All Days" }),
+      createSponsorRule("premier-event-badge-and-lanyard-logo", "Event Badge + Lanyard Logo", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Registration" }),
+      createSponsorRule("premier-verbal-recognition-during-program", "Verbal Recognition During Program", "Event_Day", { requiresLogo: false, requiresCopy: false }),
+      createSponsorRule("premier-includes-10-attendee-registrations", "Includes 10 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false }),
+      createSponsorRule("premier-sponsor-thank-you-roundup-post", "Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("premier-logo-in-post-event-recap-email", "Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
     ],
     "Thursday Briefing Breakfast": [
-      createSponsorRule("Spotlight Post", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: true }),
-      createSponsorRule("CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Acknowledgement in Outgoing Emails", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Speaking Opportunity", "Sub_Event", { requiresLogo: false, requiresCopy: false, subEventName: "Thursday Breakfast" }),
-      createSponsorRule("Table Tents Displayed", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Breakfast" }),
-      createSponsorRule("On-Site Signage (Digital or Print)", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Breakfast" }),
-      createSponsorRule("Branded To-Go Coffee Cups", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Breakfast" }),
-      createSponsorRule("Includes 4 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false })
+      createSponsorRule("briefing-breakfast-spotlight-post", "Spotlight Post", "Pre_Event", { offsetDays: 30, requiresLogo: true, requiresCopy: true }),
+      createSponsorRule("briefing-breakfast-capma-event-post-mention", "CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("briefing-breakfast-acknowledgement-in-outgoing-emails", "Acknowledgement in Outgoing Emails", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("briefing-breakfast-march-news-brief-recognition", "March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("briefing-breakfast-april-news-brief-recognition", "April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("briefing-breakfast-logo-in-post-event-recap-email", "Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("briefing-breakfast-sponsor-thank-you-roundup-post", "Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("briefing-breakfast-speaking-opportunity", "Speaking Opportunity", "Sub_Event", { requiresLogo: false, requiresCopy: false, subEventName: "Thursday Breakfast" }),
+      createSponsorRule("briefing-breakfast-table-tents-displayed", "Table Tents Displayed", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Breakfast" }),
+      createSponsorRule("briefing-breakfast-onsite-signage", "On-Site Signage (Digital or Print)", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Breakfast" }),
+      createSponsorRule("briefing-breakfast-branded-to-go-coffee-cups", "Branded To-Go Coffee Cups", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Breakfast" }),
+      createSponsorRule("briefing-breakfast-includes-4-attendee-registrations", "Includes 4 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false })
     ],
     "Legislative Luncheon": [
-      createSponsorRule("Sponsor Spotlight Post", "Pre_Event", { offsetDays: 21, requiresLogo: true, requiresCopy: true }),
-      createSponsorRule("CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Table Tents on Tables", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
-      createSponsorRule("Exterior Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
-      createSponsorRule("Branded Napkins", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
-      createSponsorRule("On-Site Signage Recognition", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
-      createSponsorRule("2-Minute Speaking Opportunity", "Sub_Event", { requiresLogo: false, requiresCopy: true, subEventName: "Thursday Luncheon" }),
-      createSponsorRule("Includes 5 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false }),
-      createSponsorRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
+      createSponsorRule("luncheon-sponsor-spotlight-post", "Sponsor Spotlight Post", "Pre_Event", { offsetDays: 21, requiresLogo: true, requiresCopy: true }),
+      createSponsorRule("luncheon-capma-event-post-mention", "CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("luncheon-march-news-brief-recognition", "March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("luncheon-april-news-brief-recognition", "April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("luncheon-table-tents-on-tables", "Table Tents on Tables", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
+      createSponsorRule("luncheon-exterior-signage", "Exterior Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
+      createSponsorRule("luncheon-branded-napkins", "Branded Napkins", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
+      createSponsorRule("luncheon-onsite-signage-recognition", "On-Site Signage Recognition", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Thursday Luncheon" }),
+      createSponsorRule("luncheon-speaking-opportunity", "2-Minute Speaking Opportunity", "Sub_Event", { requiresLogo: false, requiresCopy: true, subEventName: "Thursday Luncheon" }),
+      createSponsorRule("luncheon-includes-5-attendee-registrations", "Includes 5 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false }),
+      createSponsorRule("luncheon-logo-in-sponsor-thank-you-roundup", "Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("luncheon-logo-in-post-event-recap-email", "Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
     ],
     "Wed Night Reception": [
-      createSponsorRule("CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Exterior Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
-      createSponsorRule("Branded Napkins", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
-      createSponsorRule("On-Site Signage Recognition", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
-      createSponsorRule("Table Tents on Tables", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
-      createSponsorRule("2-Minute Speaking Opportunity", "Sub_Event", { requiresLogo: false, requiresCopy: true, subEventName: "Wednesday Reception" }),
-      createSponsorRule("Includes 2 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false }),
-      createSponsorRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: false, requiresCopy: false })
+      createSponsorRule("wed-reception-capma-event-post-mention", "CAPMA Event Post Mention", "Pre_Event", { offsetDays: 14, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("wed-reception-exterior-signage", "Exterior Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
+      createSponsorRule("wed-reception-branded-napkins", "Branded Napkins", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
+      createSponsorRule("wed-reception-onsite-signage-recognition", "On-Site Signage Recognition", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
+      createSponsorRule("wed-reception-table-tents-on-tables", "Table Tents on Tables", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Reception" }),
+      createSponsorRule("wed-reception-speaking-opportunity", "2-Minute Speaking Opportunity", "Sub_Event", { requiresLogo: false, requiresCopy: true, subEventName: "Wednesday Reception" }),
+      createSponsorRule("wed-reception-includes-2-attendee-registrations", "Includes 2 Attendee Registrations", "Event_Day", { requiresLogo: false, requiresCopy: false }),
+      createSponsorRule("wed-reception-logo-in-sponsor-thank-you-roundup", "Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("wed-reception-logo-in-post-event-recap-email", "Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("wed-reception-march-news-brief-recognition", "March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: false, requiresCopy: false })
     ],
     "Committee Breakfast": [
-      createSponsorRule("March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Table Tents on or Near Buffet", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Breakfast" }),
-      createSponsorRule("On-Site Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Breakfast" }),
-      createSponsorRule("Includes 1 Attendee Registration", "Event_Day", { requiresLogo: false, requiresCopy: false }),
-      createSponsorRule("Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: false, requiresCopy: false })
+      createSponsorRule("committee-breakfast-march-news-brief-recognition", "March NewsBrief Recognition", "Fixed_Month", { fixedMonth: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("committee-breakfast-april-news-brief-recognition", "April NewsBrief Recognition", "Fixed_Month", { fixedMonth: 4, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("committee-breakfast-table-tents-buffet", "Table Tents on or Near Buffet", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Breakfast" }),
+      createSponsorRule("committee-breakfast-onsite-signage", "On-Site Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Breakfast" }),
+      createSponsorRule("committee-breakfast-includes-1-attendee-registration", "Includes 1 Attendee Registration", "Event_Day", { requiresLogo: false, requiresCopy: false }),
+      createSponsorRule("committee-breakfast-sponsor-thank-you-roundup-post", "Sponsor Thank-You Roundup Post", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("committee-breakfast-logo-in-post-event-recap-email", "Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: false, requiresCopy: false })
     ],
     "Board Meeting": [
-      createSponsorRule("Acknowledgement on Digital or Printed Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Board Meeting" }),
-      createSponsorRule("Includes 1 Attendee Registration", "Event_Day", { requiresLogo: false, requiresCopy: false }),
-      createSponsorRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
-      createSponsorRule("Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
+      createSponsorRule("board-meeting-acknowledgement-signage", "Acknowledgement on Digital or Printed Signage", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Wednesday Board Meeting" }),
+      createSponsorRule("board-meeting-includes-1-attendee-registration", "Includes 1 Attendee Registration", "Event_Day", { requiresLogo: false, requiresCopy: false }),
+      createSponsorRule("board-meeting-logo-in-sponsor-thank-you-roundup", "Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false }),
+      createSponsorRule("board-meeting-logo-in-post-event-recap-email", "Logo in Post-Event Recap Email", "Post_Event", { offsetDays: 5, requiresLogo: true, requiresCopy: false })
     ],
     "Golf Bag": [
-      createSponsorRule("Branded Water & Snacks", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Golf Tournament" }),
-      createSponsorRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false })
+      createSponsorRule("golf-bag-branded-water-and-snacks", "Branded Water & Snacks", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Golf Tournament" }),
+      createSponsorRule("golf-bag-logo-in-sponsor-thank-you-roundup", "Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false })
     ],
     "Golf Hole": [
-      createSponsorRule("Branded Signage at Hole", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Golf Tournament" }),
-      createSponsorRule("Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false })
+      createSponsorRule("golf-hole-branded-signage-at-hole", "Branded Signage at Hole", "Sub_Event", { requiresLogo: true, requiresCopy: false, subEventName: "Golf Tournament" }),
+      createSponsorRule("golf-hole-logo-in-sponsor-thank-you-roundup", "Logo in Sponsor Thank-You Roundup", "Post_Event", { offsetDays: 3, requiresLogo: true, requiresCopy: false })
     ]
   },
   collateralPromotionRules: [
-    { placement: "Premier", deliverableName: "Slide Deck Logo", collateralItemName: "Master Slide Deck", preferredSubEventName: "Multi-Event/All Days" },
-    { placement: "Premier", deliverableName: "Event Badge + Lanyard Logo", collateralItemName: "Custom Lanyards w/ CAPMA + Premier logos", preferredSubEventName: "Wednesday Registration" },
-    { placement: "Thursday Briefing Breakfast", deliverableName: "Table Tents Displayed", collateralItemName: "Briefing Breakfast Table Tents", preferredSubEventName: "Thursday Breakfast" },
-    { placement: "Thursday Briefing Breakfast", deliverableName: "On-Site Signage (Digital or Print)", collateralItemName: "Welcome to the Briefing Breakfast (Sponsored By Sign)", preferredSubEventName: "Thursday Breakfast" },
-    { placement: "Thursday Briefing Breakfast", deliverableName: "Branded To-Go Coffee Cups", collateralItemName: "Branded coffee cups with CAPMA and Sponsor", preferredSubEventName: "Thursday Breakfast" },
-    { placement: "Legislative Luncheon", deliverableName: "Table Tents on Tables", collateralItemName: "Table tents", preferredSubEventName: "Thursday Luncheon" },
-    { placement: "Legislative Luncheon", deliverableName: "Exterior Signage", collateralItemName: "Welcome to Legislative Luncheon - Sponsor thank you", preferredSubEventName: "Thursday Luncheon" },
-    { placement: "Legislative Luncheon", deliverableName: "Branded Napkins", collateralItemName: "Branded napkins for Thurs afternoon, year specific", preferredSubEventName: "Thursday Luncheon" },
-    { placement: "Wed Night Reception", deliverableName: "Table Tents on Tables", collateralItemName: "Table Tents for Wednesday Night Reception", preferredSubEventName: "Wednesday Reception" },
-    { placement: "Wed Night Reception", deliverableName: "Exterior Signage", collateralItemName: "Wed Night Reception Sponsor Signage", preferredSubEventName: "Wednesday Reception" },
-    { placement: "Wed Night Reception", deliverableName: "Branded Napkins", collateralItemName: "Branded napkins for Wednesday Night Reception", preferredSubEventName: "Wednesday Reception" },
-    { placement: "Committee Breakfast", deliverableName: "Table Tents on or Near Buffet", collateralItemName: "Table Tents for Committee Breakfast", preferredSubEventName: "Wednesday Breakfast" },
-    { placement: "Committee Breakfast", deliverableName: "On-Site Signage", collateralItemName: "Welcome and Thank You Sign for Committee Breakfast Sponsors (All on One)", preferredSubEventName: "Wednesday Breakfast" },
-    { placement: "Board Meeting", deliverableName: "Acknowledgement on Digital or Printed Signage", collateralItemName: "Board Room Signage", preferredSubEventName: "Wednesday Board Meeting" },
-    { placement: "Golf Hole", deliverableName: "Branded Signage at Hole", collateralItemName: "Golf Hole Signs", preferredSubEventName: "Golf Tournament" }
+    { placement: "Premier", deliverableKey: "premier-slide-deck-logo", deliverableName: "Slide Deck Logo", collateralItemName: "Master Slide Deck", preferredSubEventName: "Multi-Event/All Days" },
+    { placement: "Premier", deliverableKey: "premier-event-badge-and-lanyard-logo", deliverableName: "Event Badge + Lanyard Logo", collateralItemName: "Custom Lanyards w/ CAPMA + Premier logos", preferredSubEventName: "Wednesday Registration" },
+    { placement: "Thursday Briefing Breakfast", deliverableKey: "briefing-breakfast-table-tents-displayed", deliverableName: "Table Tents Displayed", collateralItemName: "Briefing Breakfast Table Tents", preferredSubEventName: "Thursday Breakfast" },
+    { placement: "Thursday Briefing Breakfast", deliverableKey: "briefing-breakfast-onsite-signage", deliverableName: "On-Site Signage (Digital or Print)", collateralItemName: "Welcome to the Briefing Breakfast (Sponsored By Sign)", preferredSubEventName: "Thursday Breakfast" },
+    { placement: "Thursday Briefing Breakfast", deliverableKey: "briefing-breakfast-branded-to-go-coffee-cups", deliverableName: "Branded To-Go Coffee Cups", collateralItemName: "Branded coffee cups with CAPMA and Sponsor", preferredSubEventName: "Thursday Breakfast" },
+    { placement: "Legislative Luncheon", deliverableKey: "luncheon-table-tents-on-tables", deliverableName: "Table Tents on Tables", collateralItemName: "Table tents", preferredSubEventName: "Thursday Luncheon" },
+    { placement: "Legislative Luncheon", deliverableKey: "luncheon-exterior-signage", deliverableName: "Exterior Signage", collateralItemName: "Welcome to Legislative Luncheon - Sponsor thank you", preferredSubEventName: "Thursday Luncheon" },
+    { placement: "Legislative Luncheon", deliverableKey: "luncheon-branded-napkins", deliverableName: "Branded Napkins", collateralItemName: "Branded napkins for Thurs afternoon, year specific", preferredSubEventName: "Thursday Luncheon" },
+    { placement: "Wed Night Reception", deliverableKey: "wed-reception-table-tents-on-tables", deliverableName: "Table Tents on Tables", collateralItemName: "Table Tents for Wednesday Night Reception", preferredSubEventName: "Wednesday Reception" },
+    { placement: "Wed Night Reception", deliverableKey: "wed-reception-exterior-signage", deliverableName: "Exterior Signage", collateralItemName: "Wed Night Reception Sponsor Signage", preferredSubEventName: "Wednesday Reception" },
+    { placement: "Wed Night Reception", deliverableKey: "wed-reception-branded-napkins", deliverableName: "Branded Napkins", collateralItemName: "Branded napkins for Wednesday Night Reception", preferredSubEventName: "Wednesday Reception" },
+    { placement: "Committee Breakfast", deliverableKey: "committee-breakfast-table-tents-buffet", deliverableName: "Table Tents on or Near Buffet", collateralItemName: "Table Tents for Committee Breakfast", preferredSubEventName: "Wednesday Breakfast" },
+    { placement: "Committee Breakfast", deliverableKey: "committee-breakfast-onsite-signage", deliverableName: "On-Site Signage", collateralItemName: "Welcome and Thank You Sign for Committee Breakfast Sponsors (All on One)", preferredSubEventName: "Wednesday Breakfast" },
+    { placement: "Board Meeting", deliverableKey: "board-meeting-acknowledgement-signage", deliverableName: "Acknowledgement on Digital or Printed Signage", collateralItemName: "Board Room Signage", preferredSubEventName: "Wednesday Board Meeting" },
+    { placement: "Golf Hole", deliverableKey: "golf-hole-branded-signage-at-hole", deliverableName: "Branded Signage at Hole", collateralItemName: "Golf Hole Signs", preferredSubEventName: "Golf Tournament" }
   ]
 };
 
@@ -376,6 +378,7 @@ function slugify(value: string) {
 }
 
 function createSponsorRule(
+  key: string,
   deliverableName: string,
   timingType: SponsorTimingType,
   config: {
@@ -388,6 +391,7 @@ function createSponsorRule(
   }
 ) {
   return {
+    key,
     deliverableName,
     timingType,
     offsetDays: config.offsetDays,
