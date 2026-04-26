@@ -836,9 +836,7 @@ export function CollateralView({
                               {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
                               <span>{item.dueDate ? `Due ${formatShortDate(item.dueDate)}` : "No due date"}</span>
                             </div>
-                            {item.notes?.trim() ? (
-                              <div className="collateral-row__supporting">{item.notes.trim()}</div>
-                            ) : item.fileLink?.trim() ? (
+                            {item.fileLink?.trim() ? (
                               <div className="collateral-row__supporting">{item.fileLink.trim()}</div>
                             ) : null}
                           </div>
@@ -904,9 +902,6 @@ export function CollateralView({
                               {item.printer.trim() ? <span>Printer: {item.printer.trim()}</span> : null}
                               <span>{item.status}</span>
                             </div>
-                            {item.notes?.trim() ? (
-                              <div className="collateral-row__supporting">{item.notes.trim()}</div>
-                            ) : null}
                           </div>
                         </button>
                         <div className="collateral-row__signals">
@@ -1286,27 +1281,12 @@ export function CollateralView({
                     className="collateral-editor-tabs__panel collateral-editor-tabs__panel--notes"
                     role="tabpanel"
                   >
-                    <div className="collateral-drawer__group collateral-drawer__group--notes">
-                      <div className="drawer__panel-title">Notes</div>
-                      <div className="drawer__grid drawer__grid--form collateral-drawer__grid">
-                        <div className="field field--wide">
-                          <label htmlFor="collateral-notes">Notes</label>
-                          <textarea
-                            id="collateral-notes"
-                            onChange={(event) => patchCollateralItem(selectedItem.id, { notes: event.target.value })}
-                            placeholder="Add production context, specs, or handoff notes."
-                            rows={6}
-                            value={selectedItem.notes ?? ""}
-                          />
-                        </div>
-                      </div>
-                    </div>
                     <ActionItemNotesPanel
                       noteDraft={noteDraft}
                       noteEntries={selectedItem.noteEntries}
                       onAddNote={() => addNote(selectedItem)}
                       onNoteDraftChange={setNoteDraft}
-                      title="Note History"
+                      title="Notes"
                       subtitle="Timestamped update log for this collateral item."
                     />
                   </div>

@@ -55,6 +55,7 @@ import {
 } from "@/lib/events/event-editing";
 import { buildCreatedEventInstanceState } from "@/lib/event-type-definitions";
 import { nativeActionItemMutator } from "@/lib/native-action-item-mutator";
+import { getFirebaseProjectId, isDashboardDiagnosticsEnabled } from "@/lib/firebase";
 import {
   appendSponsorCollateralLinkNoteEntries,
   appendSponsorGeneratedWorkReviewNoteEntries,
@@ -807,28 +808,25 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           [nextId]: createDefaultSponsorshipSetupForEventInstance(nextId, input.eventTypeId)
         }
       : sponsorshipSetupByInstanceRef.current;
+    const nextEventSubEvents = normalizeEventSubEvents(nextEventState.nextEventSubEvents).subEvents;
 
     if (nextEventTypes !== eventTypesRef.current) {
       setEventTypes(nextEventTypes);
       eventTypesRef.current = nextEventTypes;
     }
     setEventInstances(nextEventState.nextEventInstances);
-    setEventSubEvents((current) =>
-      normalizeEventSubEvents([
-        ...current,
-        ...nextEventState.nextEventSubEvents.filter(
-          (subEvent) => !current.some((existing) => existing.id === subEvent.id)
-        )
-      ]).subEvents
-    );
+    eventInstancesRef.current = nextEventState.nextEventInstances;
+    setEventSubEvents(nextEventSubEvents);
+    eventSubEventsRef.current = nextEventSubEvents;
 
     if (input.eventTypeId === "legislative-day") {
       setCollateralProfiles(nextCollateralProfiles);
+      collateralProfilesRef.current = nextCollateralProfiles;
     }
     if (supportsSponsorSetupForEventType(input.eventTypeId)) {
       setSponsorshipSetupByInstance(nextSponsorshipSetupByInstance);
-      sponsorshipSetupByInstanceRef.current = nextSponsorshipSetupByInstance;
     }
+    sponsorshipSetupByInstanceRef.current = nextSponsorshipSetupByInstance;
 
     enqueueCollateralPersistenceWrite(() =>
       collateralPersistenceStore
@@ -837,7 +835,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             collateralProfiles: nextCollateralProfiles,
             sponsorshipSetupByInstance: nextSponsorshipSetupByInstance,
             eventInstances: nextEventState.nextEventInstances,
-            eventSubEvents: normalizeEventSubEvents(nextEventState.nextEventSubEvents).subEvents
+            eventSubEvents: nextEventSubEvents
           }),
           getCollateralPersistenceContext({ eventTypes: nextEventTypes })
         )
@@ -845,6 +843,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     );
 
     setActiveEventInstanceIdState(nextEventState.activeEventInstanceId);
+    activeEventInstanceIdRef.current = nextEventState.activeEventInstanceId;
     return nextId;
   }, [
     collateralPersistenceStore,
@@ -1318,6 +1317,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     getPersistedCollateralState,
     hydrateAppState,
     nativeActionItemStore
+  ]);
+
+  useEffect(() => {
+    if (!hasHydrated || !isDashboardDiagnosticsEnabled()) {
+      return;
+    }
+
+    console.info("[CAPMA dashboard diagnostics] app state hydration", {
+      firebaseProjectId: getFirebaseProjectId(),
+      nativeActionItemStoreMode,
+      collateralPersistenceStoreMode,
+      nativeFirestoreItemCount: nativeActionItemStoreMode === "firebase" ? items.length : 0,
+      localRecoveryItemCount: nativeActionItemRecovery.localRecoveryItemCount,
+      collateralItemCount: collateralItems.length,
+      eventInstanceCount: eventInstances.length,
+      eventSubEventCount: eventSubEvents.length
+    });
+  }, [
+    collateralItems.length,
+    collateralPersistenceStoreMode,
+    eventInstances.length,
+    eventSubEvents.length,
+    hasHydrated,
+    items.length,
+    nativeActionItemRecovery.localRecoveryItemCount,
+    nativeActionItemStoreMode
   ]);
 
   const importNativeActionItemsFromLocalRecovery = useCallback(async () => {

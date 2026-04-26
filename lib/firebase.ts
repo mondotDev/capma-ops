@@ -1,4 +1,5 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
 type FirebaseWebConfig = {
@@ -11,6 +12,7 @@ type FirebaseWebConfig = {
 };
 
 let firebaseAppInstance: FirebaseApp | null | undefined;
+let firebaseAuthInstance: Auth | null | undefined;
 let firestoreDbInstance: Firestore | null | undefined;
 
 function getFirebaseConfigFromEnv(): FirebaseWebConfig | null {
@@ -39,8 +41,44 @@ export function isFirebaseConfigured() {
   return getFirebaseConfigFromEnv() !== null;
 }
 
+export function getFirebaseProjectId() {
+  return process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() ?? "";
+}
+
 export function isDashboardReadsEnabled() {
+  return isDashboardReadsExplicitlyEnabled() || isAnyFirebaseOperationalDataModeEnabled();
+}
+
+export function isFirebaseAuthExplicitlyEnabled() {
+  return process.env.NEXT_PUBLIC_FIREBASE_AUTH_ENABLED === "true";
+}
+
+export function isDashboardReadsExplicitlyEnabled() {
   return process.env.NEXT_PUBLIC_FIREBASE_DASHBOARD_READS_ENABLED === "true";
+}
+
+export function isNativeActionItemStoreFirebaseModeEnabled() {
+  return process.env.NEXT_PUBLIC_NATIVE_ACTION_ITEM_STORE_MODE?.trim().toLowerCase() !== "local";
+}
+
+export function isCollateralStoreFirebaseModeEnabled() {
+  return process.env.NEXT_PUBLIC_COLLATERAL_STORE_MODE?.trim().toLowerCase() === "firebase";
+}
+
+export function isAnyFirebaseOperationalDataModeEnabled() {
+  return isNativeActionItemStoreFirebaseModeEnabled() || isCollateralStoreFirebaseModeEnabled();
+}
+
+export function isAnyFirebaseDataModeEnabled() {
+  return (
+    isAnyFirebaseOperationalDataModeEnabled() ||
+    isDashboardReadsEnabled() ||
+    isFirebaseAuthExplicitlyEnabled()
+  );
+}
+
+export function isDashboardDiagnosticsEnabled() {
+  return process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DASHBOARD_DIAGNOSTICS_ENABLED === "true";
 }
 
 export function getFirebaseApp(): FirebaseApp | null {
@@ -57,6 +95,22 @@ export function getFirebaseApp(): FirebaseApp | null {
 
   firebaseAppInstance = getApps()[0] ?? initializeApp(firebaseConfig);
   return firebaseAppInstance;
+}
+
+export function getFirebaseAuth(): Auth | null {
+  if (firebaseAuthInstance !== undefined) {
+    return firebaseAuthInstance;
+  }
+
+  const firebaseApp = getFirebaseApp();
+
+  if (!firebaseApp) {
+    firebaseAuthInstance = null;
+    return firebaseAuthInstance;
+  }
+
+  firebaseAuthInstance = getAuth(firebaseApp);
+  return firebaseAuthInstance;
 }
 
 export function getFirestoreDb(): Firestore | null {

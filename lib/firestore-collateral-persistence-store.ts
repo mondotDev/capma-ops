@@ -114,7 +114,7 @@ export function createFirestoreCollateralPersistenceStore(input?: {
   const setDocument =
     input?.setDocument ??
     ((firestore: Firestore, nextCollectionName: string, nextDocumentName: string, value: FirestoreCollateralStateDocument) =>
-      setDoc(doc(firestore, nextCollectionName, nextDocumentName), value));
+      setDoc(doc(firestore, nextCollectionName, nextDocumentName), removeUndefinedFieldsDeep(value)));
 
   return {
     mode: "firebase" as const,
@@ -176,13 +176,13 @@ export function mapPersistedCollateralStateToFirestoreDocument(
       Object.entries(state.sponsorshipSetupByInstance ?? {}).map(([instanceId, setup]) => [
         instanceId,
         {
-          opportunities: setup.opportunities.map((opportunity) => ({ ...opportunity })),
-          commitments: setup.commitments.map((commitment) => ({ ...commitment }))
+          opportunities: setup.opportunities.map(mapSponsorOpportunityToFirestoreDocument),
+          commitments: setup.commitments.map(mapSponsorCommitmentToFirestoreDocument)
         }
       ])
     ),
-    eventInstances: state.eventInstances.map((instance) => ({ ...instance })),
-    eventSubEvents: state.eventSubEvents.map((subEvent) => ({ ...subEvent })),
+    eventInstances: state.eventInstances.map(mapEventInstanceToFirestoreDocument),
+    eventSubEvents: state.eventSubEvents.map(mapEventSubEventToFirestoreDocument),
     schemaVersion: 1,
     updatedAt: new Date().toISOString()
   };
@@ -367,6 +367,14 @@ function parseFirestoreCollateralItemDocument(value: unknown): FirestoreCollater
   };
 }
 
+function mapEventInstanceToFirestoreDocument(instance: EventInstance): FirestoreEventInstanceDocument {
+  return removeUndefinedFieldsDeep({ ...instance }) as FirestoreEventInstanceDocument;
+}
+
+function mapEventSubEventToFirestoreDocument(subEvent: EventSubEvent): FirestoreEventSubEventDocument {
+  return removeUndefinedFieldsDeep({ ...subEvent }) as FirestoreEventSubEventDocument;
+}
+
 function mapActionNoteEntryToFirestoreDocument(entry: ActionNoteEntry): FirestoreActionNoteEntryDocument {
   return {
     author: {
@@ -490,6 +498,14 @@ function isSponsorshipSetupMap(
   });
 }
 
+function mapSponsorOpportunityToFirestoreDocument(opportunity: SponsorOpportunity): FirestoreSponsorOpportunityDocument {
+  return removeUndefinedFieldsDeep(opportunity) as FirestoreSponsorOpportunityDocument;
+}
+
+function mapSponsorCommitmentToFirestoreDocument(commitment: SponsorCommitment): FirestoreSponsorCommitmentDocument {
+  return removeUndefinedFieldsDeep(commitment) as FirestoreSponsorCommitmentDocument;
+}
+
 function isLegDayCollateralProfileDocument(value: unknown): value is FirestoreLegDayCollateralProfileDocument {
   if (!value || typeof value !== "object") {
     return false;
@@ -525,4 +541,20 @@ function getConfiguredDb(getDb: () => Firestore | null, isConfigured: () => bool
 
 function removeUndefinedFields<T extends object>(value: T) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function removeUndefinedFieldsDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => removeUndefinedFieldsDeep(entry)) as T;
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, removeUndefinedFieldsDeep(entry)])
+  ) as T;
 }

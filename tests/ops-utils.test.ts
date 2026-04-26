@@ -2785,6 +2785,49 @@ test("firestore collateral persistence document parser accepts the minimal valid
   );
 });
 
+test("firestore collateral persistence document omits undefined event fields", () => {
+  const defaultState = createDefaultAppStateData();
+  const persistedState = {
+    collateralItems: [],
+    collateralProfiles: {},
+    eventInstances: [
+      {
+        id: "first-friday-june-2026",
+        eventTypeId: "first-friday",
+        name: "First Friday June 2026",
+        dateMode: "single" as const,
+        dates: ["2026-06-05"],
+        startDate: "2026-06-05",
+        endDate: "2026-06-05",
+        location: undefined,
+        notes: undefined
+      }
+    ],
+    eventSubEvents: [
+      {
+        id: "first-friday-june-2026-main-event",
+        eventInstanceId: "first-friday-june-2026",
+        name: "Main Event",
+        sortOrder: 10,
+        date: undefined
+      }
+    ]
+  };
+
+  const document = mapPersistedCollateralStateToFirestoreDocument(persistedState);
+
+  assert.equal("location" in document.eventInstances[0]!, false);
+  assert.equal("notes" in document.eventInstances[0]!, false);
+  assert.equal("date" in document.eventSubEvents[0]!, false);
+  assert.ok(
+    parseFirestoreCollateralStateDocument({
+      ...document,
+      eventInstances: [...defaultState.eventInstances, ...document.eventInstances],
+      eventSubEvents: [...defaultState.eventSubEvents, ...document.eventSubEvents]
+    })
+  );
+});
+
 test("firestore collateral persistence store maps a valid remote payload into normalized collateral state", async () => {
   const defaultState = createDefaultAppStateData();
   const persistedState = {

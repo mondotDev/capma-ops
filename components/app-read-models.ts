@@ -14,6 +14,13 @@ import {
   type DashboardSessionReadSelection
 } from "@/lib/firebase-dashboard-source";
 import {
+  getFirebaseProjectId,
+  isCollateralStoreFirebaseModeEnabled,
+  isDashboardDiagnosticsEnabled,
+  isDashboardReadsEnabled,
+  isNativeActionItemStoreFirebaseModeEnabled
+} from "@/lib/firebase";
+import {
   getActionListViewData,
   getPublicationIssueWorkspaceSummary,
   getSelectedActionItemWorkspace,
@@ -134,6 +141,36 @@ export function useDashboardReadModel(): {
     () => getPublicationIssueSummary(resolvedDashboardSource),
     [resolvedDashboardSource]
   );
+
+  useEffect(() => {
+    if (!dashboardSessionSource || !isDashboardDiagnosticsEnabled()) {
+      return;
+    }
+
+    const overdueItems = resolvedDashboardSource.executionItems
+      .filter((item) => item.isOverdue && !item.isTerminal)
+      .map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        status: item.status,
+        dueDate: item.dueDate,
+        workstream: item.workstream
+      }));
+
+    console.info("[CAPMA dashboard diagnostics] dashboard source", {
+      firebaseProjectId: getFirebaseProjectId(),
+      nativeActionItemStoreMode: isNativeActionItemStoreFirebaseModeEnabled() ? "firebase" : "local",
+      collateralStoreMode: isCollateralStoreFirebaseModeEnabled() ? "firebase" : "local",
+      dashboardFirebaseReadsEnabled: isDashboardReadsEnabled(),
+      dashboardSource: dashboardSessionSource.source,
+      nativeItemCount: resolvedDashboardSource.items.length,
+      executionItemCount: resolvedDashboardSource.executionItems.length,
+      collateralDerivedExecutionRowCount: resolvedDashboardSource.executionItems.filter((item) => item.kind === "collateral").length,
+      overdueCount: dashboardSummary.overdue,
+      overdueItems
+    });
+  }, [dashboardSessionSource, dashboardSummary.overdue, resolvedDashboardSource]);
 
   return {
     dashboardSummary,

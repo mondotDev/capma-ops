@@ -31,6 +31,7 @@ import {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const {
+    activeEventInstanceId,
     defaultOwnerForNewItems,
     eventInstances,
     eventSubEvents,
@@ -53,7 +54,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingImportPayload, setPendingImportPayload] = useState<unknown>(null);
   const [pendingImportFileName, setPendingImportFileName] = useState("");
   const [settingsFeedback, setSettingsFeedback] = useState("");
-  const [formState, setFormState] = useState<QuickAddFormState>(createInitialFormState());
+  const [formState, setFormState] = useState<QuickAddFormState>(() =>
+    createInitialFormState({
+      activeEventInstanceId,
+      defaultOwner: defaultOwnerForNewItems,
+      eventInstances,
+      eventTypes
+    })
+  );
   const [generationFeedback, setGenerationFeedback] = useState<string>("");
   const quickAddManualEventSelectionRef = useRef<QuickAddManualEventSelection>({
     eventProgramId: null,
@@ -94,7 +102,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isQuickAddOpen, isSettingsOpen]);
 
   function openQuickAdd() {
-    setFormState(createInitialFormState());
+    setFormState(createInitialFormState({
+      activeEventInstanceId,
+      defaultOwner: defaultOwnerForNewItems,
+      eventInstances,
+      eventTypes
+    }));
     quickAddManualEventSelectionRef.current = { eventProgramId: null, eventInstanceId: "" };
     setGenerationFeedback("");
     setIsQuickAddOpen(true);
@@ -525,17 +538,28 @@ function formatGenerationFeedback(result: GenerateDeliverablesResult) {
   return `${result.created} created, ${result.skipped} skipped because they already exist.`;
 }
 
-function createInitialFormState(): QuickAddFormState {
+function createInitialFormState(input?: {
+  activeEventInstanceId?: string;
+  defaultOwner?: string;
+  eventInstances?: Array<{ id: string; eventTypeId: string }>;
+  eventTypes?: Array<{ id: string; name: string }>;
+}): QuickAddFormState {
+  const activeEventInstance = input?.eventInstances?.find((instance) => instance.id === input.activeEventInstanceId);
+  const activeEventWorkstream =
+    activeEventInstance
+      ? input?.eventTypes?.find((eventType) => eventType.id === activeEventInstance.eventTypeId)?.name ?? ""
+      : "";
+
   return {
-    type: "",
+    type: "Task",
     title: "",
-    workstream: "",
+    workstream: activeEventWorkstream,
     operationalBucket: "",
-    eventInstanceId: "",
+    eventInstanceId: activeEventInstance?.id ?? "",
     subEventId: "",
     issue: "",
     dueDate: "",
-    owner: DEFAULT_OWNER,
+    owner: input?.defaultOwner?.trim() || DEFAULT_OWNER,
     status: "Not Started",
     waitingOn: "",
     isBlocked: false,

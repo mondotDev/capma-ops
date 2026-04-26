@@ -3,6 +3,7 @@ import { Antonio, Inter, Montserrat } from "next/font/google";
 import "./globals.css";
 import { AppStateProvider } from "@/components/app-state";
 import { AppShell } from "@/components/app-shell";
+import { FirebaseAuthGate } from "@/components/firebase-auth-gate";
 
 const antonio = Antonio({
   subsets: ["latin"],
@@ -35,9 +36,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${antonio.variable} ${montserrat.variable} ${inter.variable}`}>
-        <AppStateProvider>
-          <AppShell>{children}</AppShell>
-        </AppStateProvider>
+        <FirebaseAuthGate>
+          <AppStateProvider>
+            <AppShell>{children}</AppShell>
+          </AppStateProvider>
+        </FirebaseAuthGate>
       </body>
     </html>
   );
