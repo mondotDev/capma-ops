@@ -5835,14 +5835,32 @@ textarea,
   min-width: 0;
 }
 
+.amc-form-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.amc-form-stack label {
+  display: grid;
+  gap: 5px;
+}
+
 .amc-quick-add label span {
   color: #607181;
   font-size: 13px;
   font-weight: 700;
 }
 
+.amc-form-stack label span {
+  color: #607181;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .amc-quick-add input,
-.amc-quick-add select {
+.amc-quick-add select,
+.amc-form-stack input,
+.amc-form-stack select {
   min-width: 0;
   width: 100%;
   border: 1px solid #d9e0e7;

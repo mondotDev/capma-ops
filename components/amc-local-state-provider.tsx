@@ -4,17 +4,21 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   addActionItemToAmcLocalState,
+  addClientAssociationToAmcLocalState,
+  addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
   loadAmcLocalState,
   saveAmcLocalState,
   type AmcLocalStateSnapshot
 } from "@/lib/amc-local-state";
-import type { ActionItem } from "@/lib/amc-domain";
+import type { ActionItem, ClientAssociation, WorkBucket } from "@/lib/amc-domain";
 
 interface AmcLocalStateContextValue {
   state: AmcLocalStateSnapshot;
   isHydrated: boolean;
   addActionItem: (actionItem: ActionItem) => void;
+  addClientAssociation: (client: ClientAssociation) => void;
+  addWorkBucket: (bucket: WorkBucket) => void;
   resetLocalState: () => void;
 }
 
@@ -36,6 +40,20 @@ export function AmcLocalStateProvider({ children }: { children: ReactNode }) {
       addActionItem(actionItem) {
         setState((current) => {
           const nextState = addActionItemToAmcLocalState(current, actionItem);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addClientAssociation(client) {
+        setState((current) => {
+          const nextState = addClientAssociationToAmcLocalState(current, client);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addWorkBucket(bucket) {
+        setState((current) => {
+          const nextState = addWorkBucketToAmcLocalState(current, bucket);
           saveAmcLocalState(nextState);
           return nextState;
         });

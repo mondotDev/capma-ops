@@ -1,5 +1,7 @@
 import {
   DEMO_FOUNDATION_DATA,
+  createDefaultBucketsForClient,
+  ensureDefaultBucketsForClients,
   type ActionItem,
   type AmcOrganization,
   type ClientAssociation,
@@ -38,14 +40,16 @@ export function normalizeAmcLocalStateSnapshot(value: unknown): AmcLocalStateSna
 
   const candidate = value as Partial<AmcLocalStateSnapshot>;
   const defaults = createDefaultAmcLocalState();
+  const organization = normalizeOrganization(candidate.organization, defaults.organization);
+  const clients = normalizeArray(candidate.clients, defaults.clients);
 
   return {
     version: AMC_LOCAL_STATE_VERSION,
-    organization: normalizeOrganization(candidate.organization, defaults.organization),
-    clients: normalizeArray(candidate.clients, defaults.clients),
+    organization,
+    clients,
     staff: normalizeArray(candidate.staff, defaults.staff),
     currentUser: normalizeCurrentUser(candidate.currentUser, defaults.currentUser),
-    buckets: normalizeArray(candidate.buckets, defaults.buckets),
+    buckets: ensureDefaultBucketsForClients(clients, normalizeArray(candidate.buckets, defaults.buckets), organization.id),
     actionItems: normalizeArray(candidate.actionItems, defaults.actionItems),
     collateralItems: normalizeArray(candidate.collateralItems, defaults.collateralItems)
   };
@@ -79,6 +83,33 @@ export function addActionItemToAmcLocalState(
   return {
     ...snapshot,
     actionItems: [actionItem, ...snapshot.actionItems]
+  };
+}
+
+export function addClientAssociationToAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  client: ClientAssociation
+): AmcLocalStateSnapshot {
+  const defaultBuckets = createDefaultBucketsForClient({
+    clientAssociationId: client.id,
+    organizationId: snapshot.organization.id,
+    existingBuckets: snapshot.buckets
+  });
+
+  return {
+    ...snapshot,
+    clients: [...snapshot.clients, client],
+    buckets: [...snapshot.buckets, ...defaultBuckets]
+  };
+}
+
+export function addWorkBucketToAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  bucket: WorkBucket
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    buckets: [...snapshot.buckets, bucket]
   };
 }
 

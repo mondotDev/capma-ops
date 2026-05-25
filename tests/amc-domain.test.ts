@@ -3,18 +3,27 @@ import assert from "node:assert/strict";
 import {
   DEMO_FOUNDATION_DATA,
   createActionItem,
+  createClientAssociation,
+  createDefaultBucketsForClient,
   createCollateralActionItem,
+  createWorkBucket,
+  DEFAULT_CLIENT_BUCKET_KINDS,
+  ensureDefaultBucketsForClients,
   getAssigneeName,
   getFoundationWorkItems,
   getVisibleWorkItems,
   linkCollateralActionItem,
   validateActionItemCreateInput,
+  validateClientAssociationCreateInput,
+  validateWorkBucketCreateInput,
   type CurrentUser,
   type WorkItem
 } from "../lib/amc-domain";
 import {
   AMC_LOCAL_STATE_STORAGE_KEY,
   addActionItemToAmcLocalState,
+  addClientAssociationToAmcLocalState,
+  addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
   loadAmcLocalState,
   saveAmcLocalState
@@ -178,6 +187,159 @@ test("v2 local state saves and reloads action items", () => {
   const reloaded = loadAmcLocalState(storage);
   assert.equal(reloaded.actionItems[0]?.id, actionItem.id);
   assert.equal(reloaded.actionItems[0]?.title, "Persisted local action");
+});
+
+test("client association creation requires name and short name", () => {
+  const validation = validateClientAssociationCreateInput({
+    name: "",
+    shortName: ""
+  });
+
+  assert.equal(validation.isValid, false);
+  assert.deepEqual(validation.errors, ["Client name is required.", "Client short name is required."]);
+});
+
+test("client association creation defaults to active status", () => {
+  const client = createClientAssociation(
+    {
+      name: "New Trade Association",
+      shortName: "NTA"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(client.organizationId, DEMO_FOUNDATION_DATA.organization.id);
+  assert.equal(client.name, "New Trade Association");
+  assert.equal(client.shortName, "NTA");
+  assert.equal(client.status, "active");
+});
+
+test("work bucket creation requires a valid client and name", () => {
+  const validation = validateWorkBucketCreateInput(
+    {
+      clientAssociationId: "missing-client",
+      kind: "event",
+      name: ""
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(validation.isValid, false);
+  assert.deepEqual(validation.errors, ["Client association is required.", "Bucket name is required."]);
+});
+
+test("event creation is represented as a client-scoped event bucket", () => {
+  const bucket = createWorkBucket(
+    {
+      clientAssociationId: "client-pacific-pest",
+      kind: "event",
+      name: "Summer Leadership Summit"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(bucket.clientAssociationId, "client-pacific-pest");
+  assert.equal(bucket.kind, "event");
+  assert.equal(bucket.status, "planning");
+});
+
+test("v2 local state persists added clients and buckets", () => {
+  const storage = createMemoryStorage();
+  const snapshot = createDefaultAmcLocalState();
+  const client = createClientAssociation(
+    {
+      name: "Regional Operators Council",
+      shortName: "ROC"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const withClient = addClientAssociationToAmcLocalState(snapshot, client);
+  const bucket = createWorkBucket(
+    {
+      clientAssociationId: client.id,
+      kind: "event",
+      name: "ROC Annual Meeting"
+    },
+    withClient
+  );
+  const withBucket = addWorkBucketToAmcLocalState(withClient, bucket);
+
+  saveAmcLocalState(withBucket, storage);
+  const reloaded = loadAmcLocalState(storage);
+
+  assert.equal(reloaded.clients.some((candidate) => candidate.id === client.id), true);
+  assert.equal(reloaded.buckets.some((candidate) => candidate.id === bucket.id), true);
+});
+
+test("seeded clients include membership and general operations buckets", () => {
+  for (const client of DEMO_FOUNDATION_DATA.clients) {
+    const clientBucketKinds = DEMO_FOUNDATION_DATA.buckets
+      .filter((bucket) => bucket.clientAssociationId === client.id)
+      .map((bucket) => bucket.kind);
+
+    assert.equal(clientBucketKinds.includes("membership"), true);
+    assert.equal(clientBucketKinds.includes("generalOperations"), true);
+  }
+});
+
+test("new clients get default membership and general operations buckets", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const client = createClientAssociation(
+    {
+      name: "Default Bucket Association",
+      shortName: "DBA"
+    },
+    snapshot
+  );
+  const nextSnapshot = addClientAssociationToAmcLocalState(snapshot, client);
+  const clientBuckets = nextSnapshot.buckets.filter((bucket) => bucket.clientAssociationId === client.id);
+
+  assert.deepEqual(
+    clientBuckets.map((bucket) => bucket.kind).sort(),
+    [...DEFAULT_CLIENT_BUCKET_KINDS].sort()
+  );
+  assert.deepEqual(
+    clientBuckets.map((bucket) => bucket.name).sort(),
+    ["General Operations", "Membership"]
+  );
+});
+
+test("default bucket creation does not duplicate existing defaults", () => {
+  const existingBuckets = [
+    createWorkBucket(
+      {
+        clientAssociationId: "client-pacific-pest",
+        kind: "membership",
+        name: "Membership"
+      },
+      DEMO_FOUNDATION_DATA
+    )
+  ];
+  const defaults = createDefaultBucketsForClient({
+    clientAssociationId: "client-pacific-pest",
+    organizationId: DEMO_FOUNDATION_DATA.organization.id,
+    existingBuckets
+  });
+
+  assert.deepEqual(defaults.map((bucket) => bucket.kind), ["generalOperations"]);
+});
+
+test("normalizing local state backfills missing default client buckets", () => {
+  const bucketsWithoutDefaults = DEMO_FOUNDATION_DATA.buckets.filter(
+    (bucket) => bucket.kind !== "membership" && bucket.kind !== "generalOperations"
+  );
+  const normalizedBuckets = ensureDefaultBucketsForClients(
+    DEMO_FOUNDATION_DATA.clients,
+    bucketsWithoutDefaults,
+    DEMO_FOUNDATION_DATA.organization.id
+  );
+
+  for (const client of DEMO_FOUNDATION_DATA.clients) {
+    const kinds = normalizedBuckets.filter((bucket) => bucket.clientAssociationId === client.id).map((bucket) => bucket.kind);
+
+    assert.equal(kinds.includes("membership"), true);
+    assert.equal(kinds.includes("generalOperations"), true);
+  }
 });
 
 function getDemoWorkItems() {

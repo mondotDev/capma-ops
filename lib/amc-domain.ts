@@ -9,6 +9,8 @@ export type WorkBucketKind =
   | "educationProgram"
   | "publicationIssue"
   | "sponsorFulfillment"
+  | "membership"
+  | "generalOperations"
   | "internalOps";
 
 export type WorkTrackerKind =
@@ -51,6 +53,12 @@ export interface ClientAssociation {
   status: ClientAssociationStatus;
 }
 
+export interface ClientAssociationCreateInput {
+  name: string;
+  shortName: string;
+  status?: ClientAssociationStatus;
+}
+
 export interface StaffProfile {
   id: string;
   organizationId: string;
@@ -76,6 +84,17 @@ export interface WorkBucket {
   name: string;
   status: "planning" | "active" | "complete";
 }
+
+export type WorkBucketStatus = WorkBucket["status"];
+
+export interface WorkBucketCreateInput {
+  clientAssociationId: string;
+  kind: WorkBucketKind;
+  name: string;
+  status?: WorkBucketStatus;
+}
+
+export const DEFAULT_CLIENT_BUCKET_KINDS = ["membership", "generalOperations"] as const;
 
 export interface WorkItem {
   id: string;
@@ -211,11 +230,43 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       status: "planning"
     },
     {
+      id: "bucket-ppma-membership",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      kind: "membership",
+      name: "Membership",
+      status: "active"
+    },
+    {
+      id: "bucket-ppma-general-operations",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      kind: "generalOperations",
+      name: "General Operations",
+      status: "active"
+    },
+    {
       id: "bucket-wpc-sponsor-fulfillment",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-western-parks",
       kind: "sponsorFulfillment",
       name: "Partner Fulfillment",
+      status: "active"
+    },
+    {
+      id: "bucket-wpc-membership",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-western-parks",
+      kind: "membership",
+      name: "Membership",
+      status: "active"
+    },
+    {
+      id: "bucket-wpc-general-operations",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-western-parks",
+      kind: "generalOperations",
+      name: "General Operations",
       status: "active"
     }
   ],
@@ -368,6 +419,136 @@ export function validateActionItemCreateInput(input: ActionItemCreateInput, data
     isValid: errors.length === 0,
     errors
   };
+}
+
+export function validateClientAssociationCreateInput(input: ClientAssociationCreateInput) {
+  const errors: string[] = [];
+
+  if (!input.name.trim()) {
+    errors.push("Client name is required.");
+  }
+
+  if (!input.shortName.trim()) {
+    errors.push("Client short name is required.");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function createClientAssociation(
+  input: ClientAssociationCreateInput,
+  data: Pick<FoundationData, "organization">
+): ClientAssociation {
+  const validation = validateClientAssociationCreateInput(input);
+
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  return {
+    id: `client-${crypto.randomUUID()}`,
+    organizationId: data.organization.id,
+    name: input.name.trim(),
+    shortName: input.shortName.trim(),
+    status: input.status ?? "active"
+  };
+}
+
+export function validateWorkBucketCreateInput(
+  input: WorkBucketCreateInput,
+  data: Pick<FoundationData, "clients" | "organization">
+) {
+  const errors: string[] = [];
+  const client = data.clients.find((candidate) => candidate.id === input.clientAssociationId);
+
+  if (!client || client.organizationId !== data.organization.id) {
+    errors.push("Client association is required.");
+  }
+
+  if (!input.name.trim()) {
+    errors.push("Bucket name is required.");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function createWorkBucket(
+  input: WorkBucketCreateInput,
+  data: Pick<FoundationData, "clients" | "organization">
+): WorkBucket {
+  const validation = validateWorkBucketCreateInput(input, data);
+
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  return {
+    id: `bucket-${crypto.randomUUID()}`,
+    organizationId: data.organization.id,
+    clientAssociationId: input.clientAssociationId,
+    kind: input.kind,
+    name: input.name.trim(),
+    status: input.status ?? "planning"
+  };
+}
+
+export function createDefaultBucketsForClient(input: {
+  clientAssociationId: string;
+  organizationId: string;
+  existingBuckets?: WorkBucket[];
+}): WorkBucket[] {
+  const existingKinds = new Set(
+    input.existingBuckets
+      ?.filter((bucket) => bucket.clientAssociationId === input.clientAssociationId)
+      .map((bucket) => bucket.kind) ?? []
+  );
+  const defaults: WorkBucket[] = [];
+
+  if (!existingKinds.has("membership")) {
+    defaults.push({
+      id: `bucket-${crypto.randomUUID()}`,
+      organizationId: input.organizationId,
+      clientAssociationId: input.clientAssociationId,
+      kind: "membership",
+      name: "Membership",
+      status: "active"
+    });
+  }
+
+  if (!existingKinds.has("generalOperations")) {
+    defaults.push({
+      id: `bucket-${crypto.randomUUID()}`,
+      organizationId: input.organizationId,
+      clientAssociationId: input.clientAssociationId,
+      kind: "generalOperations",
+      name: "General Operations",
+      status: "active"
+    });
+  }
+
+  return defaults;
+}
+
+export function ensureDefaultBucketsForClients(
+  clients: ClientAssociation[],
+  buckets: WorkBucket[],
+  organizationId: string
+): WorkBucket[] {
+  return clients.reduce((nextBuckets, client) => {
+    const defaults = createDefaultBucketsForClient({
+      clientAssociationId: client.id,
+      organizationId,
+      existingBuckets: nextBuckets
+    });
+
+    return [...nextBuckets, ...defaults];
+  }, [...buckets]);
 }
 
 export function createActionItem(
