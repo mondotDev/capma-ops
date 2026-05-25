@@ -1,5 +1,5 @@
 {
-  "name": "capma-ops",
+  "name": "amc-ops-hub",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsc -p tsconfig.test.json && node -r ./tests/register-test-aliases.cjs --test .test-dist/tests/ops-utils.test.js",
+    "test": "tsc -p tsconfig.test.json && node -r ./tests/register-test-aliases.cjs --test .test-dist/tests",
     "import:native-action-items": "tsc -p tsconfig.scripts.json && node -r ./tests/register-test-aliases.cjs .script-dist/scripts/import-native-action-items.js",
     "bootstrap:collateral-state": "tsc -p tsconfig.scripts.json && node -r ./tests/register-test-aliases.cjs .script-dist/scripts/bootstrap-collateral-state.js",
     "dedupe:collateral-state": "tsc -p tsconfig.scripts.json && node -r ./tests/register-test-aliases.cjs .script-dist/scripts/dedupe-collateral-state.js"

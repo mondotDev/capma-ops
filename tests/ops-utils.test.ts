@@ -2302,16 +2302,18 @@ test("matchesEventGroup and matchesSearchQuery support grouped filtered views", 
 });
 
 test("action lenses split active work into execution now and planned later", () => {
-  assert.equal(matchesActionLens(createItem({ status: "In Progress" }), "executionNow"), true);
-  assert.equal(matchesActionLens(createItem({ status: "Waiting", waitingOn: "Internal" }), "executionNow"), true);
-  assert.equal(matchesActionLens(createItem({ isBlocked: true }), "executionNow"), true);
-  assert.equal(matchesActionLens(createItem({ status: "Not Started", dueDate: "2026-04-30" }), "executionNow"), false);
-  assert.equal(matchesActionLens(createItem({ status: "Not Started", dueDate: "2026-04-30" }), "plannedLater"), true);
-  assert.equal(matchesActionLens(createItem({ status: "In Progress" }), "plannedLater"), false);
-  assert.equal(matchesActionLens(createItem({ status: "Complete" }), "executionNow"), false);
-  assert.equal(matchesActionLens(createItem({ status: "Complete" }), "plannedLater"), false);
-  assert.equal(matchesActionLens(createItem({ status: "Canceled" }), "executionNow"), false);
-  assert.equal(matchesActionLens(createItem({ status: "Canceled" }), "plannedLater"), false);
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    assert.equal(matchesActionLens(createItem({ status: "In Progress" }), "executionNow"), true);
+    assert.equal(matchesActionLens(createItem({ status: "Waiting", waitingOn: "Internal" }), "executionNow"), true);
+    assert.equal(matchesActionLens(createItem({ isBlocked: true }), "executionNow"), true);
+    assert.equal(matchesActionLens(createItem({ status: "Not Started", dueDate: "2026-04-30" }), "executionNow"), false);
+    assert.equal(matchesActionLens(createItem({ status: "Not Started", dueDate: "2026-04-30" }), "plannedLater"), true);
+    assert.equal(matchesActionLens(createItem({ status: "In Progress" }), "plannedLater"), false);
+    assert.equal(matchesActionLens(createItem({ status: "Complete" }), "executionNow"), false);
+    assert.equal(matchesActionLens(createItem({ status: "Complete" }), "plannedLater"), false);
+    assert.equal(matchesActionLens(createItem({ status: "Canceled" }), "executionNow"), false);
+    assert.equal(matchesActionLens(createItem({ status: "Canceled" }), "plannedLater"), false);
+  });
 });
 
 test("review lenses surface high-signal cleanup cases", () => {
@@ -3274,56 +3276,58 @@ test("publication issue summary query returns progress-ready rows for visible pu
 });
 
 test("publication issue workspace summary derives progress and actions for open publication issues", () => {
-  const items = [
-    createItem({
-      id: "deliverable-complete",
-      title: "Draft CEO message",
-      workstream: "News Brief",
-      issue: "March 2026 News Brief",
-      type: "Deliverable",
-      dueDate: "2026-03-31",
-      status: "Complete"
-    }),
-    createItem({
-      id: "deliverable-open",
-      title: "Layout proof",
-      workstream: "News Brief",
-      issue: "March 2026 News Brief",
-      type: "Deliverable",
-      dueDate: "",
-      status: "In Progress"
-    })
-  ];
-  const issues: IssueRecord[] = [
-    { label: "February 2026 News Brief", status: "Planned", dueDate: "2026-03-01", workstream: "News Brief", year: 2026 },
-    { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
-    { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
-  ];
+  withMockedToday("2026-03-28T00:00:00.000Z", () => {
+    const items = [
+      createItem({
+        id: "deliverable-complete",
+        title: "Draft CEO message",
+        workstream: "News Brief",
+        issue: "March 2026 News Brief",
+        type: "Deliverable",
+        dueDate: "2026-03-31",
+        status: "Complete"
+      }),
+      createItem({
+        id: "deliverable-open",
+        title: "Layout proof",
+        workstream: "News Brief",
+        issue: "March 2026 News Brief",
+        type: "Deliverable",
+        dueDate: "",
+        status: "In Progress"
+      })
+    ];
+    const issues: IssueRecord[] = [
+      { label: "February 2026 News Brief", status: "Planned", dueDate: "2026-03-01", workstream: "News Brief", year: 2026 },
+      { label: "March 2026 News Brief", status: "Open", dueDate: "2026-04-01", workstream: "News Brief", year: 2026 },
+      { label: "Spring 2026 The Voice", status: "Planned", dueDate: "2026-04-30", workstream: "The Voice", year: 2026 }
+    ];
 
-  const workspace = getPublicationIssueWorkspaceSummary({
-    activeIssue: "March 2026 News Brief",
-    items,
-    issues
+    const workspace = getPublicationIssueWorkspaceSummary({
+      activeIssue: "March 2026 News Brief",
+      items,
+      issues
+    });
+
+    assert.ok(workspace);
+    assert.equal(workspace?.issue.label, "March 2026 News Brief");
+    assert.equal(workspace?.workstream, "News Brief");
+    assert.equal(workspace?.completeCount, 1);
+    assert.equal(workspace?.totalCount, 2);
+    assert.equal(workspace?.remainingCount, 1);
+    assert.equal(workspace?.progressCopy, "1 of 2 complete");
+    assert.equal(workspace?.canOpenIssue, false);
+    assert.equal(workspace?.canGenerateMissing, true);
+    assert.equal(workspace?.canCompleteIssue, false);
+    assert.deepEqual(
+      workspace?.readinessSignals.map((signal) => signal.shortLabel),
+      ["1 deliverable missing due date"]
+    );
+    assert.deepEqual(
+      workspace?.visiblePublicationIssues.map((issue) => issue.label),
+      ["March 2026 News Brief", "Spring 2026 The Voice"]
+    );
   });
-
-  assert.ok(workspace);
-  assert.equal(workspace?.issue.label, "March 2026 News Brief");
-  assert.equal(workspace?.workstream, "News Brief");
-  assert.equal(workspace?.completeCount, 1);
-  assert.equal(workspace?.totalCount, 2);
-  assert.equal(workspace?.remainingCount, 1);
-  assert.equal(workspace?.progressCopy, "1 of 2 complete");
-  assert.equal(workspace?.canOpenIssue, false);
-  assert.equal(workspace?.canGenerateMissing, true);
-  assert.equal(workspace?.canCompleteIssue, false);
-  assert.deepEqual(
-    workspace?.readinessSignals.map((signal) => signal.shortLabel),
-    ["1 deliverable missing due date"]
-  );
-  assert.deepEqual(
-    workspace?.visiblePublicationIssues.map((issue) => issue.label),
-    ["March 2026 News Brief", "Spring 2026 The Voice"]
-  );
 });
 
 test("publication issue workspace summary flags missing due dates and supports planned issue opening", () => {

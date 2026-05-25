@@ -1,5 +1,5 @@
-import { DashboardView } from "@/components/dashboard-view";
+import { AmcDashboard } from "@/components/amc-dashboard";
 
 export default function DashboardPage() {
-  return <DashboardView />;
+  return <AmcDashboard />;
 }

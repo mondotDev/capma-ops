@@ -1,5 +1,5 @@
-import { CollateralView } from "@/components/collateral-view";
+import { WorkPageRedirect } from "@/app/action/work-page-redirect";
 
 export default function CollateralPage() {
-  return <CollateralView />;
+  return <WorkPageRedirect />;
 }

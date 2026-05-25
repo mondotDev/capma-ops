@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { Antonio, Inter, Montserrat } from "next/font/google";
 import "./globals.css";
-import { AppStateProvider } from "@/components/app-state";
-import { AppShell } from "@/components/app-shell";
-import { FirebaseAuthGate } from "@/components/firebase-auth-gate";
+import { AmcAppShell } from "@/components/amc-app-shell";
+import { PRODUCT_NAME } from "@/lib/amc-domain";
 
 const antonio = Antonio({
   subsets: ["latin"],
@@ -24,8 +23,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "CAPMA Ops Hub",
-  description: "Internal operations dashboard for CAPMA"
+  title: PRODUCT_NAME,
+  description: "Multi-client operations hub for association management companies"
 };
 
 export default function RootLayout({
@@ -36,11 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${antonio.variable} ${montserrat.variable} ${inter.variable}`}>
-        <FirebaseAuthGate>
-          <AppStateProvider>
-            <AppShell>{children}</AppShell>
-          </AppStateProvider>
-        </FirebaseAuthGate>
+        <AmcAppShell>{children}</AmcAppShell>
       </body>
     </html>
   );

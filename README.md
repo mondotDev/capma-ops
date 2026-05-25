@@ -1,4 +1,35 @@
-# CAPMA Ops Hub
+# AMC Ops Hub
+
+AMC Ops Hub is being rebuilt as a reusable, multi-client operations hub for
+association management companies. The v2 foundation treats the AMC as the
+workspace, client associations as first-class scope, and event/program/tracker
+work as client-owned operational buckets.
+
+This branch intentionally keeps the legacy CAPMA implementation in the repo as
+reference material while the active app shell moves toward a cleaner v2 model.
+
+## V2 foundation
+
+The first v2 slice introduces:
+
+- `AmcOrganization`
+- `ClientAssociation`
+- `StaffProfile`
+- `CurrentUser`
+- `WorkBucket`
+- `WorkItem`
+
+The current running app is a lightweight foundation view for:
+
+- client association buckets
+- role-aware assigned work
+- separate tracker kinds for action, collateral, education, speaker, and sponsor fulfillment work
+
+Legacy CAPMA pages and data modules have not been deleted yet. They should be
+treated as reference material until the new multi-AMC model has enough coverage
+to replace them confidently.
+
+## Legacy CAPMA notes
 
 CAPMA Ops Hub is a local-first Next.js operations workspace for CAPMA planning, execution, publication issue tracking, and event collateral coordination.
 

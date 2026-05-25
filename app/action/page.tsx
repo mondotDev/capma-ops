@@ -1,5 +1,5 @@
-import { ActionView } from "@/components/action-view";
+import { WorkPageRedirect } from "./work-page-redirect";
 
 export default function ActionPage() {
-  return <ActionView />;
+  return <WorkPageRedirect />;
 }
