@@ -5975,8 +5975,30 @@ textarea,
   border-top: 1px solid #e3e9ef;
 }
 
+.amc-collateral-edit-form {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+}
+
+.amc-collateral-edit-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.amc-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .amc-related-action-form input,
-.amc-related-action-form select {
+.amc-related-action-form select,
+.amc-collateral-edit-form input,
+.amc-collateral-edit-form select,
+.amc-collateral-edit-form textarea {
   min-width: 0;
   width: 100%;
   border: 1px solid #d9e0e7;

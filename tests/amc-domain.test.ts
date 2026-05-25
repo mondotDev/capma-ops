@@ -18,6 +18,7 @@ import {
   getVisibleWorkItems,
   linkCollateralActionItem,
   SESSION_CATEGORIES,
+  updateCollateralItem,
   validateActionItemCreateInput,
   validateCollateralItemCreateInput,
   validateClientAssociationCreateInput,
@@ -36,7 +37,8 @@ import {
   addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
   loadAmcLocalState,
-  saveAmcLocalState
+  saveAmcLocalState,
+  updateCollateralItemInAmcLocalState
 } from "../lib/amc-local-state";
 
 test("employee visibility is limited to assigned work in their organization", () => {
@@ -359,6 +361,52 @@ test("collateral records list by bucket through bucket workspace selector", () =
   assert.deepEqual(workspace.collateralItems.map((item) => item.id), [collateral.id]);
 });
 
+test("collateral updates editable fields while preserving scope and related actions", () => {
+  const collateral = {
+    ...DEMO_FOUNDATION_DATA.collateralItems[0]!,
+    relatedActionItemIds: ["action-existing"]
+  };
+  const updated = updateCollateralItem(collateral, {
+    title: "Updated postcard",
+    collateralType: "email",
+    channelOrUse: "Member reminder email",
+    status: "scheduled",
+    assigneeId: "staff-operations",
+    dueDate: "2026-06-12",
+    audience: "Registered attendees",
+    notes: "Use final registration list.",
+    now: "2026-05-26T09:00:00.000Z"
+  });
+
+  assert.equal(updated.title, "Updated postcard");
+  assert.equal(updated.collateralType, "email");
+  assert.equal(updated.channelOrUse, "Member reminder email");
+  assert.equal(updated.status, "scheduled");
+  assert.equal(updated.assigneeId, "staff-operations");
+  assert.equal(updated.dueDate, "2026-06-12");
+  assert.equal(updated.audience, "Registered attendees");
+  assert.equal(updated.notes, "Use final registration list.");
+  assert.equal(updated.clientAssociationId, collateral.clientAssociationId);
+  assert.equal(updated.bucketId, collateral.bucketId);
+  assert.deepEqual(updated.relatedActionItemIds, ["action-existing"]);
+  assert.equal(updated.createdAt, collateral.createdAt);
+  assert.equal(updated.updatedAt, "2026-05-26T09:00:00.000Z");
+});
+
+test("collateral update rejects blank title and invalid lifecycle values", () => {
+  const collateral = DEMO_FOUNDATION_DATA.collateralItems[0]!;
+
+  assert.throws(() => updateCollateralItem(collateral, { title: " " }), /Collateral title is required/);
+  assert.throws(
+    () => updateCollateralItem(collateral, { status: "sent" as never }),
+    /Collateral status is invalid/
+  );
+  assert.throws(
+    () => updateCollateralItem(collateral, { collateralType: "brochure" as never }),
+    /Collateral type is invalid/
+  );
+});
+
 test("related collateral action item appears in work queue selectors and preserves scope", () => {
   const collateral = createCollateralItem(
     {
@@ -396,6 +444,49 @@ test("related collateral action item appears in work queue selectors and preserv
   assert.equal(workspace.workItems.some((item) => item.id === actionItem.id), true);
 });
 
+test("edited collateral still appears in the correct bucket workspace with related actions connected", () => {
+  const collateral = createCollateralItem(
+    {
+      title: "Draft handout",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference",
+      collateralType: "handout",
+      status: "drafting"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const actionItem = createCollateralActionItem({
+    collateralItem: collateral,
+    title: "Review handout draft",
+    data: DEMO_FOUNDATION_DATA
+  });
+  const linkedCollateral = linkCollateralActionItem(collateral, actionItem);
+  const editedCollateral = updateCollateralItem(linkedCollateral, {
+    title: "Final handout",
+    status: "approved",
+    assigneeId: "staff-melissa"
+  });
+  const workspace = getBucketWorkspace(
+    {
+      ...DEMO_FOUNDATION_DATA,
+      actionItems: [...DEMO_FOUNDATION_DATA.actionItems, actionItem],
+      collateralItems: [...DEMO_FOUNDATION_DATA.collateralItems, editedCollateral]
+    },
+    {
+      clientId: collateral.clientAssociationId,
+      bucketId: collateral.bucketId
+    }
+  );
+
+  assert.equal(workspace.collateralItems.some((item) => item.id === editedCollateral.id), true);
+  assert.equal(workspace.collateralItems.find((item) => item.id === editedCollateral.id)?.status, "approved");
+  assert.deepEqual(
+    workspace.collateralItems.find((item) => item.id === editedCollateral.id)?.relatedActionItemIds,
+    [actionItem.id]
+  );
+  assert.equal(workspace.actionItems.some((item) => item.id === actionItem.id), true);
+});
+
 test("local state can persist collateral and related collateral action items", () => {
   const snapshot = createDefaultAmcLocalState();
   const collateral = createCollateralItem(
@@ -424,6 +515,33 @@ test("local state can persist collateral and related collateral action items", (
     withAction.collateralItems.find((item) => item.id === collateral.id)?.relatedActionItemIds.includes(actionItem.id),
     true
   );
+});
+
+test("local state can update collateral without changing scope or related action links", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const collateral = {
+    ...snapshot.collateralItems[0]!,
+    relatedActionItemIds: ["action-existing"]
+  };
+  const withCollateral = {
+    ...snapshot,
+    collateralItems: [collateral, ...snapshot.collateralItems.slice(1)]
+  };
+  const updatedSnapshot = updateCollateralItemInAmcLocalState(withCollateral, collateral.id, {
+    title: "Updated local collateral",
+    status: "complete",
+    assigneeId: null,
+    now: "2026-05-26T10:00:00.000Z"
+  });
+  const updated = updatedSnapshot.collateralItems.find((item) => item.id === collateral.id)!;
+
+  assert.equal(updated.title, "Updated local collateral");
+  assert.equal(updated.status, "complete");
+  assert.equal(updated.assigneeId, null);
+  assert.equal(updated.clientAssociationId, collateral.clientAssociationId);
+  assert.equal(updated.bucketId, collateral.bucketId);
+  assert.deepEqual(updated.relatedActionItemIds, ["action-existing"]);
+  assert.equal(updated.updatedAt, "2026-05-26T10:00:00.000Z");
 });
 
 test("v2 local state loads defaults when storage is empty or malformed", () => {

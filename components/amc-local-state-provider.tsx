@@ -11,15 +11,17 @@ import {
   createDefaultAmcLocalState,
   loadAmcLocalState,
   saveAmcLocalState,
+  updateCollateralItemInAmcLocalState,
   type AmcLocalStateSnapshot
 } from "@/lib/amc-local-state";
-import type { ActionItem, ClientAssociation, CollateralItem, WorkBucket } from "@/lib/amc-domain";
+import type { ActionItem, ClientAssociation, CollateralItem, CollateralItemUpdateInput, WorkBucket } from "@/lib/amc-domain";
 
 interface AmcLocalStateContextValue {
   state: AmcLocalStateSnapshot;
   isHydrated: boolean;
   addActionItem: (actionItem: ActionItem) => void;
   addCollateralItem: (collateralItem: CollateralItem) => void;
+  updateCollateralItem: (collateralItemId: string, updates: CollateralItemUpdateInput) => void;
   addCollateralActionItem: (input: { collateralItemId: string; actionItem: ActionItem }) => void;
   addClientAssociation: (client: ClientAssociation) => void;
   addWorkBucket: (bucket: WorkBucket) => void;
@@ -51,6 +53,13 @@ export function AmcLocalStateProvider({ children }: { children: ReactNode }) {
       addCollateralItem(collateralItem) {
         setState((current) => {
           const nextState = addCollateralItemToAmcLocalState(current, collateralItem);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      updateCollateralItem(collateralItemId, updates) {
+        setState((current) => {
+          const nextState = updateCollateralItemInAmcLocalState(current, collateralItemId, updates);
           saveAmcLocalState(nextState);
           return nextState;
         });

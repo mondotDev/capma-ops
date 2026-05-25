@@ -198,6 +198,18 @@ export interface CollateralItemCreateInput {
   now?: string;
 }
 
+export interface CollateralItemUpdateInput {
+  title?: string;
+  collateralType?: CollateralType;
+  channelOrUse?: string;
+  status?: CollateralStatus;
+  assigneeId?: string | null;
+  dueDate?: string;
+  audience?: string;
+  notes?: string;
+  now?: string;
+}
+
 export interface CollateralActionItemCreateInput {
   collateralItem: CollateralItem;
   title: string;
@@ -642,6 +654,35 @@ export function createCollateralItem(
     relatedActionItemIds: [],
     createdAt: now,
     updatedAt: now
+  };
+}
+
+export function updateCollateralItem(item: CollateralItem, input: CollateralItemUpdateInput): CollateralItem {
+  const nextTitle = input.title === undefined ? item.title : input.title.trim();
+
+  if (!nextTitle) {
+    throw new Error("Collateral title is required.");
+  }
+
+  if (input.collateralType && !COLLATERAL_TYPES.includes(input.collateralType)) {
+    throw new Error("Collateral type is invalid.");
+  }
+
+  if (input.status && !COLLATERAL_STATUSES.includes(input.status)) {
+    throw new Error("Collateral status is invalid.");
+  }
+
+  return {
+    ...item,
+    title: nextTitle,
+    collateralType: input.collateralType ?? item.collateralType,
+    channelOrUse: input.channelOrUse === undefined ? item.channelOrUse : input.channelOrUse.trim(),
+    status: input.status ?? item.status,
+    assigneeId: input.assigneeId === undefined ? item.assigneeId : input.assigneeId?.trim() || null,
+    dueDate: input.dueDate === undefined ? item.dueDate : input.dueDate.trim(),
+    audience: input.audience === undefined ? item.audience : input.audience.trim(),
+    notes: input.notes === undefined ? item.notes : input.notes.trim(),
+    updatedAt: input.now ?? new Date().toISOString()
   };
 }
 

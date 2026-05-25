@@ -13,12 +13,14 @@ import {
   getBucketWorkspace,
   validateCollateralItemCreateInput,
   type CollateralActionItemCreateInput,
-  type CollateralItemCreateInput
+  type CollateralItem,
+  type CollateralItemCreateInput,
+  type CollateralItemUpdateInput
 } from "@/lib/amc-domain";
 import { useState } from "react";
 
 export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; bucketId: string }) {
-  const { state, addCollateralActionItem, addCollateralItem } = useAmcLocalState();
+  const { state, addCollateralActionItem, addCollateralItem, updateCollateralItem } = useAmcLocalState();
   const [collateralForm, setCollateralForm] = useState<CollateralItemCreateInput>({
     clientAssociationId: clientId,
     bucketId,
@@ -33,6 +35,8 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
   });
   const [collateralFeedback, setCollateralFeedback] = useState("");
   const [actionDrafts, setActionDrafts] = useState<Record<string, { title: string; assigneeId: string; dueDate: string }>>({});
+  const [editingCollateralId, setEditingCollateralId] = useState<string | null>(null);
+  const [editDrafts, setEditDrafts] = useState<Record<string, CollateralItemUpdateInput>>({});
   const workspace = getBucketWorkspace(state, { clientId, bucketId });
 
   function handleCollateralSubmit(event: FormEvent<HTMLFormElement>) {
@@ -69,6 +73,51 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
         ...updates
       }
     }));
+  }
+
+  function startEditingCollateral(item: CollateralItem) {
+    setEditingCollateralId(item.id);
+    setEditDrafts((current) => ({
+      ...current,
+      [item.id]: {
+        title: item.title,
+        collateralType: item.collateralType,
+        channelOrUse: item.channelOrUse,
+        status: item.status,
+        assigneeId: item.assigneeId,
+        dueDate: item.dueDate,
+        audience: item.audience,
+        notes: item.notes
+      }
+    }));
+    setCollateralFeedback("");
+  }
+
+  function updateEditDraft(collateralItemId: string, updates: CollateralItemUpdateInput) {
+    setEditDrafts((current) => ({
+      ...current,
+      [collateralItemId]: {
+        ...current[collateralItemId],
+        ...updates
+      }
+    }));
+  }
+
+  function handleCollateralUpdate(collateralItemId: string) {
+    const draft = editDrafts[collateralItemId];
+
+    if (!draft?.title?.trim()) {
+      setCollateralFeedback("Collateral title is required.");
+      return;
+    }
+
+    try {
+      updateCollateralItem(collateralItemId, draft);
+      setEditingCollateralId(null);
+      setCollateralFeedback("Collateral updated.");
+    } catch (error) {
+      setCollateralFeedback(error instanceof Error ? error.message : "Could not update collateral.");
+    }
   }
 
   function handleCreateCollateralAction(collateralItemId: string) {
@@ -286,16 +335,134 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
           {workspace.collateralItems.length === 0 ? <div className="empty-state">No collateral records in this bucket yet.</div> : null}
           {workspace.collateralItems.map((item) => (
             <article className="amc-list-row amc-list-row--work" key={item.id}>
-              <div>
-                <strong>{item.title}</strong>
-                <span>{item.collateralType} / {item.status}</span>
-                <span>{item.channelOrUse || "No channel/use"} / {item.audience || "No audience"}</span>
-              </div>
-              <div className="amc-list-row__meta">
-                <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
-                <span>{item.dueDate || "No due date"}</span>
-                <span>{item.relatedActionItemIds.length} related actions</span>
-              </div>
+              {editingCollateralId === item.id ? (
+                <div className="amc-collateral-edit-form">
+                  <label>
+                    <span>Title</span>
+                    <input
+                      onChange={(event) => updateEditDraft(item.id, { title: event.target.value })}
+                      type="text"
+                      value={editDrafts[item.id]?.title ?? item.title}
+                    />
+                  </label>
+                  <div className="amc-inline-form-grid">
+                    <label>
+                      <span>Type</span>
+                      <select
+                        onChange={(event) =>
+                          updateEditDraft(item.id, {
+                            collateralType: event.target.value as CollateralItemUpdateInput["collateralType"]
+                          })
+                        }
+                        value={editDrafts[item.id]?.collateralType ?? item.collateralType}
+                      >
+                        {COLLATERAL_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Status</span>
+                      <select
+                        onChange={(event) =>
+                          updateEditDraft(item.id, {
+                            status: event.target.value as CollateralItemUpdateInput["status"]
+                          })
+                        }
+                        value={editDrafts[item.id]?.status ?? item.status}
+                      >
+                        {COLLATERAL_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="amc-inline-form-grid">
+                    <label>
+                      <span>Assignee</span>
+                      <select
+                        onChange={(event) => updateEditDraft(item.id, { assigneeId: event.target.value })}
+                        value={editDrafts[item.id]?.assigneeId ?? item.assigneeId ?? ""}
+                      >
+                        <option value="">Unassigned</option>
+                        {state.staff.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Due Date</span>
+                      <input
+                        onChange={(event) => updateEditDraft(item.id, { dueDate: event.target.value })}
+                        type="date"
+                        value={editDrafts[item.id]?.dueDate ?? item.dueDate}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span>Channel or Use</span>
+                    <input
+                      onChange={(event) => updateEditDraft(item.id, { channelOrUse: event.target.value })}
+                      type="text"
+                      value={editDrafts[item.id]?.channelOrUse ?? item.channelOrUse}
+                    />
+                  </label>
+                  <label>
+                    <span>Audience</span>
+                    <input
+                      onChange={(event) => updateEditDraft(item.id, { audience: event.target.value })}
+                      type="text"
+                      value={editDrafts[item.id]?.audience ?? item.audience}
+                    />
+                  </label>
+                  <label>
+                    <span>Notes</span>
+                    <textarea
+                      onChange={(event) => updateEditDraft(item.id, { notes: event.target.value })}
+                      value={editDrafts[item.id]?.notes ?? item.notes}
+                    />
+                  </label>
+                  <div className="amc-record-actions">
+                    <button className="topbar__button" onClick={() => handleCollateralUpdate(item.id)} type="button">
+                      Save Collateral
+                    </button>
+                    <button className="button-link button-link--inline-secondary" onClick={() => setEditingCollateralId(null)} type="button">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <span>{item.collateralType} / {item.status}</span>
+                    <span>Channel/use: {item.channelOrUse || "Not set"}</span>
+                    <span>Audience: {item.audience || "Not set"}</span>
+                    {item.notes ? <span>Notes: {item.notes}</span> : null}
+                  </div>
+                  <div className="amc-list-row__meta">
+                    <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
+                    <span>{item.dueDate || "No due date"}</span>
+                    <span>
+                      {item.relatedActionItemIds.length} related action{item.relatedActionItemIds.length === 1 ? "" : "s"}
+                    </span>
+                    {item.relatedActionItemIds.map((actionItemId) => {
+                      const actionItem = state.actionItems.find((candidate) => candidate.id === actionItemId);
+
+                      return <span key={actionItemId}>{actionItem?.title ?? actionItemId}</span>;
+                    })}
+                    <button className="button-link button-link--inline-secondary" onClick={() => startEditingCollateral(item)} type="button">
+                      Edit
+                    </button>
+                  </div>
+                </>
+              )}
               <div className="amc-related-action-form">
                 <input
                   aria-label={`Action title for ${item.title}`}

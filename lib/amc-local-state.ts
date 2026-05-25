@@ -2,10 +2,12 @@ import {
   DEMO_FOUNDATION_DATA,
   createDefaultBucketsForClient,
   ensureDefaultBucketsForClients,
+  updateCollateralItem,
   type ActionItem,
   type AmcOrganization,
   type ClientAssociation,
   type CollateralItem,
+  type CollateralItemUpdateInput,
   type CurrentUser,
   type EducationApplication,
   type FoundationData,
@@ -99,6 +101,19 @@ export function addCollateralItemToAmcLocalState(
   return {
     ...snapshot,
     collateralItems: [collateralItem, ...snapshot.collateralItems]
+  };
+}
+
+export function updateCollateralItemInAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  collateralItemId: string,
+  updates: CollateralItemUpdateInput
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    collateralItems: snapshot.collateralItems.map((item) =>
+      item.id === collateralItemId ? updateCollateralItem(item, updates) : item
+    )
   };
 }
 
