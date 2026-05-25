@@ -3,12 +3,17 @@ import {
   getAssigneeName,
   getBucketName,
   getClientAssociationName,
+  getFoundationWorkItems,
   getVisibleWorkItems
 } from "@/lib/amc-domain";
 
 export function AmcDashboard() {
   const data = DEMO_FOUNDATION_DATA;
-  const visibleWorkItems = getVisibleWorkItems(data.workItems, { viewer: data.currentUser });
+  const workItems = getFoundationWorkItems({
+    actionItems: data.actionItems,
+    collateralItems: data.collateralItems
+  });
+  const visibleWorkItems = getVisibleWorkItems(workItems, { viewer: data.currentUser });
 
   return (
     <div className="amc-dashboard">

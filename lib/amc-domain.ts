@@ -20,6 +20,24 @@ export type WorkTrackerKind =
 
 export type WorkStatus = "notStarted" | "inProgress" | "waiting" | "blocked" | "complete";
 
+export type RelationshipEntityType =
+  | "actionItem"
+  | "collateralItem"
+  | "educationApplication"
+  | "speakerEngagement"
+  | "sponsorDeliverable";
+
+export interface RelatedEntityRef {
+  entityType: RelationshipEntityType;
+  entityId: string;
+}
+
+export interface WorkOrigin {
+  tracker: WorkTrackerKind;
+  entityType: RelationshipEntityType;
+  entityId: string;
+}
+
 export interface AmcOrganization {
   id: string;
   name: string;
@@ -69,6 +87,49 @@ export interface WorkItem {
   status: WorkStatus;
   assigneeId: string | null;
   dueDate: string;
+  origin?: WorkOrigin;
+  relatedEntities?: RelatedEntityRef[];
+}
+
+export interface ActionItem {
+  id: string;
+  organizationId: string;
+  clientAssociationId: string;
+  bucketId: string;
+  title: string;
+  status: WorkStatus;
+  assigneeId: string | null;
+  dueDate: string;
+  origin?: WorkOrigin;
+  relatedEntities: RelatedEntityRef[];
+  notes: string;
+}
+
+export interface ActionItemCreateInput {
+  title: string;
+  clientAssociationId: string;
+  bucketId: string;
+  assigneeId?: string | null;
+  dueDate?: string;
+  origin?: WorkOrigin;
+  relatedEntities?: RelatedEntityRef[];
+  notes?: string;
+}
+
+export interface CollateralItem {
+  id: string;
+  organizationId: string;
+  clientAssociationId: string;
+  bucketId: string;
+  title: string;
+  status: "planned" | "inProgress" | "proofing" | "ready" | "complete";
+  assigneeId: string | null;
+  dueDate: string;
+  printer: string;
+  quantity: string;
+  format: string;
+  relatedActionItemIds: string[];
+  notes: string;
 }
 
 export interface FoundationData {
@@ -77,7 +138,8 @@ export interface FoundationData {
   staff: StaffProfile[];
   currentUser: CurrentUser;
   buckets: WorkBucket[];
-  workItems: WorkItem[];
+  actionItems: ActionItem[];
+  collateralItems: CollateralItem[];
 }
 
 export interface WorkVisibilityFilter {
@@ -157,42 +219,234 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       status: "active"
     }
   ],
-  workItems: [
+  actionItems: [
     {
-      id: "work-ppma-speaker-confirmations",
+      id: "action-ppma-speaker-confirmations",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
       bucketId: "bucket-ppma-annual-conference",
-      tracker: "speaker",
       title: "Confirm speaker materials for breakout sessions",
       status: "inProgress",
       assigneeId: "staff-melissa",
-      dueDate: "2026-06-12"
+      dueDate: "2026-06-12",
+      origin: {
+        tracker: "speaker",
+        entityType: "speakerEngagement",
+        entityId: "speaker-demo-breakouts"
+      },
+      relatedEntities: [],
+      notes: ""
     },
     {
-      id: "work-ppma-ceu-application",
+      id: "action-ppma-ceu-application",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
       bucketId: "bucket-ppma-ceu-program",
-      tracker: "education",
       title: "Draft CEU application details",
       status: "notStarted",
       assigneeId: "staff-operations",
-      dueDate: "2026-06-18"
+      dueDate: "2026-06-18",
+      origin: {
+        tracker: "education",
+        entityType: "educationApplication",
+        entityId: "education-demo-spring-ceu"
+      },
+      relatedEntities: [],
+      notes: ""
     },
     {
-      id: "work-wpc-sponsor-logo",
+      id: "action-wpc-sponsor-logo",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-western-parks",
       bucketId: "bucket-wpc-sponsor-fulfillment",
-      tracker: "sponsorFulfillment",
       title: "Collect sponsor logo and recognition copy",
       status: "waiting",
       assigneeId: null,
-      dueDate: "2026-06-20"
+      dueDate: "2026-06-20",
+      origin: {
+        tracker: "sponsorFulfillment",
+        entityType: "sponsorDeliverable",
+        entityId: "sponsor-demo-logo"
+      },
+      relatedEntities: [],
+      notes: ""
+    }
+  ],
+  collateralItems: [
+    {
+      id: "collateral-ppma-postcard",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference",
+      title: "Annual conference reminder postcard",
+      status: "proofing",
+      assigneeId: "staff-melissa",
+      dueDate: "2026-06-10",
+      printer: "Preferred local printer",
+      quantity: "500",
+      format: "Postcard",
+      relatedActionItemIds: [],
+      notes: ""
     }
   ]
 };
+
+export function getFoundationWorkItems(input: {
+  actionItems: ActionItem[];
+  collateralItems: CollateralItem[];
+}) {
+  return [
+    ...input.actionItems.map(projectActionItemToWorkItem),
+    ...input.collateralItems.map(projectCollateralItemToWorkItem)
+  ];
+}
+
+export function projectActionItemToWorkItem(item: ActionItem): WorkItem {
+  return {
+    id: item.id,
+    organizationId: item.organizationId,
+    clientAssociationId: item.clientAssociationId,
+    bucketId: item.bucketId,
+    tracker: item.origin?.tracker ?? "action",
+    title: item.title,
+    status: item.status,
+    assigneeId: item.assigneeId,
+    dueDate: item.dueDate,
+    origin: item.origin ?? {
+      tracker: "action",
+      entityType: "actionItem",
+      entityId: item.id
+    },
+    relatedEntities: item.relatedEntities
+  };
+}
+
+export function projectCollateralItemToWorkItem(item: CollateralItem): WorkItem {
+  return {
+    id: item.id,
+    organizationId: item.organizationId,
+    clientAssociationId: item.clientAssociationId,
+    bucketId: item.bucketId,
+    tracker: "collateral",
+    title: item.title,
+    status: mapCollateralStatusToWorkStatus(item.status),
+    assigneeId: item.assigneeId,
+    dueDate: item.dueDate,
+    origin: {
+      tracker: "collateral",
+      entityType: "collateralItem",
+      entityId: item.id
+    },
+    relatedEntities: item.relatedActionItemIds.map((actionItemId) => ({
+      entityType: "actionItem",
+      entityId: actionItemId
+    }))
+  };
+}
+
+export function validateActionItemCreateInput(input: ActionItemCreateInput, data: Pick<FoundationData, "buckets" | "clients" | "organization">) {
+  const errors: string[] = [];
+  const title = input.title.trim();
+  const client = data.clients.find((candidate) => candidate.id === input.clientAssociationId);
+  const bucket = data.buckets.find((candidate) => candidate.id === input.bucketId);
+
+  if (!title) {
+    errors.push("Title is required.");
+  }
+
+  if (!client || client.organizationId !== data.organization.id) {
+    errors.push("Client association is required.");
+  }
+
+  if (!bucket || bucket.organizationId !== data.organization.id) {
+    errors.push("Bucket is required.");
+  } else if (bucket.clientAssociationId !== input.clientAssociationId) {
+    errors.push("Bucket must belong to the selected client association.");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function createActionItem(
+  input: ActionItemCreateInput,
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">
+): ActionItem {
+  const validation = validateActionItemCreateInput(input, data);
+
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  return {
+    id: `action-${crypto.randomUUID()}`,
+    organizationId: data.organization.id,
+    clientAssociationId: input.clientAssociationId,
+    bucketId: input.bucketId,
+    title: input.title.trim(),
+    status: "notStarted",
+    assigneeId: input.assigneeId?.trim() || null,
+    dueDate: input.dueDate?.trim() ?? "",
+    origin: input.origin,
+    relatedEntities: input.relatedEntities ?? [],
+    notes: input.notes?.trim() ?? ""
+  };
+}
+
+export function createCollateralActionItem(input: {
+  collateralItem: CollateralItem;
+  title: string;
+  assigneeId?: string | null;
+  dueDate?: string;
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">;
+}) {
+  return createActionItem(
+    {
+      title: input.title,
+      clientAssociationId: input.collateralItem.clientAssociationId,
+      bucketId: input.collateralItem.bucketId,
+      assigneeId: input.assigneeId ?? input.collateralItem.assigneeId,
+      dueDate: input.dueDate ?? input.collateralItem.dueDate,
+      origin: {
+        tracker: "collateral",
+        entityType: "collateralItem",
+        entityId: input.collateralItem.id
+      },
+      relatedEntities: [
+        {
+          entityType: "collateralItem",
+          entityId: input.collateralItem.id
+        }
+      ]
+    },
+    input.data
+  );
+}
+
+export function linkCollateralActionItem(collateralItem: CollateralItem, actionItem: ActionItem): CollateralItem {
+  if (collateralItem.relatedActionItemIds.includes(actionItem.id)) {
+    return collateralItem;
+  }
+
+  return {
+    ...collateralItem,
+    relatedActionItemIds: [...collateralItem.relatedActionItemIds, actionItem.id]
+  };
+}
+
+function mapCollateralStatusToWorkStatus(status: CollateralItem["status"]): WorkStatus {
+  if (status === "complete") {
+    return "complete";
+  }
+
+  if (status === "planned") {
+    return "notStarted";
+  }
+
+  return "inProgress";
+}
 
 export function getClientAssociationName(clients: ClientAssociation[], clientAssociationId: string) {
   return clients.find((client) => client.id === clientAssociationId)?.shortName ?? "Unknown client";
