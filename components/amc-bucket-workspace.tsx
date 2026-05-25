@@ -7,10 +7,16 @@ import { useAmcLocalState } from "@/components/amc-local-state-provider";
 import {
   COLLATERAL_STATUSES,
   COLLATERAL_TYPES,
+  COLLATERAL_STATUS_LABELS,
+  COLLATERAL_TYPE_LABELS,
   createCollateralActionItem,
   createCollateralItem,
   getAssigneeName,
   getBucketWorkspace,
+  WORK_BUCKET_KIND_LABELS,
+  WORK_BUCKET_STATUS_LABELS,
+  WORK_STATUS_LABELS,
+  WORK_TRACKER_LABELS,
   validateCollateralItemCreateInput,
   type CollateralActionItemCreateInput,
   type CollateralItem,
@@ -37,6 +43,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
   const [actionDrafts, setActionDrafts] = useState<Record<string, { title: string; assigneeId: string; dueDate: string }>>({});
   const [editingCollateralId, setEditingCollateralId] = useState<string | null>(null);
   const [editDrafts, setEditDrafts] = useState<Record<string, CollateralItemUpdateInput>>({});
+  const [isAddingCollateral, setIsAddingCollateral] = useState(false);
   const workspace = getBucketWorkspace(state, { clientId, bucketId });
 
   function handleCollateralSubmit(event: FormEvent<HTMLFormElement>) {
@@ -60,6 +67,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
       audience: "",
       notes: ""
     }));
+    setIsAddingCollateral(false);
     setCollateralFeedback("Collateral added.");
   }
 
@@ -168,7 +176,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
           </p>
           <h1>{workspace.bucket.name}</h1>
           <p>
-            {workspace.bucket.kind} / {workspace.bucket.status}
+            {WORK_BUCKET_KIND_LABELS[workspace.bucket.kind]} / {WORK_BUCKET_STATUS_LABELS[workspace.bucket.status]}
           </p>
         </div>
         <Link className="button-link button-link--inline-secondary" href="/clients">
@@ -189,6 +197,10 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
           <span>Collateral</span>
           <strong>{workspace.collateralItems.length}</strong>
         </div>
+        <div className="amc-metric">
+          <span>Bucket Type</span>
+          <strong className="amc-metric__text">{WORK_BUCKET_KIND_LABELS[workspace.bucket.kind]}</strong>
+        </div>
       </section>
 
       <section className="amc-grid">
@@ -197,7 +209,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
             <article className="amc-list-row amc-list-row--work" key={`${item.tracker}-${item.id}`}>
               <div>
                 <strong>{item.title}</strong>
-                <span>{item.tracker} / {item.status}</span>
+                <span>{WORK_TRACKER_LABELS[item.tracker]} / {WORK_STATUS_LABELS[item.status]}</span>
               </div>
               <div className="amc-list-row__meta">
                 <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
@@ -212,7 +224,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
             <article className="amc-list-row amc-list-row--work" key={item.id}>
               <div>
                 <strong>{item.title}</strong>
-                <span>{item.status}</span>
+                <span>{WORK_STATUS_LABELS[item.status]}</span>
               </div>
               <div className="amc-list-row__meta">
                 <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
@@ -227,116 +239,20 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
         <section className="amc-panel">
           <div className="amc-panel__header">
             <h2>Collateral</h2>
-            <span>{workspace.collateralItems.length} records</span>
+            <div className="amc-panel__actions">
+              <span>{workspace.collateralItems.length} records</span>
+              <button className="button-link button-link--inline-secondary" onClick={() => setIsAddingCollateral((current) => !current)} type="button">
+                {isAddingCollateral ? "Hide form" : "Add collateral"}
+              </button>
+            </div>
           </div>
-          <form className="amc-form-stack" onSubmit={handleCollateralSubmit}>
-            <label>
-              <span>Title</span>
-              <input
-                onChange={(event) => setCollateralForm((current) => ({ ...current, title: event.target.value }))}
-                placeholder="Collateral title"
-                type="text"
-                value={collateralForm.title}
-              />
-            </label>
-            <div className="amc-inline-form-grid">
-              <label>
-                <span>Type</span>
-                <select
-                  onChange={(event) =>
-                    setCollateralForm((current) => ({
-                      ...current,
-                      collateralType: event.target.value as CollateralItemCreateInput["collateralType"]
-                    }))
-                  }
-                  value={collateralForm.collateralType}
-                >
-                  {COLLATERAL_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Status</span>
-                <select
-                  onChange={(event) =>
-                    setCollateralForm((current) => ({
-                      ...current,
-                      status: event.target.value as CollateralItemCreateInput["status"]
-                    }))
-                  }
-                  value={collateralForm.status}
-                >
-                  {COLLATERAL_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="amc-inline-form-grid">
-              <label>
-                <span>Assignee</span>
-                <select
-                  onChange={(event) => setCollateralForm((current) => ({ ...current, assigneeId: event.target.value }))}
-                  value={collateralForm.assigneeId ?? ""}
-                >
-                  <option value="">Unassigned</option>
-                  {state.staff.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Due Date</span>
-                <input
-                  onChange={(event) => setCollateralForm((current) => ({ ...current, dueDate: event.target.value }))}
-                  type="date"
-                  value={collateralForm.dueDate}
-                />
-              </label>
-            </div>
-            <label>
-              <span>Channel or Use</span>
-              <input
-                onChange={(event) => setCollateralForm((current) => ({ ...current, channelOrUse: event.target.value }))}
-                placeholder="Email, on-site signage, sponsor recognition"
-                type="text"
-                value={collateralForm.channelOrUse}
-              />
-            </label>
-            <label>
-              <span>Audience</span>
-              <input
-                onChange={(event) => setCollateralForm((current) => ({ ...current, audience: event.target.value }))}
-                placeholder="Members, sponsors, attendees"
-                type="text"
-                value={collateralForm.audience}
-              />
-            </label>
-            <label>
-              <span>Notes</span>
-              <textarea
-                onChange={(event) => setCollateralForm((current) => ({ ...current, notes: event.target.value }))}
-                value={collateralForm.notes}
-              />
-            </label>
-            <button className="topbar__button" type="submit">
-              Add Collateral
-            </button>
-          </form>
           {collateralFeedback ? <div className="amc-form-feedback">{collateralFeedback}</div> : null}
           <div className="amc-list">
-          {workspace.collateralItems.length === 0 ? <div className="empty-state">No collateral records in this bucket yet.</div> : null}
-          {workspace.collateralItems.map((item) => (
-            <article className="amc-list-row amc-list-row--work" key={item.id}>
-              {editingCollateralId === item.id ? (
-                <div className="amc-collateral-edit-form">
+            {workspace.collateralItems.length === 0 ? <div className="empty-state">No collateral records in this bucket yet.</div> : null}
+            {workspace.collateralItems.map((item) => (
+              <article className="amc-collateral-card" key={item.id}>
+                {editingCollateralId === item.id ? (
+                  <div className="amc-collateral-edit-form">
                   <label>
                     <span>Title</span>
                     <input
@@ -358,7 +274,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
                       >
                         {COLLATERAL_TYPES.map((type) => (
                           <option key={type} value={type}>
-                            {type}
+                            {COLLATERAL_TYPE_LABELS[type]}
                           </option>
                         ))}
                       </select>
@@ -375,7 +291,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
                       >
                         {COLLATERAL_STATUSES.map((status) => (
                           <option key={status} value={status}>
-                            {status}
+                            {COLLATERAL_STATUS_LABELS[status]}
                           </option>
                         ))}
                       </select>
@@ -439,24 +355,30 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
                 </div>
               ) : (
                 <>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <span>{item.collateralType} / {item.status}</span>
-                    <span>Channel/use: {item.channelOrUse || "Not set"}</span>
-                    <span>Audience: {item.audience || "Not set"}</span>
-                    {item.notes ? <span>Notes: {item.notes}</span> : null}
-                  </div>
-                  <div className="amc-list-row__meta">
-                    <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
-                    <span>{item.dueDate || "No due date"}</span>
-                    <span>
-                      {item.relatedActionItemIds.length} related action{item.relatedActionItemIds.length === 1 ? "" : "s"}
-                    </span>
-                    {item.relatedActionItemIds.map((actionItemId) => {
-                      const actionItem = state.actionItems.find((candidate) => candidate.id === actionItemId);
+                  <div className="amc-collateral-card__main">
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{COLLATERAL_TYPE_LABELS[item.collateralType]} / {item.channelOrUse || "No channel/use"}</span>
+                    </div>
+                    <div className="amc-collateral-card__chips">
+                      <span>{COLLATERAL_STATUS_LABELS[item.status]}</span>
+                      <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
+                      {item.dueDate ? <span>{item.dueDate}</span> : null}
+                      <span>
+                        {item.relatedActionItemIds.length} related action{item.relatedActionItemIds.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="amc-collateral-card__secondary">
+                      {item.audience ? <span>Audience: {item.audience}</span> : null}
+                      {item.notes ? <span>Notes: {item.notes}</span> : null}
+                      {item.relatedActionItemIds.map((actionItemId) => {
+                        const actionItem = state.actionItems.find((candidate) => candidate.id === actionItemId);
 
-                      return <span key={actionItemId}>{actionItem?.title ?? actionItemId}</span>;
-                    })}
+                        return <span key={actionItemId}>Action: {actionItem?.title ?? actionItemId}</span>;
+                      })}
+                    </div>
+                  </div>
+                  <div className="amc-record-actions">
                     <button className="button-link button-link--inline-secondary" onClick={() => startEditingCollateral(item)} type="button">
                       Edit
                     </button>
@@ -494,8 +416,115 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
                 </button>
               </div>
             </article>
-          ))}
+            ))}
           </div>
+          {isAddingCollateral ? (
+            <form className="amc-form-stack amc-collateral-add-form" onSubmit={handleCollateralSubmit}>
+              <div className="amc-panel__header">
+                <h3>Add collateral</h3>
+                <span>Client and bucket are inherited</span>
+              </div>
+              <label>
+                <span>Title</span>
+                <input
+                  onChange={(event) => setCollateralForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Collateral title"
+                  type="text"
+                  value={collateralForm.title}
+                />
+              </label>
+              <div className="amc-inline-form-grid">
+                <label>
+                  <span>Type</span>
+                  <select
+                    onChange={(event) =>
+                      setCollateralForm((current) => ({
+                        ...current,
+                        collateralType: event.target.value as CollateralItemCreateInput["collateralType"]
+                      }))
+                    }
+                    value={collateralForm.collateralType}
+                  >
+                    {COLLATERAL_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {COLLATERAL_TYPE_LABELS[type]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select
+                    onChange={(event) =>
+                      setCollateralForm((current) => ({
+                        ...current,
+                        status: event.target.value as CollateralItemCreateInput["status"]
+                      }))
+                    }
+                    value={collateralForm.status}
+                  >
+                    {COLLATERAL_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {COLLATERAL_STATUS_LABELS[status]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="amc-inline-form-grid">
+                <label>
+                  <span>Assignee</span>
+                  <select
+                    onChange={(event) => setCollateralForm((current) => ({ ...current, assigneeId: event.target.value }))}
+                    value={collateralForm.assigneeId ?? ""}
+                  >
+                    <option value="">Unassigned</option>
+                    {state.staff.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Due Date</span>
+                  <input
+                    onChange={(event) => setCollateralForm((current) => ({ ...current, dueDate: event.target.value }))}
+                    type="date"
+                    value={collateralForm.dueDate}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Channel or Use</span>
+                <input
+                  onChange={(event) => setCollateralForm((current) => ({ ...current, channelOrUse: event.target.value }))}
+                  placeholder="Email, on-site signage, sponsor recognition"
+                  type="text"
+                  value={collateralForm.channelOrUse}
+                />
+              </label>
+              <label>
+                <span>Audience</span>
+                <input
+                  onChange={(event) => setCollateralForm((current) => ({ ...current, audience: event.target.value }))}
+                  placeholder="Members, sponsors, attendees"
+                  type="text"
+                  value={collateralForm.audience}
+                />
+              </label>
+              <label>
+                <span>Notes</span>
+                <textarea
+                  onChange={(event) => setCollateralForm((current) => ({ ...current, notes: event.target.value }))}
+                  value={collateralForm.notes}
+                />
+              </label>
+              <button className="topbar__button" type="submit">
+                Add Collateral
+              </button>
+            </form>
+          ) : null}
         </section>
 
         <BucketSection title="Education" emptyCopy="Education records are not built out yet.">

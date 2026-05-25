@@ -5727,7 +5727,7 @@ textarea,
 
 .amc-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -5757,6 +5757,11 @@ textarea,
   line-height: 1;
 }
 
+.amc-metric strong.amc-metric__text {
+  font-size: 20px;
+  line-height: 1.15;
+}
+
 .amc-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
@@ -5778,10 +5783,19 @@ textarea,
 }
 
 .amc-panel__header h1,
-.amc-panel__header h2 {
+.amc-panel__header h2,
+.amc-panel__header h3 {
   margin: 0;
   font-family: var(--font-heading), Arial, sans-serif;
   font-size: 18px;
+}
+
+.amc-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
 }
 
 .amc-list {
@@ -5975,6 +5989,56 @@ textarea,
   border-top: 1px solid #e3e9ef;
 }
 
+.amc-collateral-card {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #e3e9ef;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.amc-collateral-card__main {
+  display: grid;
+  gap: 8px;
+}
+
+.amc-collateral-card__main strong {
+  font-size: 14px;
+}
+
+.amc-collateral-card__main span,
+.amc-collateral-card__secondary span {
+  color: #607181;
+  font-size: 13px;
+}
+
+.amc-collateral-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.amc-collateral-card__chips span {
+  border: 1px solid #dbe3eb;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 3px 8px;
+}
+
+.amc-collateral-card__secondary {
+  display: grid;
+  gap: 4px;
+}
+
+.amc-collateral-add-form {
+  margin-top: 2px;
+  padding: 14px;
+  border: 1px solid #dbe3eb;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
 .amc-collateral-edit-form {
   display: grid;
   gap: 12px;
@@ -5998,7 +6062,10 @@ textarea,
 .amc-related-action-form select,
 .amc-collateral-edit-form input,
 .amc-collateral-edit-form select,
-.amc-collateral-edit-form textarea {
+.amc-collateral-edit-form textarea,
+.amc-collateral-add-form input,
+.amc-collateral-add-form select,
+.amc-collateral-add-form textarea {
   min-width: 0;
   width: 100%;
   border: 1px solid #d9e0e7;

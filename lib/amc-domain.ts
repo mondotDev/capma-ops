@@ -118,6 +118,12 @@ export interface WorkBucket {
 
 export type WorkBucketStatus = WorkBucket["status"];
 
+export const WORK_BUCKET_STATUS_LABELS: Record<WorkBucketStatus, string> = {
+  planning: "Planning",
+  active: "Active",
+  complete: "Complete"
+};
+
 export interface WorkBucketCreateInput {
   clientAssociationId: string;
   kind: WorkBucketKind;
@@ -126,6 +132,55 @@ export interface WorkBucketCreateInput {
 }
 
 export const DEFAULT_CLIENT_BUCKET_KINDS = ["membership", "generalOperations"] as const;
+
+export const WORK_BUCKET_KIND_LABELS: Record<WorkBucketKind, string> = {
+  event: "Event",
+  educationProgram: "Education program",
+  publicationIssue: "Publication issue",
+  sponsorFulfillment: "Sponsor fulfillment",
+  membership: "Membership",
+  generalOperations: "General operations",
+  internalOps: "Internal operations"
+};
+
+export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
+  notStarted: "Not started",
+  inProgress: "In progress",
+  waiting: "Waiting",
+  blocked: "Blocked",
+  complete: "Complete"
+};
+
+export const WORK_TRACKER_LABELS: Record<WorkTrackerKind, string> = {
+  action: "Action",
+  collateral: "Collateral",
+  education: "Education",
+  speaker: "Speaker",
+  sponsorFulfillment: "Sponsor fulfillment"
+};
+
+export const COLLATERAL_TYPE_LABELS: Record<CollateralType, string> = {
+  email: "Email",
+  socialPost: "Social post",
+  flyer: "Flyer",
+  postcard: "Postcard",
+  signage: "Signage",
+  programBook: "Program book",
+  websiteUpdate: "Website update",
+  sponsorRecognition: "Sponsor recognition",
+  handout: "Handout",
+  other: "Other"
+};
+
+export const COLLATERAL_STATUS_LABELS: Record<CollateralStatus, string> = {
+  notStarted: "Not started",
+  drafting: "Drafting",
+  waiting: "Waiting",
+  review: "Review",
+  approved: "Approved",
+  scheduled: "Scheduled",
+  complete: "Complete"
+};
 
 export interface WorkItem {
   id: string;
@@ -920,6 +975,18 @@ function mapCollateralStatusToWorkStatus(status: CollateralItem["status"]): Work
 
 export function getClientAssociationName(clients: ClientAssociation[], clientAssociationId: string) {
   return clients.find((client) => client.id === clientAssociationId)?.shortName ?? "Unknown client";
+}
+
+export function getBucketOptionLabel(input: {
+  bucket: WorkBucket;
+  clients: ClientAssociation[];
+  includeKind?: boolean;
+}) {
+  const client = input.clients.find((candidate) => candidate.id === input.bucket.clientAssociationId);
+  const clientLabel = client?.shortName || client?.name || "Unknown client";
+  const kindLabel = input.includeKind ? ` (${WORK_BUCKET_KIND_LABELS[input.bucket.kind]})` : "";
+
+  return `${clientLabel} / ${input.bucket.name}${kindLabel}`;
 }
 
 export function getBucketName(buckets: WorkBucket[], bucketId: string) {

@@ -8,9 +8,12 @@ import {
   DEMO_FOUNDATION_DATA,
   getAssigneeName,
   getBucketName,
+  getBucketOptionLabel,
   getClientAssociationName,
   getFoundationWorkItems,
   getVisibleWorkItems,
+  WORK_STATUS_LABELS,
+  WORK_TRACKER_LABELS,
   validateActionItemCreateInput,
   type ActionItemCreateInput,
   type WorkStatus,
@@ -160,7 +163,7 @@ export function AmcWorkQueue() {
               <option value="">All buckets</option>
               {filterBuckets.map((bucket) => (
                 <option key={bucket.id} value={bucket.id}>
-                  {bucket.name}
+                  {getBucketOptionLabel({ bucket, clients: data.clients, includeKind: true })}
                 </option>
               ))}
             </select>
@@ -186,11 +189,11 @@ export function AmcWorkQueue() {
             <span>Tracker</span>
             <select onChange={(event) => setFilters((current) => ({ ...current, tracker: event.target.value }))} value={filters.tracker}>
               <option value="">All trackers</option>
-              <option value="action">Action</option>
-              <option value="collateral">Collateral</option>
-              <option value="education">Education</option>
-              <option value="speaker">Speaker</option>
-              <option value="sponsorFulfillment">Sponsor Fulfillment</option>
+              <option value="action">{WORK_TRACKER_LABELS.action}</option>
+              <option value="collateral">{WORK_TRACKER_LABELS.collateral}</option>
+              <option value="education">{WORK_TRACKER_LABELS.education}</option>
+              <option value="speaker">{WORK_TRACKER_LABELS.speaker}</option>
+              <option value="sponsorFulfillment">{WORK_TRACKER_LABELS.sponsorFulfillment}</option>
             </select>
           </label>
 
@@ -198,11 +201,11 @@ export function AmcWorkQueue() {
             <span>Status</span>
             <select onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}>
               <option value="">All statuses</option>
-              <option value="notStarted">Not Started</option>
-              <option value="inProgress">In Progress</option>
-              <option value="waiting">Waiting</option>
-              <option value="blocked">Blocked</option>
-              <option value="complete">Complete</option>
+              <option value="notStarted">{WORK_STATUS_LABELS.notStarted}</option>
+              <option value="inProgress">{WORK_STATUS_LABELS.inProgress}</option>
+              <option value="waiting">{WORK_STATUS_LABELS.waiting}</option>
+              <option value="blocked">{WORK_STATUS_LABELS.blocked}</option>
+              <option value="complete">{WORK_STATUS_LABELS.complete}</option>
             </select>
           </label>
 
@@ -248,7 +251,7 @@ export function AmcWorkQueue() {
             <select onChange={(event) => updateField("bucketId", event.target.value)} value={formState.bucketId}>
               {bucketsForClient.map((bucket) => (
                 <option key={bucket.id} value={bucket.id}>
-                  {bucket.name}
+                  {getBucketOptionLabel({ bucket, clients: data.clients, includeKind: true })}
                 </option>
               ))}
             </select>
@@ -300,8 +303,8 @@ export function AmcWorkQueue() {
                 </span>
               </div>
               <div className="amc-list-row__meta">
-                <span>{item.status}</span>
-                <span>{item.tracker}</span>
+                <span>{WORK_STATUS_LABELS[item.status]}</span>
+                <span>{WORK_TRACKER_LABELS[item.tracker]}</span>
                 <span>{getAssigneeName(data.staff, item.assigneeId)}</span>
               </div>
             </article>

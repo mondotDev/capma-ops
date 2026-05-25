@@ -9,24 +9,22 @@ import {
   createWorkBucket,
   validateClientAssociationCreateInput,
   validateWorkBucketCreateInput,
+  WORK_BUCKET_KIND_LABELS,
+  WORK_BUCKET_STATUS_LABELS,
   type ClientAssociationCreateInput,
   type WorkBucketCreateInput,
   type WorkBucketKind
 } from "@/lib/amc-domain";
 
 const BUCKET_KIND_OPTIONS: Array<{ value: WorkBucketKind; label: string }> = [
-  { value: "event", label: "Event" },
-  { value: "educationProgram", label: "Education Program" },
-  { value: "publicationIssue", label: "Publication Issue" },
-  { value: "sponsorFulfillment", label: "Sponsor Fulfillment" },
-  { value: "membership", label: "Membership" },
-  { value: "generalOperations", label: "General Operations" },
-  { value: "internalOps", label: "Internal Ops" }
+  { value: "event", label: WORK_BUCKET_KIND_LABELS.event },
+  { value: "educationProgram", label: WORK_BUCKET_KIND_LABELS.educationProgram },
+  { value: "publicationIssue", label: WORK_BUCKET_KIND_LABELS.publicationIssue },
+  { value: "sponsorFulfillment", label: WORK_BUCKET_KIND_LABELS.sponsorFulfillment },
+  { value: "membership", label: WORK_BUCKET_KIND_LABELS.membership },
+  { value: "generalOperations", label: WORK_BUCKET_KIND_LABELS.generalOperations },
+  { value: "internalOps", label: WORK_BUCKET_KIND_LABELS.internalOps }
 ];
-
-const BUCKET_KIND_LABELS = Object.fromEntries(
-  BUCKET_KIND_OPTIONS.map((option) => [option.value, option.label])
-) as Record<WorkBucketKind, string>;
 
 export function AmcClientManagement() {
   const { state, addClientAssociation, addWorkBucket } = useAmcLocalState();
@@ -239,7 +237,7 @@ export function AmcClientManagement() {
                       <div>
                         <strong>{bucket.name}</strong>
                         <span>
-                          {BUCKET_KIND_LABELS[bucket.kind]} / {bucket.status}
+                          {WORK_BUCKET_KIND_LABELS[bucket.kind]} / {WORK_BUCKET_STATUS_LABELS[bucket.status]}
                         </span>
                       </div>
                       <Link className="button-link button-link--inline-secondary" href={`/clients/${client.id}/buckets/${bucket.id}`}>

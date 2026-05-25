@@ -13,6 +13,7 @@ import {
   DEFAULT_CLIENT_BUCKET_KINDS,
   ensureDefaultBucketsForClients,
   getAssigneeName,
+  getBucketOptionLabel,
   getBucketWorkspace,
   getFoundationWorkItems,
   getVisibleWorkItems,
@@ -23,6 +24,11 @@ import {
   validateCollateralItemCreateInput,
   validateClientAssociationCreateInput,
   validateWorkBucketCreateInput,
+  COLLATERAL_TYPE_LABELS,
+  WORK_BUCKET_KIND_LABELS,
+  WORK_BUCKET_STATUS_LABELS,
+  WORK_STATUS_LABELS,
+  WORK_TRACKER_LABELS,
   type CurrentUser,
   type EducationApplication,
   type SpeakerEngagement,
@@ -176,6 +182,49 @@ test("bucket workspace selector supports empty bucket behavior", () => {
   assert.deepEqual(workspace.collateralItems, []);
   assert.deepEqual(workspace.educationApplications, []);
   assert.deepEqual(workspace.speakerEngagements, []);
+});
+
+test("bucket option labels include client context and distinguish duplicate bucket names", () => {
+  const ppmaMembership = DEMO_FOUNDATION_DATA.buckets.find((bucket) => bucket.id === "bucket-ppma-membership")!;
+  const wpcMembership = {
+    ...ppmaMembership,
+    id: "bucket-wpc-membership",
+    clientAssociationId: "client-western-parks"
+  };
+
+  assert.equal(
+    getBucketOptionLabel({ bucket: ppmaMembership, clients: DEMO_FOUNDATION_DATA.clients, includeKind: true }),
+    "PPMA / Membership (Membership)"
+  );
+  assert.equal(
+    getBucketOptionLabel({ bucket: wpcMembership, clients: DEMO_FOUNDATION_DATA.clients, includeKind: true }),
+    "WPC / Membership (Membership)"
+  );
+});
+
+test("bucket option labels fall back to client name when short name is missing", () => {
+  const client = {
+    ...DEMO_FOUNDATION_DATA.clients[0]!,
+    shortName: ""
+  };
+  const bucket = DEMO_FOUNDATION_DATA.buckets.find((candidate) => candidate.clientAssociationId === client.id)!;
+
+  assert.equal(
+    getBucketOptionLabel({ bucket, clients: [client], includeKind: false }),
+    `${client.name} / ${bucket.name}`
+  );
+});
+
+test("human-readable labels cover greenfield work enums", () => {
+  assert.equal(WORK_BUCKET_KIND_LABELS.educationProgram, "Education program");
+  assert.equal(WORK_BUCKET_KIND_LABELS.sponsorFulfillment, "Sponsor fulfillment");
+  assert.equal(WORK_BUCKET_STATUS_LABELS.planning, "Planning");
+  assert.equal(WORK_STATUS_LABELS.notStarted, "Not started");
+  assert.equal(WORK_STATUS_LABELS.inProgress, "In progress");
+  assert.equal(WORK_TRACKER_LABELS.sponsorFulfillment, "Sponsor fulfillment");
+  assert.equal(COLLATERAL_TYPE_LABELS.socialPost, "Social post");
+  assert.equal(COLLATERAL_TYPE_LABELS.websiteUpdate, "Website update");
+  assert.equal(COLLATERAL_TYPE_LABELS.programBook, "Program book");
 });
 
 test("education records support shared session categories and hours", () => {
