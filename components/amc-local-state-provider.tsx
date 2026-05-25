@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   addActionItemToAmcLocalState,
+  addCollateralActionItemToAmcLocalState,
+  addCollateralItemToAmcLocalState,
   addClientAssociationToAmcLocalState,
   addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
@@ -11,12 +13,14 @@ import {
   saveAmcLocalState,
   type AmcLocalStateSnapshot
 } from "@/lib/amc-local-state";
-import type { ActionItem, ClientAssociation, WorkBucket } from "@/lib/amc-domain";
+import type { ActionItem, ClientAssociation, CollateralItem, WorkBucket } from "@/lib/amc-domain";
 
 interface AmcLocalStateContextValue {
   state: AmcLocalStateSnapshot;
   isHydrated: boolean;
   addActionItem: (actionItem: ActionItem) => void;
+  addCollateralItem: (collateralItem: CollateralItem) => void;
+  addCollateralActionItem: (input: { collateralItemId: string; actionItem: ActionItem }) => void;
   addClientAssociation: (client: ClientAssociation) => void;
   addWorkBucket: (bucket: WorkBucket) => void;
   resetLocalState: () => void;
@@ -40,6 +44,24 @@ export function AmcLocalStateProvider({ children }: { children: ReactNode }) {
       addActionItem(actionItem) {
         setState((current) => {
           const nextState = addActionItemToAmcLocalState(current, actionItem);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addCollateralItem(collateralItem) {
+        setState((current) => {
+          const nextState = addCollateralItemToAmcLocalState(current, collateralItem);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addCollateralActionItem(input) {
+        setState((current) => {
+          const nextState = addCollateralActionItemToAmcLocalState({
+            snapshot: current,
+            collateralItemId: input.collateralItemId,
+            actionItem: input.actionItem
+          });
           saveAmcLocalState(nextState);
           return nextState;
         });

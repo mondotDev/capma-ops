@@ -35,7 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${antonio.variable} ${montserrat.variable} ${inter.variable}`}>
+      <body className={`${antonio.variable} ${montserrat.variable} ${inter.variable}`} suppressHydrationWarning>
         <AmcLocalStateProvider>
           <AmcAppShell>{children}</AmcAppShell>
         </AmcLocalStateProvider>

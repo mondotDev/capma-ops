@@ -7,7 +7,9 @@ import {
   type ClientAssociation,
   type CollateralItem,
   type CurrentUser,
+  type EducationApplication,
   type FoundationData,
+  type SpeakerEngagement,
   type StaffProfile,
   type WorkBucket
 } from "@/lib/amc-domain";
@@ -24,6 +26,8 @@ export interface AmcLocalStateSnapshot {
   buckets: WorkBucket[];
   actionItems: ActionItem[];
   collateralItems: CollateralItem[];
+  educationApplications: EducationApplication[];
+  speakerEngagements: SpeakerEngagement[];
 }
 
 export function createDefaultAmcLocalState(): AmcLocalStateSnapshot {
@@ -51,7 +55,9 @@ export function normalizeAmcLocalStateSnapshot(value: unknown): AmcLocalStateSna
     currentUser: normalizeCurrentUser(candidate.currentUser, defaults.currentUser),
     buckets: ensureDefaultBucketsForClients(clients, normalizeArray(candidate.buckets, defaults.buckets), organization.id),
     actionItems: normalizeArray(candidate.actionItems, defaults.actionItems),
-    collateralItems: normalizeArray(candidate.collateralItems, defaults.collateralItems)
+    collateralItems: normalizeArray(candidate.collateralItems, defaults.collateralItems),
+    educationApplications: normalizeArray(candidate.educationApplications, defaults.educationApplications),
+    speakerEngagements: normalizeArray(candidate.speakerEngagements, defaults.speakerEngagements)
   };
 }
 
@@ -83,6 +89,32 @@ export function addActionItemToAmcLocalState(
   return {
     ...snapshot,
     actionItems: [actionItem, ...snapshot.actionItems]
+  };
+}
+
+export function addCollateralItemToAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  collateralItem: CollateralItem
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    collateralItems: [collateralItem, ...snapshot.collateralItems]
+  };
+}
+
+export function addCollateralActionItemToAmcLocalState(input: {
+  snapshot: AmcLocalStateSnapshot;
+  collateralItemId: string;
+  actionItem: ActionItem;
+}): AmcLocalStateSnapshot {
+  return {
+    ...input.snapshot,
+    actionItems: [input.actionItem, ...input.snapshot.actionItems],
+    collateralItems: input.snapshot.collateralItems.map((item) =>
+      item.id === input.collateralItemId && !item.relatedActionItemIds.includes(input.actionItem.id)
+        ? { ...item, relatedActionItemIds: [...item.relatedActionItemIds, input.actionItem.id] }
+        : item
+    )
   };
 }
 

@@ -2,26 +2,36 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEMO_FOUNDATION_DATA,
+  COLLATERAL_STATUSES,
+  COLLATERAL_TYPES,
   createActionItem,
   createClientAssociation,
   createDefaultBucketsForClient,
+  createCollateralItem,
   createCollateralActionItem,
   createWorkBucket,
   DEFAULT_CLIENT_BUCKET_KINDS,
   ensureDefaultBucketsForClients,
   getAssigneeName,
+  getBucketWorkspace,
   getFoundationWorkItems,
   getVisibleWorkItems,
   linkCollateralActionItem,
+  SESSION_CATEGORIES,
   validateActionItemCreateInput,
+  validateCollateralItemCreateInput,
   validateClientAssociationCreateInput,
   validateWorkBucketCreateInput,
   type CurrentUser,
+  type EducationApplication,
+  type SpeakerEngagement,
   type WorkItem
 } from "../lib/amc-domain";
 import {
   AMC_LOCAL_STATE_STORAGE_KEY,
   addActionItemToAmcLocalState,
+  addCollateralActionItemToAmcLocalState,
+  addCollateralItemToAmcLocalState,
   addClientAssociationToAmcLocalState,
   addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
@@ -70,6 +80,46 @@ test("client association filter applies across the shared work queue", () => {
   assert.deepEqual(visibleItems.map((item) => item.id), ["action-wpc-sponsor-logo"]);
 });
 
+test("work filtering supports bucket, assignee, tracker, status, and unassigned-only filters", () => {
+  const workItems = getDemoWorkItems();
+
+  assert.deepEqual(
+    getVisibleWorkItems(workItems, {
+      viewer: DEMO_FOUNDATION_DATA.currentUser,
+      bucketId: "bucket-ppma-annual-conference"
+    }).map((item) => item.id),
+    ["action-ppma-speaker-confirmations", "collateral-ppma-postcard"]
+  );
+  assert.deepEqual(
+    getVisibleWorkItems(workItems, {
+      viewer: DEMO_FOUNDATION_DATA.currentUser,
+      assigneeId: "staff-melissa"
+    }).map((item) => item.id),
+    ["action-ppma-speaker-confirmations", "collateral-ppma-postcard"]
+  );
+  assert.deepEqual(
+    getVisibleWorkItems(workItems, {
+      viewer: DEMO_FOUNDATION_DATA.currentUser,
+      tracker: "collateral"
+    }).map((item) => item.id),
+    ["collateral-ppma-postcard"]
+  );
+  assert.deepEqual(
+    getVisibleWorkItems(workItems, {
+      viewer: DEMO_FOUNDATION_DATA.currentUser,
+      status: "waiting"
+    }).map((item) => item.id),
+    ["action-wpc-sponsor-logo"]
+  );
+  assert.deepEqual(
+    getVisibleWorkItems(workItems, {
+      viewer: DEMO_FOUNDATION_DATA.currentUser,
+      unassignedOnly: true
+    }).map((item) => item.id),
+    ["action-wpc-sponsor-logo"]
+  );
+});
+
 test("unassigned work is visible to admins but not employees", () => {
   const unassignedItem: WorkItem = {
     id: "work-unassigned",
@@ -94,6 +144,67 @@ test("unassigned work is visible to admins but not employees", () => {
   );
   assert.equal(getVisibleWorkItems(items, { viewer: employee }).some((item) => item.id === unassignedItem.id), false);
   assert.equal(getAssigneeName(DEMO_FOUNDATION_DATA.staff, null), "Unassigned");
+});
+
+test("bucket workspace selector returns scoped work and tracker records", () => {
+  const workspace = getBucketWorkspace(DEMO_FOUNDATION_DATA, {
+    clientId: "client-pacific-pest",
+    bucketId: "bucket-ppma-annual-conference"
+  });
+
+  assert.equal(workspace.client?.shortName, "PPMA");
+  assert.equal(workspace.bucket?.name, "Annual Conference 2026");
+  assert.deepEqual(workspace.actionItems.map((item) => item.id), ["action-ppma-speaker-confirmations"]);
+  assert.deepEqual(workspace.collateralItems.map((item) => item.id), ["collateral-ppma-postcard"]);
+  assert.deepEqual(workspace.speakerEngagements.map((item) => item.id), ["speaker-demo-breakouts"]);
+  assert.deepEqual(workspace.educationApplications, []);
+  assert.deepEqual(workspace.sponsorFulfillmentRecords, []);
+});
+
+test("bucket workspace selector supports empty bucket behavior", () => {
+  const workspace = getBucketWorkspace(DEMO_FOUNDATION_DATA, {
+    clientId: "client-pacific-pest",
+    bucketId: "bucket-ppma-membership"
+  });
+
+  assert.equal(workspace.client?.shortName, "PPMA");
+  assert.equal(workspace.bucket?.name, "Membership");
+  assert.deepEqual(workspace.workItems, []);
+  assert.deepEqual(workspace.actionItems, []);
+  assert.deepEqual(workspace.collateralItems, []);
+  assert.deepEqual(workspace.educationApplications, []);
+  assert.deepEqual(workspace.speakerEngagements, []);
+});
+
+test("education records support shared session categories and hours", () => {
+  const educationRecord: EducationApplication = {
+    id: "education-test",
+    organizationId: DEMO_FOUNDATION_DATA.organization.id,
+    clientAssociationId: "client-pacific-pest",
+    bucketId: "bucket-ppma-ceu-program",
+    courseTitle: "Branch 2 CEU Session",
+    sessionCategory: "Branch 2",
+    hours: 3,
+    status: "needed",
+    assigneeId: null,
+    relatedActionItemIds: [],
+    notes: ""
+  };
+
+  assert.equal(SESSION_CATEGORIES.includes(educationRecord.sessionCategory), true);
+  assert.equal(educationRecord.hours, 3);
+});
+
+test("education and speaker records share the same session category vocabulary", () => {
+  const educationRecord: Pick<EducationApplication, "sessionCategory"> = {
+    sessionCategory: "IPM"
+  };
+  const speakerRecord: Pick<SpeakerEngagement, "sessionCategory"> = {
+    sessionCategory: "IPM"
+  };
+
+  assert.deepEqual([...SESSION_CATEGORIES], ["R&R", "Branch 1", "Branch 2", "Branch 3", "General", "PUA", "IPM"]);
+  assert.equal(educationRecord.sessionCategory, speakerRecord.sessionCategory);
 });
 
 test("action item creation requires client association and bucket", () => {
@@ -155,8 +266,164 @@ test("collateral can create and link action items while retaining collateral fie
   assert.equal(actionItem.origin?.tracker, "collateral");
   assert.equal(actionItem.relatedEntities[0]?.entityId, collateral.id);
   assert.equal(linkedCollateral.relatedActionItemIds.includes(actionItem.id), true);
-  assert.equal(linkedCollateral.printer, collateral.printer);
-  assert.equal(linkedCollateral.quantity, collateral.quantity);
+  assert.equal(linkedCollateral.collateralType, collateral.collateralType);
+  assert.equal(linkedCollateral.channelOrUse, collateral.channelOrUse);
+});
+
+test("collateral model requires client association and bucket", () => {
+  const validation = validateCollateralItemCreateInput(
+    {
+      title: "New flyer",
+      clientAssociationId: "",
+      bucketId: "",
+      collateralType: "flyer"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(validation.isValid, false);
+  assert.deepEqual(validation.errors, ["Client association is required.", "Bucket is required."]);
+});
+
+test("collateral creation preserves assignee and bucket scope", () => {
+  const collateral = createCollateralItem(
+    {
+      title: "Session handout",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference",
+      collateralType: "handout",
+      status: "drafting",
+      assigneeId: "staff-melissa",
+      dueDate: "2026-06-08",
+      audience: "Attendees",
+      channelOrUse: "On-site session",
+      notes: "Draft outline first.",
+      now: "2026-05-25T12:00:00.000Z"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(collateral.clientAssociationId, "client-pacific-pest");
+  assert.equal(collateral.bucketId, "bucket-ppma-annual-conference");
+  assert.equal(collateral.assigneeId, "staff-melissa");
+  assert.equal(collateral.status, "drafting");
+  assert.equal(collateral.createdAt, "2026-05-25T12:00:00.000Z");
+  assert.equal(collateral.updatedAt, "2026-05-25T12:00:00.000Z");
+});
+
+test("collateral status and type vocabularies include the starting values", () => {
+  assert.deepEqual([...COLLATERAL_TYPES], [
+    "email",
+    "socialPost",
+    "flyer",
+    "postcard",
+    "signage",
+    "programBook",
+    "websiteUpdate",
+    "sponsorRecognition",
+    "handout",
+    "other"
+  ]);
+  assert.deepEqual([...COLLATERAL_STATUSES], [
+    "notStarted",
+    "drafting",
+    "waiting",
+    "review",
+    "approved",
+    "scheduled",
+    "complete"
+  ]);
+});
+
+test("collateral records list by bucket through bucket workspace selector", () => {
+  const collateral = createCollateralItem(
+    {
+      title: "Bucket-specific social post",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-membership",
+      collateralType: "socialPost"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const workspace = getBucketWorkspace(
+    {
+      ...DEMO_FOUNDATION_DATA,
+      collateralItems: [...DEMO_FOUNDATION_DATA.collateralItems, collateral]
+    },
+    {
+      clientId: "client-pacific-pest",
+      bucketId: "bucket-ppma-membership"
+    }
+  );
+
+  assert.deepEqual(workspace.collateralItems.map((item) => item.id), [collateral.id]);
+});
+
+test("related collateral action item appears in work queue selectors and preserves scope", () => {
+  const collateral = createCollateralItem(
+    {
+      title: "Website update",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-membership",
+      collateralType: "websiteUpdate",
+      assigneeId: "staff-operations"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const actionItem = createCollateralActionItem({
+    collateralItem: collateral,
+    title: "Draft website copy",
+    data: DEMO_FOUNDATION_DATA
+  });
+  const linkedCollateral = linkCollateralActionItem(collateral, actionItem);
+  const workspace = getBucketWorkspace(
+    {
+      ...DEMO_FOUNDATION_DATA,
+      actionItems: [...DEMO_FOUNDATION_DATA.actionItems, actionItem],
+      collateralItems: [...DEMO_FOUNDATION_DATA.collateralItems, linkedCollateral]
+    },
+    {
+      clientId: collateral.clientAssociationId,
+      bucketId: collateral.bucketId
+    }
+  );
+
+  assert.equal(actionItem.clientAssociationId, collateral.clientAssociationId);
+  assert.equal(actionItem.bucketId, collateral.bucketId);
+  assert.equal(actionItem.origin?.tracker, "collateral");
+  assert.equal(actionItem.origin?.entityId, collateral.id);
+  assert.equal(workspace.actionItems.some((item) => item.id === actionItem.id), true);
+  assert.equal(workspace.workItems.some((item) => item.id === actionItem.id), true);
+});
+
+test("local state can persist collateral and related collateral action items", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const collateral = createCollateralItem(
+    {
+      title: "Local collateral",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference",
+      collateralType: "email"
+    },
+    snapshot
+  );
+  const withCollateral = addCollateralItemToAmcLocalState(snapshot, collateral);
+  const actionItem = createCollateralActionItem({
+    collateralItem: collateral,
+    title: "Review local collateral",
+    data: withCollateral
+  });
+  const withAction = addCollateralActionItemToAmcLocalState({
+    snapshot: withCollateral,
+    collateralItemId: collateral.id,
+    actionItem
+  });
+
+  assert.equal(withAction.actionItems[0]?.id, actionItem.id);
+  assert.equal(
+    withAction.collateralItems.find((item) => item.id === collateral.id)?.relatedActionItemIds.includes(actionItem.id),
+    true
+  );
 });
 
 test("v2 local state loads defaults when storage is empty or malformed", () => {

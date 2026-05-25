@@ -22,6 +22,37 @@ export type WorkTrackerKind =
 
 export type WorkStatus = "notStarted" | "inProgress" | "waiting" | "blocked" | "complete";
 
+export const SESSION_CATEGORIES = ["R&R", "Branch 1", "Branch 2", "Branch 3", "General", "PUA", "IPM"] as const;
+
+export type SessionCategory = (typeof SESSION_CATEGORIES)[number];
+
+export const COLLATERAL_TYPES = [
+  "email",
+  "socialPost",
+  "flyer",
+  "postcard",
+  "signage",
+  "programBook",
+  "websiteUpdate",
+  "sponsorRecognition",
+  "handout",
+  "other"
+] as const;
+
+export const COLLATERAL_STATUSES = [
+  "notStarted",
+  "drafting",
+  "waiting",
+  "review",
+  "approved",
+  "scheduled",
+  "complete"
+] as const;
+
+export type CollateralType = (typeof COLLATERAL_TYPES)[number];
+
+export type CollateralStatus = (typeof COLLATERAL_STATUSES)[number];
+
 export type RelationshipEntityType =
   | "actionItem"
   | "collateralItem"
@@ -141,12 +172,64 @@ export interface CollateralItem {
   clientAssociationId: string;
   bucketId: string;
   title: string;
-  status: "planned" | "inProgress" | "proofing" | "ready" | "complete";
+  collateralType: CollateralType;
+  channelOrUse: string;
+  status: CollateralStatus;
   assigneeId: string | null;
   dueDate: string;
-  printer: string;
-  quantity: string;
-  format: string;
+  audience: string;
+  notes: string;
+  relatedActionItemIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CollateralItemCreateInput {
+  clientAssociationId: string;
+  bucketId: string;
+  title: string;
+  collateralType: CollateralType;
+  channelOrUse?: string;
+  status?: CollateralStatus;
+  assigneeId?: string | null;
+  dueDate?: string;
+  audience?: string;
+  notes?: string;
+  now?: string;
+}
+
+export interface CollateralActionItemCreateInput {
+  collateralItem: CollateralItem;
+  title: string;
+  assigneeId?: string | null;
+  dueDate?: string;
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">;
+}
+
+export interface EducationApplication {
+  id: string;
+  organizationId: string;
+  clientAssociationId: string;
+  bucketId: string;
+  courseTitle: string;
+  sessionCategory: SessionCategory;
+  hours: number;
+  status: "needed" | "drafting" | "submitted" | "approved" | "completed";
+  assigneeId: string | null;
+  relatedActionItemIds: string[];
+  notes: string;
+}
+
+export interface SpeakerEngagement {
+  id: string;
+  organizationId: string;
+  clientAssociationId: string;
+  bucketId: string;
+  speakerName: string;
+  topicTitle: string;
+  sessionCategory: SessionCategory;
+  status: "identified" | "invited" | "confirmed" | "ready" | "completed";
+  assigneeId: string | null;
   relatedActionItemIds: string[];
   notes: string;
 }
@@ -159,12 +242,29 @@ export interface FoundationData {
   buckets: WorkBucket[];
   actionItems: ActionItem[];
   collateralItems: CollateralItem[];
+  educationApplications: EducationApplication[];
+  speakerEngagements: SpeakerEngagement[];
 }
 
 export interface WorkVisibilityFilter {
   viewer: CurrentUser;
   clientAssociationId?: string;
+  bucketId?: string;
   assigneeId?: string;
+  tracker?: WorkTrackerKind;
+  status?: WorkStatus;
+  unassignedOnly?: boolean;
+}
+
+export interface BucketWorkspace {
+  client: ClientAssociation | null;
+  bucket: WorkBucket | null;
+  workItems: WorkItem[];
+  actionItems: ActionItem[];
+  collateralItems: CollateralItem[];
+  educationApplications: EducationApplication[];
+  speakerEngagements: SpeakerEngagement[];
+  sponsorFulfillmentRecords: [];
 }
 
 export const DEMO_FOUNDATION_DATA: FoundationData = {
@@ -330,13 +430,45 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       clientAssociationId: "client-pacific-pest",
       bucketId: "bucket-ppma-annual-conference",
       title: "Annual conference reminder postcard",
-      status: "proofing",
+      collateralType: "postcard",
+      channelOrUse: "Reminder mailing",
+      status: "review",
       assigneeId: "staff-melissa",
       dueDate: "2026-06-10",
-      printer: "Preferred local printer",
-      quantity: "500",
-      format: "Postcard",
+      audience: "Members and prospects",
       relatedActionItemIds: [],
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    }
+  ],
+  educationApplications: [
+    {
+      id: "education-demo-spring-ceu",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-ceu-program",
+      courseTitle: "Spring CEU Program",
+      sessionCategory: "General",
+      hours: 2,
+      status: "drafting",
+      assigneeId: "staff-operations",
+      relatedActionItemIds: ["action-ppma-ceu-application"],
+      notes: ""
+    }
+  ],
+  speakerEngagements: [
+    {
+      id: "speaker-demo-breakouts",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference",
+      speakerName: "TBD speaker",
+      topicTitle: "Breakout sessions",
+      sessionCategory: "General",
+      status: "confirmed",
+      assigneeId: "staff-melissa",
+      relatedActionItemIds: ["action-ppma-speaker-confirmations"],
       notes: ""
     }
   ]
@@ -350,6 +482,57 @@ export function getFoundationWorkItems(input: {
     ...input.actionItems.map(projectActionItemToWorkItem),
     ...input.collateralItems.map(projectCollateralItemToWorkItem)
   ];
+}
+
+export function getBucketWorkspace(
+  data: Pick<
+    FoundationData,
+    | "clients"
+    | "buckets"
+    | "actionItems"
+    | "collateralItems"
+    | "educationApplications"
+    | "speakerEngagements"
+  >,
+  input: {
+    clientId: string;
+    bucketId: string;
+  }
+): BucketWorkspace {
+  const client = data.clients.find((candidate) => candidate.id === input.clientId) ?? null;
+  const bucket =
+    data.buckets.find(
+      (candidate) => candidate.id === input.bucketId && candidate.clientAssociationId === input.clientId
+    ) ?? null;
+
+  if (!client || !bucket) {
+    return {
+      client,
+      bucket,
+      workItems: [],
+      actionItems: [],
+      collateralItems: [],
+      educationApplications: [],
+      speakerEngagements: [],
+      sponsorFulfillmentRecords: []
+    };
+  }
+
+  const actionItems = data.actionItems.filter((item) => item.bucketId === bucket.id);
+  const collateralItems = data.collateralItems.filter((item) => item.bucketId === bucket.id);
+  const educationApplications = data.educationApplications.filter((item) => item.bucketId === bucket.id);
+  const speakerEngagements = data.speakerEngagements.filter((item) => item.bucketId === bucket.id);
+
+  return {
+    client,
+    bucket,
+    workItems: getFoundationWorkItems({ actionItems, collateralItems }),
+    actionItems,
+    collateralItems,
+    educationApplications,
+    speakerEngagements,
+    sponsorFulfillmentRecords: []
+  };
 }
 
 export function projectActionItemToWorkItem(item: ActionItem): WorkItem {
@@ -392,6 +575,73 @@ export function projectCollateralItemToWorkItem(item: CollateralItem): WorkItem 
       entityType: "actionItem",
       entityId: actionItemId
     }))
+  };
+}
+
+export function validateCollateralItemCreateInput(
+  input: CollateralItemCreateInput,
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">
+) {
+  const errors: string[] = [];
+  const client = data.clients.find((candidate) => candidate.id === input.clientAssociationId);
+  const bucket = data.buckets.find((candidate) => candidate.id === input.bucketId);
+
+  if (!input.title.trim()) {
+    errors.push("Collateral title is required.");
+  }
+
+  if (!client || client.organizationId !== data.organization.id) {
+    errors.push("Client association is required.");
+  }
+
+  if (!bucket || bucket.organizationId !== data.organization.id) {
+    errors.push("Bucket is required.");
+  } else if (bucket.clientAssociationId !== input.clientAssociationId) {
+    errors.push("Bucket must belong to the selected client association.");
+  }
+
+  if (!COLLATERAL_TYPES.includes(input.collateralType)) {
+    errors.push("Collateral type is invalid.");
+  }
+
+  if (input.status && !COLLATERAL_STATUSES.includes(input.status)) {
+    errors.push("Collateral status is invalid.");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function createCollateralItem(
+  input: CollateralItemCreateInput,
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">
+): CollateralItem {
+  const validation = validateCollateralItemCreateInput(input, data);
+
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  const now = input.now ?? new Date().toISOString();
+
+  return {
+    id: `collateral-${crypto.randomUUID()}`,
+    organizationId: data.organization.id,
+    clientAssociationId: input.clientAssociationId,
+    bucketId: input.bucketId,
+    title: input.title.trim(),
+    collateralType: input.collateralType,
+    channelOrUse: input.channelOrUse?.trim() ?? "",
+    status: input.status ?? "notStarted",
+    assigneeId: input.assigneeId?.trim() || null,
+    dueDate: input.dueDate?.trim() ?? "",
+    audience: input.audience?.trim() ?? "",
+    notes: input.notes?.trim() ?? "",
+    relatedActionItemIds: [],
+    createdAt: now,
+    updatedAt: now
   };
 }
 
@@ -576,13 +826,7 @@ export function createActionItem(
   };
 }
 
-export function createCollateralActionItem(input: {
-  collateralItem: CollateralItem;
-  title: string;
-  assigneeId?: string | null;
-  dueDate?: string;
-  data: Pick<FoundationData, "buckets" | "clients" | "organization">;
-}) {
+export function createCollateralActionItem(input: CollateralActionItemCreateInput) {
   return createActionItem(
     {
       title: input.title,
@@ -622,8 +866,12 @@ function mapCollateralStatusToWorkStatus(status: CollateralItem["status"]): Work
     return "complete";
   }
 
-  if (status === "planned") {
+  if (status === "notStarted") {
     return "notStarted";
+  }
+
+  if (status === "waiting") {
+    return "waiting";
   }
 
   return "inProgress";
@@ -655,11 +903,27 @@ export function getVisibleWorkItems(items: WorkItem[], filter: WorkVisibilityFil
       return false;
     }
 
+    if (filter.bucketId && item.bucketId !== filter.bucketId) {
+      return false;
+    }
+
     if (filter.viewer.role !== "admin" && item.assigneeId !== filter.viewer.assigneeId) {
       return false;
     }
 
+    if (filter.unassignedOnly && item.assigneeId !== null) {
+      return false;
+    }
+
     if (filter.viewer.role === "admin" && filter.assigneeId && item.assigneeId !== filter.assigneeId) {
+      return false;
+    }
+
+    if (filter.tracker && item.tracker !== filter.tracker) {
+      return false;
+    }
+
+    if (filter.status && item.status !== filter.status) {
       return false;
     }
 

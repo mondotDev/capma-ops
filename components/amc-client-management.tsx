@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAmcLocalState } from "@/components/amc-local-state-provider";
 import {
@@ -22,6 +23,10 @@ const BUCKET_KIND_OPTIONS: Array<{ value: WorkBucketKind; label: string }> = [
   { value: "generalOperations", label: "General Operations" },
   { value: "internalOps", label: "Internal Ops" }
 ];
+
+const BUCKET_KIND_LABELS = Object.fromEntries(
+  BUCKET_KIND_OPTIONS.map((option) => [option.value, option.label])
+) as Record<WorkBucketKind, string>;
 
 export function AmcClientManagement() {
   const { state, addClientAssociation, addWorkBucket } = useAmcLocalState();
@@ -217,19 +222,30 @@ export function AmcClientManagement() {
         </div>
         <div className="amc-list">
           {bucketsByClient.map(({ client, buckets }) => (
-            <article className="amc-list-row amc-list-row--work" key={client.id}>
-              <div>
-                <strong>{client.name}</strong>
-                <span>{client.shortName} / {client.status}</span>
+            <article className="amc-client-structure-row" key={client.id}>
+              <div className="amc-client-structure-row__header">
+                <div>
+                  <strong>{client.name}</strong>
+                  <span>{client.shortName} / {client.status}</span>
+                </div>
+                <span>{buckets.length} buckets</span>
               </div>
-              <div className="amc-list-row__meta">
+              <div className="amc-bucket-link-list">
                 {buckets.length === 0 ? (
-                  <span>No buckets yet</span>
+                  <div className="empty-state">No buckets yet.</div>
                 ) : (
                   buckets.map((bucket) => (
-                    <span key={bucket.id}>
-                      {bucket.name} ({bucket.kind})
-                    </span>
+                    <div className="amc-bucket-link-row" key={bucket.id}>
+                      <div>
+                        <strong>{bucket.name}</strong>
+                        <span>
+                          {BUCKET_KIND_LABELS[bucket.kind]} / {bucket.status}
+                        </span>
+                      </div>
+                      <Link className="button-link button-link--inline-secondary" href={`/clients/${client.id}/buckets/${bucket.id}`}>
+                        Open workspace
+                      </Link>
+                    </div>
                   ))
                 )}
               </div>

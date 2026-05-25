@@ -12,7 +12,9 @@ import {
   getFoundationWorkItems,
   getVisibleWorkItems,
   validateActionItemCreateInput,
-  type ActionItemCreateInput
+  type ActionItemCreateInput,
+  type WorkStatus,
+  type WorkTrackerKind
 } from "@/lib/amc-domain";
 
 const INITIAL_FORM_STATE: ActionItemCreateInput = {
@@ -27,8 +29,26 @@ export function AmcWorkQueue() {
   const { isHydrated, state, addActionItem, resetLocalState } = useAmcLocalState();
   const data = state;
   const [formState, setFormState] = useState<ActionItemCreateInput>(INITIAL_FORM_STATE);
+  const [filters, setFilters] = useState<{
+    assigneeId: string;
+    bucketId: string;
+    clientAssociationId: string;
+    status: string;
+    tracker: string;
+    unassignedOnly: boolean;
+  }>({
+    assigneeId: "",
+    bucketId: "",
+    clientAssociationId: "",
+    status: "",
+    tracker: "",
+    unassignedOnly: false
+  });
   const [feedback, setFeedback] = useState("");
   const bucketsForClient = data.buckets.filter((bucket) => bucket.clientAssociationId === formState.clientAssociationId);
+  const filterBuckets = filters.clientAssociationId
+    ? data.buckets.filter((bucket) => bucket.clientAssociationId === filters.clientAssociationId)
+    : data.buckets;
   const workItems = useMemo(
     () =>
       getFoundationWorkItems({
@@ -37,7 +57,15 @@ export function AmcWorkQueue() {
       }),
     [data.actionItems, data.collateralItems]
   );
-  const visibleItems = getVisibleWorkItems(workItems, { viewer: data.currentUser });
+  const visibleItems = getVisibleWorkItems(workItems, {
+    viewer: data.currentUser,
+    assigneeId: filters.unassignedOnly ? undefined : filters.assigneeId || undefined,
+    bucketId: filters.bucketId || undefined,
+    clientAssociationId: filters.clientAssociationId || undefined,
+    status: (filters.status || undefined) as WorkStatus | undefined,
+    tracker: (filters.tracker || undefined) as WorkTrackerKind | undefined,
+    unassignedOnly: filters.unassignedOnly
+  });
   const validation = validateActionItemCreateInput(formState, data);
 
   function updateField<Key extends keyof ActionItemCreateInput>(field: Key, value: ActionItemCreateInput[Key]) {
@@ -98,6 +126,102 @@ export function AmcWorkQueue() {
       </section>
 
       {!isHydrated ? <div className="amc-form-feedback">Loading local workspace...</div> : null}
+
+      <section className="amc-panel">
+        <div className="amc-panel__header">
+          <h2>Filters</h2>
+          <span>{visibleItems.length} visible</span>
+        </div>
+        <div className="amc-filter-grid">
+          <label>
+            <span>Client</span>
+            <select
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  bucketId: "",
+                  clientAssociationId: event.target.value
+                }))
+              }
+              value={filters.clientAssociationId}
+            >
+              <option value="">All clients</option>
+              {data.clients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.shortName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Bucket</span>
+            <select onChange={(event) => setFilters((current) => ({ ...current, bucketId: event.target.value }))} value={filters.bucketId}>
+              <option value="">All buckets</option>
+              {filterBuckets.map((bucket) => (
+                <option key={bucket.id} value={bucket.id}>
+                  {bucket.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Assignee</span>
+            <select
+              disabled={filters.unassignedOnly}
+              onChange={(event) => setFilters((current) => ({ ...current, assigneeId: event.target.value }))}
+              value={filters.assigneeId}
+            >
+              <option value="">All assignees</option>
+              {data.staff.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Tracker</span>
+            <select onChange={(event) => setFilters((current) => ({ ...current, tracker: event.target.value }))} value={filters.tracker}>
+              <option value="">All trackers</option>
+              <option value="action">Action</option>
+              <option value="collateral">Collateral</option>
+              <option value="education">Education</option>
+              <option value="speaker">Speaker</option>
+              <option value="sponsorFulfillment">Sponsor Fulfillment</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Status</span>
+            <select onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} value={filters.status}>
+              <option value="">All statuses</option>
+              <option value="notStarted">Not Started</option>
+              <option value="inProgress">In Progress</option>
+              <option value="waiting">Waiting</option>
+              <option value="blocked">Blocked</option>
+              <option value="complete">Complete</option>
+            </select>
+          </label>
+
+          <label className="amc-checkbox-field">
+            <input
+              checked={filters.unassignedOnly}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  assigneeId: event.target.checked ? "" : current.assigneeId,
+                  unassignedOnly: event.target.checked
+                }))
+              }
+              type="checkbox"
+            />
+            <span>Unassigned only</span>
+          </label>
+        </div>
+      </section>
 
       <section className="amc-panel">
         <div className="amc-panel__header">
