@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Antonio, Inter, Montserrat } from "next/font/google";
 import "./globals.css";
 import { AmcAppShell } from "@/components/amc-app-shell";
+import { AmcLocalStateProvider } from "@/components/amc-local-state-provider";
 import { PRODUCT_NAME } from "@/lib/amc-domain";
 
 const antonio = Antonio({
@@ -35,7 +36,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${antonio.variable} ${montserrat.variable} ${inter.variable}`}>
-        <AmcAppShell>{children}</AmcAppShell>
+        <AmcLocalStateProvider>
+          <AmcAppShell>{children}</AmcAppShell>
+        </AmcLocalStateProvider>
       </body>
     </html>
   );

@@ -12,6 +12,13 @@ import {
   type CurrentUser,
   type WorkItem
 } from "../lib/amc-domain";
+import {
+  AMC_LOCAL_STATE_STORAGE_KEY,
+  addActionItemToAmcLocalState,
+  createDefaultAmcLocalState,
+  loadAmcLocalState,
+  saveAmcLocalState
+} from "../lib/amc-local-state";
 
 test("employee visibility is limited to assigned work in their organization", () => {
   const employee: CurrentUser = {
@@ -143,9 +150,52 @@ test("collateral can create and link action items while retaining collateral fie
   assert.equal(linkedCollateral.quantity, collateral.quantity);
 });
 
+test("v2 local state loads defaults when storage is empty or malformed", () => {
+  const emptyStorage = createMemoryStorage();
+  const malformedStorage = createMemoryStorage({
+    [AMC_LOCAL_STATE_STORAGE_KEY]: "{bad json"
+  });
+
+  assert.equal(loadAmcLocalState(emptyStorage).organization.id, DEMO_FOUNDATION_DATA.organization.id);
+  assert.equal(loadAmcLocalState(malformedStorage).organization.id, DEMO_FOUNDATION_DATA.organization.id);
+});
+
+test("v2 local state saves and reloads action items", () => {
+  const storage = createMemoryStorage();
+  const snapshot = createDefaultAmcLocalState();
+  const actionItem = createActionItem(
+    {
+      title: "Persisted local action",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const nextSnapshot = addActionItemToAmcLocalState(snapshot, actionItem);
+
+  saveAmcLocalState(nextSnapshot, storage);
+
+  const reloaded = loadAmcLocalState(storage);
+  assert.equal(reloaded.actionItems[0]?.id, actionItem.id);
+  assert.equal(reloaded.actionItems[0]?.title, "Persisted local action");
+});
+
 function getDemoWorkItems() {
   return getFoundationWorkItems({
     actionItems: DEMO_FOUNDATION_DATA.actionItems,
     collateralItems: DEMO_FOUNDATION_DATA.collateralItems
   });
+}
+
+function createMemoryStorage(initialValues: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initialValues));
+
+  return {
+    getItem(key: string) {
+      return values.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value);
+    }
+  };
 }

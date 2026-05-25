@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
+import { useAmcLocalState } from "@/components/amc-local-state-provider";
 import {
   createActionItem,
   DEMO_FOUNDATION_DATA,
@@ -11,7 +12,6 @@ import {
   getFoundationWorkItems,
   getVisibleWorkItems,
   validateActionItemCreateInput,
-  type ActionItem,
   type ActionItemCreateInput
 } from "@/lib/amc-domain";
 
@@ -24,18 +24,18 @@ const INITIAL_FORM_STATE: ActionItemCreateInput = {
 };
 
 export function AmcWorkQueue() {
-  const data = DEMO_FOUNDATION_DATA;
-  const [actionItems, setActionItems] = useState<ActionItem[]>(data.actionItems);
+  const { isHydrated, state, addActionItem, resetLocalState } = useAmcLocalState();
+  const data = state;
   const [formState, setFormState] = useState<ActionItemCreateInput>(INITIAL_FORM_STATE);
   const [feedback, setFeedback] = useState("");
   const bucketsForClient = data.buckets.filter((bucket) => bucket.clientAssociationId === formState.clientAssociationId);
   const workItems = useMemo(
     () =>
       getFoundationWorkItems({
-        actionItems,
+        actionItems: data.actionItems,
         collateralItems: data.collateralItems
       }),
-    [actionItems, data.collateralItems]
+    [data.actionItems, data.collateralItems]
   );
   const visibleItems = getVisibleWorkItems(workItems, { viewer: data.currentUser });
   const validation = validateActionItemCreateInput(formState, data);
@@ -70,7 +70,7 @@ export function AmcWorkQueue() {
     }
 
     const created = createActionItem(formState, data);
-    setActionItems((current) => [created, ...current]);
+    addActionItem(created);
     setFormState({
       ...INITIAL_FORM_STATE,
       clientAssociationId: formState.clientAssociationId,
@@ -92,7 +92,12 @@ export function AmcWorkQueue() {
             own tracker fields.
           </p>
         </div>
+        <button className="button-link button-link--inline-secondary" onClick={resetLocalState} type="button">
+          Reset Local Demo
+        </button>
       </section>
+
+      {!isHydrated ? <div className="amc-form-feedback">Loading local workspace...</div> : null}
 
       <section className="amc-panel">
         <div className="amc-panel__header">
