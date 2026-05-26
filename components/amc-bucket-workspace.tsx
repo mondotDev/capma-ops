@@ -19,6 +19,7 @@ import {
   createSponsorFulfillmentActionItem,
   createSponsorFulfillmentCollateralItem,
   createSponsorFulfillmentRecord,
+  getBucketDisplayLabel,
   getBucketWorkspace,
   validateCollateralItemCreateInput,
   validateSponsorFulfillmentCreateInput,
@@ -361,7 +362,7 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
           <p className="amc-kicker">
             {workspace.client.shortName} / {workspace.client.name}
           </p>
-          <h1>{workspace.bucket.name}</h1>
+          <h1>{getBucketDisplayLabel(workspace.bucket, state.programSeries.find((series) => series.id === workspace.bucket?.programSeriesId))}</h1>
           <p>
             {WORK_BUCKET_KIND_LABELS[workspace.bucket.kind]} / {WORK_BUCKET_STATUS_LABELS[workspace.bucket.status]}
           </p>

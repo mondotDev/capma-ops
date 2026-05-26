@@ -1,9 +1,11 @@
 import {
   DEMO_FOUNDATION_DATA,
   getAssigneeName,
+  getBucketDisplayLabel,
   getBucketName,
   getClientAssociationName,
   getFoundationWorkItems,
+  isBucketCurrent,
   getVisibleWorkItems
 } from "@/lib/amc-domain";
 
@@ -35,7 +37,7 @@ export function AmcDashboard() {
         </div>
         <div className="amc-metric">
           <span>Active buckets</span>
-          <strong>{data.buckets.filter((bucket) => bucket.status !== "complete").length}</strong>
+          <strong>{data.buckets.filter((bucket) => isBucketCurrent(bucket)).length}</strong>
         </div>
         <div className="amc-metric">
           <span>Visible work</span>
@@ -54,7 +56,7 @@ export function AmcDashboard() {
               <article className="amc-list-row" key={bucket.id}>
                 <div>
                   <strong>{getClientAssociationName(data.clients, bucket.clientAssociationId)}</strong>
-                  <span>{bucket.name}</span>
+                  <span>{getBucketDisplayLabel(bucket, data.programSeries.find((series) => series.id === bucket.programSeriesId))}</span>
                 </div>
                 <em>{bucket.kind}</em>
               </article>

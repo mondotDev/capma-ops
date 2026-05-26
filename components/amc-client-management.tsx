@@ -7,6 +7,7 @@ import { useAmcLocalState } from "@/components/amc-local-state-provider";
 import {
   createClientAssociation,
   createWorkBucket,
+  getBucketDisplayLabel,
   validateClientAssociationCreateInput,
   validateWorkBucketCreateInput,
   WORK_BUCKET_KIND_LABELS,
@@ -200,9 +201,14 @@ export function AmcClientManagement() {
                 }
                 value={bucketForm.status}
               >
+                <option value="idea">Idea</option>
                 <option value="planning">Planning</option>
-                <option value="active">Active</option>
+                <option value="production">Production</option>
+                <option value="live">Live</option>
+                <option value="closeout">Closeout</option>
                 <option value="complete">Complete</option>
+                <option value="canceled">Canceled</option>
+                <option value="archived">Archived</option>
               </select>
             </label>
             <button className="topbar__button" disabled={state.clients.length === 0} type="submit">
@@ -235,7 +241,7 @@ export function AmcClientManagement() {
                   buckets.map((bucket) => (
                     <div className="amc-bucket-link-row" key={bucket.id}>
                       <div>
-                        <strong>{bucket.name}</strong>
+                        <strong>{getBucketDisplayLabel(bucket, state.programSeries.find((series) => series.id === bucket.programSeriesId))}</strong>
                         <span>
                           {WORK_BUCKET_KIND_LABELS[bucket.kind]} / {WORK_BUCKET_STATUS_LABELS[bucket.status]}
                         </span>

@@ -15,11 +15,22 @@ import {
   createWorkBucket,
   DEFAULT_CLIENT_BUCKET_KINDS,
   ensureDefaultBucketsForClients,
+  generateBucketLabel,
   getAssigneeName,
+  getBucketDisplayLabel,
+  getBucketDropdownOptions,
   getBucketOptionLabel,
   getBucketWorkspace,
+  getCurrentBuckets,
+  getCycleLabel,
   getFoundationWorkItems,
+  getPastBuckets,
+  getRecentBucketsByProgramSeries,
+  getSearchableBuckets,
   getVisibleWorkItems,
+  isBucketArchived,
+  isBucketCurrent,
+  isBucketPast,
   linkCollateralActionItem,
   linkSponsorFulfillmentActionItem,
   linkSponsorFulfillmentCollateralItem,
@@ -41,6 +52,7 @@ import {
   type CurrentUser,
   type EducationApplication,
   type SpeakerEngagement,
+  type WorkBucket,
   type WorkItem
 } from "../lib/amc-domain";
 import {
@@ -186,7 +198,11 @@ test("bucket workspace selector returns scoped work and tracker records", () => 
   });
 
   assert.equal(workspace.client?.shortName, "PPMA");
-  assert.equal(workspace.bucket?.name, "Annual Conference 2026");
+  assert.equal(workspace.bucket?.id, "bucket-ppma-annual-conference");
+  assert.equal(
+    getBucketDisplayLabel(workspace.bucket!, DEMO_FOUNDATION_DATA.programSeries.find((series) => series.id === workspace.bucket?.programSeriesId)),
+    "Annual Conference 2026"
+  );
   assert.deepEqual(workspace.actionItems.map((item) => item.id), ["action-ppma-speaker-confirmations"]);
   assert.deepEqual(workspace.collateralItems.map((item) => item.id), ["collateral-ppma-postcard"]);
   assert.deepEqual(workspace.speakerEngagements.map((item) => item.id), ["speaker-demo-breakouts"]);
@@ -207,6 +223,21 @@ test("bucket workspace selector supports empty bucket behavior", () => {
   assert.deepEqual(workspace.collateralItems, []);
   assert.deepEqual(workspace.educationApplications, []);
   assert.deepEqual(workspace.speakerEngagements, []);
+});
+
+test("existing bucket-linked records remain connected by bucketId", () => {
+  const ppmaWorkspace = getBucketWorkspace(DEMO_FOUNDATION_DATA, {
+    clientId: "client-pacific-pest",
+    bucketId: "bucket-ppma-annual-conference"
+  });
+  const wpcWorkspace = getBucketWorkspace(DEMO_FOUNDATION_DATA, {
+    clientId: "client-western-parks",
+    bucketId: "bucket-wpc-sponsor-fulfillment"
+  });
+
+  assert.deepEqual(ppmaWorkspace.actionItems.map((item) => item.bucketId), ["bucket-ppma-annual-conference"]);
+  assert.deepEqual(ppmaWorkspace.collateralItems.map((item) => item.bucketId), ["bucket-ppma-annual-conference"]);
+  assert.deepEqual(wpcWorkspace.sponsorFulfillmentRecords.map((item) => item.bucketId), ["bucket-wpc-sponsor-fulfillment"]);
 });
 
 test("bucket option labels include client context and distinguish duplicate bucket names", () => {
@@ -238,6 +269,111 @@ test("bucket option labels fall back to client name when short name is missing",
     getBucketOptionLabel({ bucket, clients: [client], includeKind: false }),
     `${client.name} / ${bucket.name}`
   );
+});
+
+test("bucket label helpers generate annual, monthly, quarterly, and ongoing labels", () => {
+  assert.equal(
+    generateBucketLabel({
+      programSeriesName: "Best Pest Expo",
+      recurrence: "annual",
+      startsAt: "2026-04-15"
+    }),
+    "Best Pest Expo 2026"
+  );
+  assert.equal(getCycleLabel({ recurrence: "monthly", startsAt: "2026-06-01" }), "June 2026");
+  assert.equal(
+    generateBucketLabel({
+      programSeriesName: "News Brief",
+      recurrence: "monthly",
+      startsAt: "2026-06-01"
+    }),
+    "News Brief - June 2026"
+  );
+  assert.equal(
+    generateBucketLabel({
+      programSeriesName: "The Voice",
+      recurrence: "quarterly",
+      startsAt: "2026-07-01"
+    }),
+    "The Voice - Q3 2026"
+  );
+  assert.equal(
+    generateBucketLabel({
+      programSeriesName: "General Operations",
+      recurrence: "ongoing"
+    }),
+    "General Operations"
+  );
+});
+
+test("bucket lifecycle selectors detect current, past, complete, canceled, and archived buckets", () => {
+  const referenceDate = new Date("2026-05-26T12:00:00.000Z");
+  const currentBucket: WorkBucket = makeTestBucket({
+    id: "bucket-current",
+    status: "production",
+    startsAt: "2026-06-01",
+    closeoutDueAt: "2026-06-30"
+  });
+  const datePastBucket: WorkBucket = makeTestBucket({
+    id: "bucket-date-past",
+    status: "live",
+    startsAt: "2026-01-01",
+    closeoutDueAt: "2026-02-01"
+  });
+  const completeBucket = makeTestBucket({ id: "bucket-complete", status: "complete" });
+  const canceledBucket = makeTestBucket({ id: "bucket-canceled", status: "canceled" });
+  const archivedBucket = makeTestBucket({ id: "bucket-archived", status: "archived", isArchived: true });
+
+  assert.equal(isBucketCurrent(currentBucket, referenceDate), true);
+  assert.equal(isBucketPast(datePastBucket, referenceDate), true);
+  assert.equal(isBucketPast(completeBucket, referenceDate), true);
+  assert.equal(isBucketPast(canceledBucket, referenceDate), true);
+  assert.equal(isBucketArchived(archivedBucket), true);
+  assert.deepEqual(getCurrentBuckets([currentBucket, datePastBucket, completeBucket, archivedBucket], referenceDate).map((bucket) => bucket.id), [
+    "bucket-current"
+  ]);
+  assert.deepEqual(getPastBuckets([currentBucket, datePastBucket, completeBucket, canceledBucket, archivedBucket], referenceDate).map((bucket) => bucket.id), [
+    "bucket-date-past",
+    "bucket-complete",
+    "bucket-canceled"
+  ]);
+});
+
+test("bucket dropdown options exclude archived buckets by default and include last 3 previous buckets per ProgramSeries", () => {
+  const referenceDate = new Date("2026-05-26T12:00:00.000Z");
+  const buckets: WorkBucket[] = [
+    makeTestBucket({ id: "bucket-2027", programSeriesId: "series-expo", status: "planning", startsAt: "2027-04-01", closeoutDueAt: "2027-05-01" }),
+    makeTestBucket({ id: "bucket-2026", programSeriesId: "series-expo", status: "complete", startsAt: "2026-04-01", closeoutDueAt: "2026-05-01" }),
+    makeTestBucket({ id: "bucket-2025", programSeriesId: "series-expo", status: "complete", startsAt: "2025-04-01", closeoutDueAt: "2025-05-01" }),
+    makeTestBucket({ id: "bucket-2024", programSeriesId: "series-expo", status: "complete", startsAt: "2024-04-01", closeoutDueAt: "2024-05-01" }),
+    makeTestBucket({ id: "bucket-2023", programSeriesId: "series-expo", status: "complete", startsAt: "2023-04-01", closeoutDueAt: "2023-05-01" }),
+    makeTestBucket({ id: "bucket-archived", programSeriesId: "series-expo", status: "archived", isArchived: true, startsAt: "2022-04-01" })
+  ];
+
+  assert.deepEqual(
+    getRecentBucketsByProgramSeries({ buckets, programSeriesId: "series-expo", referenceDate }).map((bucket) => bucket.id),
+    ["bucket-2026", "bucket-2025", "bucket-2024"]
+  );
+  assert.deepEqual(
+    getBucketDropdownOptions({ buckets, referenceDate }).map((bucket) => bucket.id),
+    ["bucket-2027", "bucket-2026", "bucket-2025", "bucket-2024"]
+  );
+  assert.equal(getBucketDropdownOptions({ buckets, referenceDate }).some((bucket) => bucket.id === "bucket-archived"), false);
+  assert.equal(getBucketDropdownOptions({ buckets, referenceDate, includeArchived: true }).some((bucket) => bucket.id === "bucket-archived"), true);
+});
+
+test("searchable buckets can include archived records when search or include archived asks for them", () => {
+  const archivedBucket = makeTestBucket({
+    id: "bucket-archived-news",
+    name: "News Brief - January 2025",
+    generatedLabel: "News Brief - January 2025",
+    status: "archived",
+    isArchived: true
+  });
+
+  assert.equal(getSearchableBuckets({ buckets: [archivedBucket] }).length, 0);
+  assert.equal(getSearchableBuckets({ buckets: [archivedBucket], includeArchived: true }).length, 1);
+  assert.equal(getSearchableBuckets({ buckets: [archivedBucket], query: "January 2025" }).length, 1);
 });
 
 test("human-readable labels cover greenfield work enums", () => {
@@ -996,6 +1132,36 @@ function getDemoWorkItems() {
     collateralItems: DEMO_FOUNDATION_DATA.collateralItems,
     sponsorFulfillmentRecords: DEMO_FOUNDATION_DATA.sponsorFulfillmentRecords
   });
+}
+
+function makeTestBucket(overrides: Partial<WorkBucket> = {}): WorkBucket {
+  return {
+    id: "bucket-test",
+    organizationId: DEMO_FOUNDATION_DATA.organization.id,
+    clientAssociationId: "client-pacific-pest",
+    programSeriesId: "series-test",
+    kind: "event",
+    name: "Test Bucket",
+    generatedLabel: "Test Bucket",
+    cycleLabel: "",
+    status: "planning",
+    recurrence: "annual",
+    planningStartsAt: "",
+    startsAt: "",
+    endsAt: "",
+    closeoutDueAt: "",
+    deliveryFormat: "notApplicable",
+    locationName: "",
+    locationType: "notApplicable",
+    ownerId: null,
+    previousBucketId: null,
+    isArchived: false,
+    archivedAt: "",
+    notes: "",
+    createdAt: "2026-05-01T12:00:00.000Z",
+    updatedAt: "2026-05-01T12:00:00.000Z",
+    ...overrides
+  };
 }
 
 function createMemoryStorage(initialValues: Record<string, string> = {}) {

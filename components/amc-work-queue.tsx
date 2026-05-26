@@ -8,6 +8,7 @@ import {
   DEMO_FOUNDATION_DATA,
   getAssigneeName,
   getBucketName,
+  getBucketDropdownOptions,
   getBucketOptionLabel,
   getClientAssociationName,
   getFoundationWorkItems,
@@ -48,10 +49,11 @@ export function AmcWorkQueue() {
     unassignedOnly: false
   });
   const [feedback, setFeedback] = useState("");
-  const bucketsForClient = data.buckets.filter((bucket) => bucket.clientAssociationId === formState.clientAssociationId);
+  const dropdownBuckets = getBucketDropdownOptions({ buckets: data.buckets });
+  const bucketsForClient = dropdownBuckets.filter((bucket) => bucket.clientAssociationId === formState.clientAssociationId);
   const filterBuckets = filters.clientAssociationId
-    ? data.buckets.filter((bucket) => bucket.clientAssociationId === filters.clientAssociationId)
-    : data.buckets;
+    ? dropdownBuckets.filter((bucket) => bucket.clientAssociationId === filters.clientAssociationId)
+    : dropdownBuckets;
   const workItems = useMemo(
     () =>
       getFoundationWorkItems({
@@ -77,7 +79,7 @@ export function AmcWorkQueue() {
     setFormState((current) => {
       if (field === "clientAssociationId") {
         const nextClientId = String(value);
-        const nextBucketId = data.buckets.find((bucket) => bucket.clientAssociationId === nextClientId)?.id ?? "";
+        const nextBucketId = dropdownBuckets.find((bucket) => bucket.clientAssociationId === nextClientId)?.id ?? "";
 
         return {
           ...current,
@@ -164,7 +166,7 @@ export function AmcWorkQueue() {
               <option value="">All buckets</option>
               {filterBuckets.map((bucket) => (
                 <option key={bucket.id} value={bucket.id}>
-                  {getBucketOptionLabel({ bucket, clients: data.clients, includeKind: true })}
+                  {getBucketOptionLabel({ bucket, clients: data.clients, programSeries: data.programSeries, includeKind: true })}
                 </option>
               ))}
             </select>
@@ -252,7 +254,7 @@ export function AmcWorkQueue() {
             <select onChange={(event) => updateField("bucketId", event.target.value)} value={formState.bucketId}>
               {bucketsForClient.map((bucket) => (
                 <option key={bucket.id} value={bucket.id}>
-                  {getBucketOptionLabel({ bucket, clients: data.clients, includeKind: true })}
+                  {getBucketOptionLabel({ bucket, clients: data.clients, programSeries: data.programSeries, includeKind: true })}
                 </option>
               ))}
             </select>

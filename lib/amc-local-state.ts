@@ -1,7 +1,9 @@
 import {
   DEMO_FOUNDATION_DATA,
   createDefaultBucketsForClient,
+  ensureProgramSeriesForBuckets,
   ensureDefaultBucketsForClients,
+  normalizeWorkBucketsForProgramSeries,
   updateCollateralItem,
   updateSponsorFulfillmentRecord,
   type ActionItem,
@@ -12,6 +14,7 @@ import {
   type CurrentUser,
   type EducationApplication,
   type FoundationData,
+  type ProgramSeries,
   type SpeakerEngagement,
   type SponsorFulfillmentRecord,
   type SponsorFulfillmentUpdateInput,
@@ -28,6 +31,7 @@ export interface AmcLocalStateSnapshot {
   clients: ClientAssociation[];
   staff: StaffProfile[];
   currentUser: CurrentUser;
+  programSeries: ProgramSeries[];
   buckets: WorkBucket[];
   actionItems: ActionItem[];
   collateralItems: CollateralItem[];
@@ -52,6 +56,12 @@ export function normalizeAmcLocalStateSnapshot(value: unknown): AmcLocalStateSna
   const defaults = createDefaultAmcLocalState();
   const organization = normalizeOrganization(candidate.organization, defaults.organization);
   const clients = normalizeArray(candidate.clients, defaults.clients);
+  const rawBuckets = ensureDefaultBucketsForClients(clients, normalizeArray(candidate.buckets, defaults.buckets), organization.id);
+  const programSeries = ensureProgramSeriesForBuckets(
+    normalizeArray(candidate.programSeries, defaults.programSeries),
+    rawBuckets
+  );
+  const buckets = normalizeWorkBucketsForProgramSeries(rawBuckets, programSeries);
 
   return {
     version: AMC_LOCAL_STATE_VERSION,
@@ -59,7 +69,8 @@ export function normalizeAmcLocalStateSnapshot(value: unknown): AmcLocalStateSna
     clients,
     staff: normalizeArray(candidate.staff, defaults.staff),
     currentUser: normalizeCurrentUser(candidate.currentUser, defaults.currentUser),
-    buckets: ensureDefaultBucketsForClients(clients, normalizeArray(candidate.buckets, defaults.buckets), organization.id),
+    programSeries,
+    buckets,
     actionItems: normalizeArray(candidate.actionItems, defaults.actionItems),
     collateralItems: normalizeArray(candidate.collateralItems, defaults.collateralItems),
     educationApplications: normalizeArray(candidate.educationApplications, defaults.educationApplications),
@@ -202,11 +213,13 @@ export function addClientAssociationToAmcLocalState(
     organizationId: snapshot.organization.id,
     existingBuckets: snapshot.buckets
   });
+  const programSeries = ensureProgramSeriesForBuckets(snapshot.programSeries, defaultBuckets);
 
   return {
     ...snapshot,
     clients: [...snapshot.clients, client],
-    buckets: [...snapshot.buckets, ...defaultBuckets]
+    programSeries,
+    buckets: normalizeWorkBucketsForProgramSeries([...snapshot.buckets, ...defaultBuckets], programSeries)
   };
 }
 
@@ -214,9 +227,12 @@ export function addWorkBucketToAmcLocalState(
   snapshot: AmcLocalStateSnapshot,
   bucket: WorkBucket
 ): AmcLocalStateSnapshot {
+  const programSeries = ensureProgramSeriesForBuckets(snapshot.programSeries, [bucket]);
+
   return {
     ...snapshot,
-    buckets: [...snapshot.buckets, bucket]
+    programSeries,
+    buckets: normalizeWorkBucketsForProgramSeries([...snapshot.buckets, bucket], programSeries)
   };
 }
 

@@ -13,6 +13,31 @@ export type WorkBucketKind =
   | "generalOperations"
   | "internalOps";
 
+export const WORK_BUCKET_STATUSES = [
+  "idea",
+  "planning",
+  "production",
+  "live",
+  "closeout",
+  "complete",
+  "canceled",
+  "archived"
+] as const;
+
+export type WorkBucketStatus = (typeof WORK_BUCKET_STATUSES)[number];
+
+export const RECURRENCE_PATTERNS = ["annual", "quarterly", "monthly", "weekly", "oneTime", "ongoing", "adHoc"] as const;
+
+export type RecurrencePattern = (typeof RECURRENCE_PATTERNS)[number];
+
+export const DELIVERY_FORMATS = ["inPerson", "virtual", "hybrid", "notApplicable"] as const;
+
+export type DeliveryFormat = (typeof DELIVERY_FORMATS)[number];
+
+export const LOCATION_TYPES = ["venue", "platform", "mixed", "notApplicable"] as const;
+
+export type LocationType = (typeof LOCATION_TYPES)[number];
+
 export type WorkTrackerKind =
   | "action"
   | "collateral"
@@ -136,28 +161,83 @@ export interface CurrentUser {
   organizationId: string;
 }
 
+export interface ProgramSeries {
+  id: string;
+  organizationId: string;
+  clientAssociationId: string;
+  name: string;
+  defaultKind: WorkBucketKind;
+  recurrence: RecurrencePattern;
+  defaultDeliveryFormat: DeliveryFormat;
+  active: boolean;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  defaultOwnerId?: string | null;
+  defaultPlanningLeadDays?: number;
+  defaultCloseoutLeadDays?: number;
+}
+
 export interface WorkBucket {
   id: string;
   organizationId: string;
   clientAssociationId: string;
+  programSeriesId?: string | null;
   kind: WorkBucketKind;
   name: string;
-  status: "planning" | "active" | "complete";
+  generatedLabel?: string;
+  cycleLabel?: string;
+  status: WorkBucketStatus;
+  recurrence?: RecurrencePattern;
+  planningStartsAt?: string;
+  startsAt?: string;
+  endsAt?: string;
+  closeoutDueAt?: string;
+  deliveryFormat?: DeliveryFormat;
+  locationName?: string;
+  locationType?: LocationType;
+  ownerId?: string | null;
+  previousBucketId?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export type WorkBucketStatus = WorkBucket["status"];
-
 export const WORK_BUCKET_STATUS_LABELS: Record<WorkBucketStatus, string> = {
+  idea: "Idea",
   planning: "Planning",
-  active: "Active",
-  complete: "Complete"
+  production: "Production",
+  live: "Live",
+  closeout: "Closeout",
+  complete: "Complete",
+  canceled: "Canceled",
+  archived: "Archived"
 };
 
 export interface WorkBucketCreateInput {
   clientAssociationId: string;
+  programSeriesId?: string | null;
   kind: WorkBucketKind;
   name: string;
+  generatedLabel?: string;
+  cycleLabel?: string;
   status?: WorkBucketStatus;
+  recurrence?: RecurrencePattern;
+  planningStartsAt?: string;
+  startsAt?: string;
+  endsAt?: string;
+  closeoutDueAt?: string;
+  deliveryFormat?: DeliveryFormat;
+  locationName?: string;
+  locationType?: LocationType;
+  ownerId?: string | null;
+  previousBucketId?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string;
+  notes?: string;
+  now?: string;
 }
 
 export const DEFAULT_CLIENT_BUCKET_KINDS = ["membership", "generalOperations"] as const;
@@ -170,6 +250,30 @@ export const WORK_BUCKET_KIND_LABELS: Record<WorkBucketKind, string> = {
   membership: "Membership",
   generalOperations: "General operations",
   internalOps: "Internal operations"
+};
+
+export const RECURRENCE_PATTERN_LABELS: Record<RecurrencePattern, string> = {
+  annual: "Annual",
+  quarterly: "Quarterly",
+  monthly: "Monthly",
+  weekly: "Weekly",
+  oneTime: "One time",
+  ongoing: "Ongoing",
+  adHoc: "Ad hoc"
+};
+
+export const DELIVERY_FORMAT_LABELS: Record<DeliveryFormat, string> = {
+  inPerson: "In person",
+  virtual: "Virtual",
+  hybrid: "Hybrid",
+  notApplicable: "Not applicable"
+};
+
+export const LOCATION_TYPE_LABELS: Record<LocationType, string> = {
+  venue: "Venue",
+  platform: "Platform",
+  mixed: "Mixed",
+  notApplicable: "Not applicable"
 };
 
 export const WORK_STATUS_LABELS: Record<WorkStatus, string> = {
@@ -420,6 +524,7 @@ export interface FoundationData {
   clients: ClientAssociation[];
   staff: StaffProfile[];
   currentUser: CurrentUser;
+  programSeries: ProgramSeries[];
   buckets: WorkBucket[];
   actionItems: ActionItem[];
   collateralItems: CollateralItem[];
@@ -494,62 +599,281 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
     assigneeId: "staff-melissa",
     organizationId: "org-demo-amc"
   },
+  programSeries: [
+    {
+      id: "series-ppma-annual-conference",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Annual Conference",
+      defaultKind: "event",
+      recurrence: "annual",
+      defaultDeliveryFormat: "inPerson",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-spring-ceu-program",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Spring CEU Program",
+      defaultKind: "educationProgram",
+      recurrence: "annual",
+      defaultDeliveryFormat: "hybrid",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-membership",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Membership",
+      defaultKind: "membership",
+      recurrence: "ongoing",
+      defaultDeliveryFormat: "notApplicable",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-general-operations",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "General Operations",
+      defaultKind: "generalOperations",
+      recurrence: "ongoing",
+      defaultDeliveryFormat: "notApplicable",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-wpc-partner-fulfillment",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-western-parks",
+      name: "Partner Fulfillment",
+      defaultKind: "sponsorFulfillment",
+      recurrence: "ongoing",
+      defaultDeliveryFormat: "notApplicable",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-wpc-membership",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-western-parks",
+      name: "Membership",
+      defaultKind: "membership",
+      recurrence: "ongoing",
+      defaultDeliveryFormat: "notApplicable",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-wpc-general-operations",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-western-parks",
+      name: "General Operations",
+      defaultKind: "generalOperations",
+      recurrence: "ongoing",
+      defaultDeliveryFormat: "notApplicable",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    }
+  ],
   buckets: [
     {
       id: "bucket-ppma-annual-conference",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
+      programSeriesId: "series-ppma-annual-conference",
       kind: "event",
       name: "Annual Conference 2026",
-      status: "active"
+      generatedLabel: "Annual Conference 2026",
+      cycleLabel: "2026",
+      status: "live",
+      recurrence: "annual",
+      planningStartsAt: "2026-01-01",
+      startsAt: "2026-06-24",
+      endsAt: "2026-06-26",
+      closeoutDueAt: "2026-07-15",
+      deliveryFormat: "inPerson",
+      locationName: "",
+      locationType: "venue",
+      ownerId: "staff-melissa",
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
       id: "bucket-ppma-ceu-program",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
+      programSeriesId: "series-ppma-spring-ceu-program",
       kind: "educationProgram",
       name: "Spring CEU Program",
-      status: "planning"
+      generatedLabel: "Spring CEU Program 2026",
+      cycleLabel: "2026",
+      status: "planning",
+      recurrence: "annual",
+      planningStartsAt: "2026-03-01",
+      startsAt: "2026-06-01",
+      endsAt: "2026-06-30",
+      closeoutDueAt: "2026-07-15",
+      deliveryFormat: "hybrid",
+      locationName: "",
+      locationType: "mixed",
+      ownerId: "staff-operations",
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
       id: "bucket-ppma-membership",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
+      programSeriesId: "series-ppma-membership",
       kind: "membership",
       name: "Membership",
-      status: "active"
+      generatedLabel: "Membership",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
       id: "bucket-ppma-general-operations",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
+      programSeriesId: "series-ppma-general-operations",
       kind: "generalOperations",
       name: "General Operations",
-      status: "active"
+      generatedLabel: "General Operations",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
       id: "bucket-wpc-sponsor-fulfillment",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-western-parks",
+      programSeriesId: "series-wpc-partner-fulfillment",
       kind: "sponsorFulfillment",
       name: "Partner Fulfillment",
-      status: "active"
+      generatedLabel: "Partner Fulfillment",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
       id: "bucket-wpc-membership",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-western-parks",
+      programSeriesId: "series-wpc-membership",
       kind: "membership",
       name: "Membership",
-      status: "active"
+      generatedLabel: "Membership",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
       id: "bucket-wpc-general-operations",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-western-parks",
+      programSeriesId: "series-wpc-general-operations",
       kind: "generalOperations",
       name: "General Operations",
-      status: "active"
+      generatedLabel: "General Operations",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
     }
   ],
   actionItems: [
@@ -1079,6 +1403,34 @@ export function createClientAssociation(
   };
 }
 
+function normalizeWorkBucketStatus(status: unknown): WorkBucketStatus {
+  if (status === "active") {
+    return "live";
+  }
+
+  return typeof status === "string" && WORK_BUCKET_STATUSES.includes(status as WorkBucketStatus)
+    ? (status as WorkBucketStatus)
+    : "planning";
+}
+
+function normalizeRecurrencePattern(recurrence: unknown): RecurrencePattern {
+  return typeof recurrence === "string" && RECURRENCE_PATTERNS.includes(recurrence as RecurrencePattern)
+    ? (recurrence as RecurrencePattern)
+    : "adHoc";
+}
+
+function normalizeDeliveryFormat(deliveryFormat: unknown): DeliveryFormat {
+  return typeof deliveryFormat === "string" && DELIVERY_FORMATS.includes(deliveryFormat as DeliveryFormat)
+    ? (deliveryFormat as DeliveryFormat)
+    : "notApplicable";
+}
+
+function normalizeLocationType(locationType: unknown): LocationType {
+  return typeof locationType === "string" && LOCATION_TYPES.includes(locationType as LocationType)
+    ? (locationType as LocationType)
+    : "notApplicable";
+}
+
 export function validateWorkBucketCreateInput(
   input: WorkBucketCreateInput,
   data: Pick<FoundationData, "clients" | "organization">
@@ -1092,6 +1444,22 @@ export function validateWorkBucketCreateInput(
 
   if (!input.name.trim()) {
     errors.push("Bucket name is required.");
+  }
+
+  if (input.status && !WORK_BUCKET_STATUSES.includes(input.status)) {
+    errors.push("Bucket status is invalid.");
+  }
+
+  if (input.recurrence && !RECURRENCE_PATTERNS.includes(input.recurrence)) {
+    errors.push("Bucket recurrence is invalid.");
+  }
+
+  if (input.deliveryFormat && !DELIVERY_FORMATS.includes(input.deliveryFormat)) {
+    errors.push("Bucket delivery format is invalid.");
+  }
+
+  if (input.locationType && !LOCATION_TYPES.includes(input.locationType)) {
+    errors.push("Bucket location type is invalid.");
   }
 
   return {
@@ -1110,14 +1478,121 @@ export function createWorkBucket(
     throw new Error(validation.errors.join(" "));
   }
 
+  const now = input.now ?? new Date().toISOString();
+  const recurrence = input.recurrence ?? "adHoc";
+  const cycleLabel = input.cycleLabel?.trim() ?? getCycleLabel({ recurrence, startsAt: input.startsAt });
+  const generatedLabel = input.generatedLabel?.trim() || generateBucketLabel({ programSeriesName: input.name, recurrence, cycleLabel, startsAt: input.startsAt });
+
   return {
     id: `bucket-${crypto.randomUUID()}`,
     organizationId: data.organization.id,
     clientAssociationId: input.clientAssociationId,
+    programSeriesId: input.programSeriesId?.trim() || null,
     kind: input.kind,
     name: input.name.trim(),
-    status: input.status ?? "planning"
+    generatedLabel,
+    cycleLabel,
+    status: input.status ?? "planning",
+    recurrence,
+    planningStartsAt: input.planningStartsAt?.trim() ?? "",
+    startsAt: input.startsAt?.trim() ?? "",
+    endsAt: input.endsAt?.trim() ?? "",
+    closeoutDueAt: input.closeoutDueAt?.trim() ?? "",
+    deliveryFormat: input.deliveryFormat ?? "notApplicable",
+    locationName: input.locationName?.trim() ?? "",
+    locationType: input.locationType ?? "notApplicable",
+    ownerId: input.ownerId?.trim() || null,
+    previousBucketId: input.previousBucketId?.trim() || null,
+    isArchived: input.isArchived ?? false,
+    archivedAt: input.archivedAt?.trim() ?? "",
+    notes: input.notes?.trim() ?? "",
+    createdAt: now,
+    updatedAt: now
   };
+}
+
+export function createProgramSeriesForBucket(bucket: WorkBucket): ProgramSeries {
+  const now = bucket.createdAt || new Date().toISOString();
+
+  return {
+    id: bucket.programSeriesId || `series-${bucket.id.replace(/^bucket-/, "")}`,
+    organizationId: bucket.organizationId,
+    clientAssociationId: bucket.clientAssociationId,
+    name: inferProgramSeriesName(bucket),
+    defaultKind: bucket.kind,
+    recurrence: normalizeRecurrencePattern(bucket.recurrence),
+    defaultDeliveryFormat: normalizeDeliveryFormat(bucket.deliveryFormat),
+    active: !isBucketArchived(bucket),
+    notes: "",
+    createdAt: now,
+    updatedAt: bucket.updatedAt || now,
+    defaultOwnerId: bucket.ownerId ?? null
+  };
+}
+
+export function ensureProgramSeriesForBuckets(
+  programSeries: ProgramSeries[],
+  buckets: WorkBucket[]
+): ProgramSeries[] {
+  const nextSeries = [...programSeries];
+  const seriesIds = new Set(nextSeries.map((series) => series.id));
+
+  for (const bucket of buckets) {
+    const programSeriesId = bucket.programSeriesId || `series-${bucket.id.replace(/^bucket-/, "")}`;
+
+    if (!seriesIds.has(programSeriesId)) {
+      const series = createProgramSeriesForBucket({ ...bucket, programSeriesId });
+      nextSeries.push(series);
+      seriesIds.add(series.id);
+    }
+  }
+
+  return nextSeries;
+}
+
+export function normalizeWorkBucketsForProgramSeries(
+  buckets: WorkBucket[],
+  programSeries: ProgramSeries[]
+): WorkBucket[] {
+  return buckets.map((bucket) => {
+    const programSeriesId = bucket.programSeriesId || `series-${bucket.id.replace(/^bucket-/, "")}`;
+    const series = programSeries.find((candidate) => candidate.id === programSeriesId);
+    const recurrence = normalizeRecurrencePattern(bucket.recurrence ?? series?.recurrence);
+    const status = normalizeWorkBucketStatus(bucket.status);
+    const cycleLabel = bucket.cycleLabel ?? getCycleLabel({ recurrence, startsAt: bucket.startsAt });
+    const generatedLabel =
+      bucket.generatedLabel ||
+      generateBucketLabel({
+        programSeriesName: series?.name ?? bucket.name,
+        recurrence,
+        startsAt: bucket.startsAt,
+        cycleLabel
+      });
+    const now = bucket.createdAt || "2026-05-01T12:00:00.000Z";
+
+    return {
+      ...bucket,
+      programSeriesId,
+      generatedLabel,
+      cycleLabel,
+      status,
+      recurrence,
+      planningStartsAt: bucket.planningStartsAt ?? "",
+      startsAt: bucket.startsAt ?? "",
+      endsAt: bucket.endsAt ?? "",
+      closeoutDueAt: bucket.closeoutDueAt ?? "",
+      deliveryFormat: normalizeDeliveryFormat(bucket.deliveryFormat ?? series?.defaultDeliveryFormat),
+      locationName: bucket.locationName ?? "",
+      locationType: normalizeLocationType(bucket.locationType),
+      ownerId: bucket.ownerId ?? series?.defaultOwnerId ?? null,
+      previousBucketId: bucket.previousBucketId ?? null,
+      isArchived: bucket.isArchived ?? status === "archived",
+      archivedAt: bucket.archivedAt ?? "",
+      notes: bucket.notes ?? "",
+      createdAt: now,
+      updatedAt: bucket.updatedAt || now
+    };
+  });
 }
 
 export function createDefaultBucketsForClient(input: {
@@ -1133,24 +1608,60 @@ export function createDefaultBucketsForClient(input: {
   const defaults: WorkBucket[] = [];
 
   if (!existingKinds.has("membership")) {
+    const now = new Date().toISOString();
     defaults.push({
       id: `bucket-${crypto.randomUUID()}`,
       organizationId: input.organizationId,
       clientAssociationId: input.clientAssociationId,
       kind: "membership",
       name: "Membership",
-      status: "active"
+      generatedLabel: "Membership",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: now,
+      updatedAt: now
     });
   }
 
   if (!existingKinds.has("generalOperations")) {
+    const now = new Date().toISOString();
     defaults.push({
       id: `bucket-${crypto.randomUUID()}`,
       organizationId: input.organizationId,
       clientAssociationId: input.clientAssociationId,
       kind: "generalOperations",
       name: "General Operations",
-      status: "active"
+      generatedLabel: "General Operations",
+      cycleLabel: "",
+      status: "live",
+      recurrence: "ongoing",
+      planningStartsAt: "",
+      startsAt: "",
+      endsAt: "",
+      closeoutDueAt: "",
+      deliveryFormat: "notApplicable",
+      locationName: "",
+      locationType: "notApplicable",
+      ownerId: null,
+      previousBucketId: null,
+      isArchived: false,
+      archivedAt: "",
+      notes: "",
+      createdAt: now,
+      updatedAt: now
     });
   }
 
@@ -1348,20 +1859,217 @@ export function getClientAssociationName(clients: ClientAssociation[], clientAss
   return clients.find((client) => client.id === clientAssociationId)?.shortName ?? "Unknown client";
 }
 
+export function getCycleLabel(input: {
+  recurrence: RecurrencePattern;
+  startsAt?: string;
+  cycleLabel?: string;
+}) {
+  if (input.cycleLabel !== undefined) {
+    return input.cycleLabel.trim();
+  }
+
+  const date = parseDateOnly(input.startsAt);
+
+  if (input.recurrence === "ongoing") {
+    return "";
+  }
+
+  if (!date) {
+    return "";
+  }
+
+  const year = date.getUTCFullYear();
+
+  if (input.recurrence === "annual") {
+    return String(year);
+  }
+
+  if (input.recurrence === "monthly") {
+    return `${date.toLocaleString("en-US", { month: "long", timeZone: "UTC" })} ${year}`;
+  }
+
+  if (input.recurrence === "quarterly") {
+    return `Q${Math.floor(date.getUTCMonth() / 3) + 1} ${year}`;
+  }
+
+  if (input.recurrence === "weekly") {
+    return `Week of ${input.startsAt}`;
+  }
+
+  return input.startsAt ?? "";
+}
+
+export function generateBucketLabel(input: {
+  programSeriesName: string;
+  recurrence: RecurrencePattern;
+  startsAt?: string;
+  cycleLabel?: string;
+}) {
+  const baseName = input.programSeriesName.trim();
+  const cycleLabel = getCycleLabel({
+    recurrence: input.recurrence,
+    startsAt: input.startsAt,
+    cycleLabel: input.cycleLabel
+  });
+
+  if (!cycleLabel || input.recurrence === "ongoing") {
+    return baseName;
+  }
+
+  if (input.recurrence === "annual") {
+    return `${baseName} ${cycleLabel}`;
+  }
+
+  return `${baseName} - ${cycleLabel}`;
+}
+
+export function getBucketDisplayLabel(bucket: WorkBucket, programSeries?: ProgramSeries | null) {
+  if (bucket.generatedLabel?.trim()) {
+    return bucket.generatedLabel;
+  }
+
+  if (programSeries) {
+    return generateBucketLabel({
+      programSeriesName: programSeries.name,
+      recurrence: bucket.recurrence ?? programSeries.recurrence,
+      startsAt: bucket.startsAt,
+      cycleLabel: bucket.cycleLabel
+    });
+  }
+
+  return bucket.name;
+}
+
 export function getBucketOptionLabel(input: {
   bucket: WorkBucket;
   clients: ClientAssociation[];
+  programSeries?: ProgramSeries[];
   includeKind?: boolean;
 }) {
   const client = input.clients.find((candidate) => candidate.id === input.bucket.clientAssociationId);
+  const series = input.programSeries?.find((candidate) => candidate.id === input.bucket.programSeriesId);
   const clientLabel = client?.shortName || client?.name || "Unknown client";
   const kindLabel = input.includeKind ? ` (${WORK_BUCKET_KIND_LABELS[input.bucket.kind]})` : "";
 
-  return `${clientLabel} / ${input.bucket.name}${kindLabel}`;
+  return `${clientLabel} / ${getBucketDisplayLabel(input.bucket, series)}${kindLabel}`;
+}
+
+export function isBucketArchived(bucket: WorkBucket) {
+  return bucket.isArchived === true || bucket.status === "archived";
+}
+
+export function isBucketPast(bucket: WorkBucket, referenceDate = new Date()) {
+  if (bucket.status === "complete" || bucket.status === "canceled" || isBucketArchived(bucket)) {
+    return true;
+  }
+
+  const endBoundary = parseDateOnly(bucket.closeoutDueAt || bucket.endsAt);
+
+  return Boolean(endBoundary && endBoundary.getTime() < startOfUtcDay(referenceDate).getTime());
+}
+
+export function isBucketCurrent(bucket: WorkBucket, referenceDate = new Date()) {
+  if (isBucketArchived(bucket) || isBucketPast(bucket, referenceDate)) {
+    return false;
+  }
+
+  return ["idea", "planning", "production", "live", "closeout"].includes(bucket.status);
+}
+
+export function getCurrentBuckets(buckets: WorkBucket[], referenceDate = new Date()) {
+  return buckets.filter((bucket) => isBucketCurrent(bucket, referenceDate));
+}
+
+export function getPastBuckets(buckets: WorkBucket[], referenceDate = new Date()) {
+  return buckets.filter((bucket) => isBucketPast(bucket, referenceDate) && !isBucketArchived(bucket));
+}
+
+export function getSearchableBuckets(input: {
+  buckets: WorkBucket[];
+  programSeries?: ProgramSeries[];
+  query?: string;
+  includeArchived?: boolean;
+}) {
+  const query = input.query?.trim().toLowerCase() ?? "";
+
+  return input.buckets.filter((bucket) => {
+    if (isBucketArchived(bucket) && !input.includeArchived && !query) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    const series = input.programSeries?.find((candidate) => candidate.id === bucket.programSeriesId);
+    const haystack = [
+      bucket.id,
+      bucket.name,
+      bucket.generatedLabel,
+      bucket.cycleLabel,
+      series?.name,
+      WORK_BUCKET_KIND_LABELS[bucket.kind],
+      WORK_BUCKET_STATUS_LABELS[bucket.status]
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(query);
+  });
+}
+
+export function getRecentBucketsByProgramSeries(input: {
+  buckets: WorkBucket[];
+  programSeriesId: string;
+  referenceDate?: Date;
+  limit?: number;
+}) {
+  const referenceDate = input.referenceDate ?? new Date();
+  const limit = input.limit ?? 3;
+
+  return input.buckets
+    .filter((bucket) => bucket.programSeriesId === input.programSeriesId && isBucketPast(bucket, referenceDate) && !isBucketArchived(bucket))
+    .sort(compareBucketsByMostRecent)
+    .slice(0, limit);
+}
+
+export function getBucketDropdownOptions(input: {
+  buckets: WorkBucket[];
+  referenceDate?: Date;
+  includeArchived?: boolean;
+  previousPerProgramSeries?: number;
+}) {
+  const referenceDate = input.referenceDate ?? new Date();
+  const previousPerProgramSeries = input.previousPerProgramSeries ?? 3;
+  const currentBuckets = input.buckets.filter((bucket) => isBucketCurrent(bucket, referenceDate));
+  const selected = new Map(currentBuckets.map((bucket) => [bucket.id, bucket]));
+  const seriesIds = new Set(input.buckets.map((bucket) => bucket.programSeriesId).filter((id): id is string => Boolean(id)));
+
+  for (const programSeriesId of seriesIds) {
+    for (const bucket of getRecentBucketsByProgramSeries({
+      buckets: input.buckets,
+      programSeriesId,
+      referenceDate,
+      limit: previousPerProgramSeries
+    })) {
+      selected.set(bucket.id, bucket);
+    }
+  }
+
+  if (input.includeArchived) {
+    for (const bucket of input.buckets.filter(isBucketArchived)) {
+      selected.set(bucket.id, bucket);
+    }
+  }
+
+  return [...selected.values()].sort(compareBucketsByMostRecent);
 }
 
 export function getBucketName(buckets: WorkBucket[], bucketId: string) {
-  return buckets.find((bucket) => bucket.id === bucketId)?.name ?? "Unbucketed work";
+  const bucket = buckets.find((candidate) => candidate.id === bucketId);
+
+  return bucket ? getBucketDisplayLabel(bucket) : "Unbucketed work";
 }
 
 export function getAssigneeName(staff: StaffProfile[], assigneeId: string | null) {
@@ -1408,4 +2116,38 @@ export function getVisibleWorkItems(items: WorkItem[], filter: WorkVisibilityFil
 
     return true;
   });
+}
+
+function parseDateOnly(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function inferProgramSeriesName(bucket: WorkBucket) {
+  if (bucket.recurrence === "ongoing") {
+    return bucket.name;
+  }
+
+  return bucket.name
+    .replace(/\s+-\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}$/u, "")
+    .replace(/\s+-\s+Q[1-4]\s+\d{4}$/u, "")
+    .replace(/\s+\d{4}$/u, "")
+    .trim() || bucket.name;
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function getBucketSortDate(bucket: WorkBucket) {
+  return parseDateOnly(bucket.startsAt || bucket.endsAt || bucket.closeoutDueAt)?.getTime() ?? 0;
+}
+
+function compareBucketsByMostRecent(left: WorkBucket, right: WorkBucket) {
+  return getBucketSortDate(right) - getBucketSortDate(left) || getBucketDisplayLabel(left).localeCompare(getBucketDisplayLabel(right));
 }
