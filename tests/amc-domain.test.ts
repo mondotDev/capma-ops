@@ -5,6 +5,7 @@ import {
   COLLATERAL_STATUSES,
   COLLATERAL_TYPES,
   createActionItem,
+  archiveWorkBucket,
   createClientAssociation,
   createDefaultBucketsForClient,
   createCollateralItem,
@@ -20,6 +21,7 @@ import {
   getAssigneeName,
   getBucketDisplayLabel,
   getBucketDropdownOptions,
+  getClientWorkStructure,
   getBucketOptionLabel,
   getBucketWorkspace,
   getCurrentBuckets,
@@ -40,6 +42,8 @@ import {
   SPONSOR_FULFILLMENT_TYPE_LABELS,
   updateCollateralItem,
   updateSponsorFulfillmentRecord,
+  updateWorkBucket,
+  unarchiveWorkBucket,
   validateActionItemCreateInput,
   validateCollateralItemCreateInput,
   validateClientAssociationCreateInput,
@@ -71,7 +75,9 @@ import {
   loadAmcLocalState,
   saveAmcLocalState,
   updateCollateralItemInAmcLocalState,
-  updateSponsorFulfillmentRecordInAmcLocalState
+  updateProgramSeriesInAmcLocalState,
+  updateSponsorFulfillmentRecordInAmcLocalState,
+  updateWorkBucketInAmcLocalState
 } from "../lib/amc-local-state";
 
 test("employee visibility is limited to assigned work in their organization", () => {
@@ -203,7 +209,7 @@ test("bucket workspace selector returns scoped work and tracker records", () => 
   assert.equal(workspace.bucket?.id, "bucket-ppma-annual-conference");
   assert.equal(
     getBucketDisplayLabel(workspace.bucket!, DEMO_FOUNDATION_DATA.programSeries.find((series) => series.id === workspace.bucket?.programSeriesId)),
-    "Annual Conference 2026"
+    "Best Pest Expo 2026"
   );
   assert.deepEqual(workspace.actionItems.map((item) => item.id), ["action-ppma-speaker-confirmations"]);
   assert.deepEqual(workspace.collateralItems.map((item) => item.id), ["collateral-ppma-postcard"]);
@@ -269,7 +275,7 @@ test("bucket option labels fall back to client name when short name is missing",
 
   assert.equal(
     getBucketOptionLabel({ bucket, clients: [client], includeKind: false }),
-    `${client.name} / ${bucket.name}`
+    `${client.name} / ${getBucketDisplayLabel(bucket)}`
   );
 });
 
@@ -306,6 +312,127 @@ test("bucket label helpers generate annual, monthly, quarterly, and ongoing labe
     }),
     "General Operations"
   );
+});
+
+test("default seeded ProgramSeries include association operations examples", () => {
+  const ppmaSeries = DEMO_FOUNDATION_DATA.programSeries.filter((series) => series.clientAssociationId === "client-pacific-pest");
+  const mappings = new Map(ppmaSeries.map((series) => [series.name, `${series.defaultKind}:${series.recurrence}`]));
+
+  assert.equal(mappings.get("Pest Ed"), "educationProgram:annual");
+  assert.equal(mappings.get("Termite Academy"), "educationProgram:annual");
+  assert.equal(mappings.get("Legislative Day"), "event:annual");
+  assert.equal(mappings.get("Best Pest Expo"), "event:annual");
+  assert.equal(mappings.get("Development Summit"), "event:annual");
+  assert.equal(mappings.get("Monday Mingle"), "educationProgram:monthly");
+  assert.equal(mappings.get("First Friday"), "educationProgram:monthly");
+  assert.equal(mappings.get("News Brief"), "publicationIssue:monthly");
+  assert.equal(mappings.get("The Voice"), "publicationIssue:quarterly");
+  assert.equal(mappings.get("Membership"), "membership:ongoing");
+  assert.equal(mappings.get("General Operations"), "generalOperations:ongoing");
+});
+
+test("client work structure lists client-scoped ProgramSeries with related buckets", () => {
+  const structure = getClientWorkStructure(DEMO_FOUNDATION_DATA, { clientId: "client-pacific-pest" });
+  const bestPestExpo = structure.programSeries.find(({ series }) => series.name === "Best Pest Expo");
+
+  assert.equal(structure.client?.shortName, "PPMA");
+  assert.equal(bestPestExpo?.buckets.some((bucket) => bucket.id === "bucket-ppma-annual-conference"), true);
+  assert.deepEqual(structure.unassignedBuckets, []);
+});
+
+test("ProgramSeries edits preserve related bucket relationships", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const series = snapshot.programSeries.find((candidate) => candidate.id === "series-ppma-best-pest-expo")!;
+  const withEditedSeries = updateProgramSeriesInAmcLocalState(snapshot, series.id, {
+    name: "Best Pest Conference",
+    defaultKind: "event",
+    recurrence: "annual",
+    defaultDeliveryFormat: "hybrid",
+    active: false,
+    notes: "Paused for review.",
+    now: "2026-05-26T12:00:00.000Z"
+  });
+  const editedSeries = withEditedSeries.programSeries.find((candidate) => candidate.id === series.id)!;
+  const structure = getClientWorkStructure(withEditedSeries, { clientId: series.clientAssociationId });
+  const editedStructure = structure.programSeries.find(({ series: candidate }) => candidate.id === series.id)!;
+
+  assert.equal(editedSeries.name, "Best Pest Conference");
+  assert.equal(editedSeries.defaultDeliveryFormat, "hybrid");
+  assert.equal(editedSeries.active, false);
+  assert.equal(editedStructure.buckets[0]?.id, "bucket-ppma-annual-conference");
+});
+
+test("bucket lifecycle edits update dates, delivery fields, archive state, and preserve linked records", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const originalBucket = snapshot.buckets.find((bucket) => bucket.id === "bucket-ppma-annual-conference")!;
+  const editedBucket = updateWorkBucket(originalBucket, {
+    status: "closeout",
+    cycleLabel: "2026 revised",
+    generatedLabel: "Best Pest Expo 2026 Revised",
+    planningStartsAt: "2026-01-15",
+    startsAt: "2026-06-25",
+    endsAt: "2026-06-27",
+    closeoutDueAt: "2026-07-20",
+    deliveryFormat: "hybrid",
+    locationName: "Sacramento Convention Center",
+    locationType: "mixed",
+    ownerId: "staff-operations",
+    notes: "Updated logistics.",
+    now: "2026-05-26T12:00:00.000Z"
+  });
+  const withEditedBucket = updateWorkBucketInAmcLocalState(snapshot, originalBucket.id, {
+    status: editedBucket.status,
+    cycleLabel: editedBucket.cycleLabel,
+    generatedLabel: editedBucket.generatedLabel,
+    planningStartsAt: editedBucket.planningStartsAt,
+    startsAt: editedBucket.startsAt,
+    endsAt: editedBucket.endsAt,
+    closeoutDueAt: editedBucket.closeoutDueAt,
+    deliveryFormat: editedBucket.deliveryFormat,
+    locationName: editedBucket.locationName,
+    locationType: editedBucket.locationType,
+    ownerId: editedBucket.ownerId,
+    notes: editedBucket.notes
+  });
+  const workspace = getBucketWorkspace(withEditedBucket, {
+    clientId: originalBucket.clientAssociationId,
+    bucketId: originalBucket.id
+  });
+
+  assert.equal(editedBucket.status, "closeout");
+  assert.equal(editedBucket.startsAt, "2026-06-25");
+  assert.equal(editedBucket.deliveryFormat, "hybrid");
+  assert.equal(editedBucket.locationName, "Sacramento Convention Center");
+  assert.equal(workspace.bucket?.id, originalBucket.id);
+  assert.deepEqual(workspace.actionItems.map((item) => item.id), ["action-ppma-speaker-confirmations"]);
+  assert.deepEqual(workspace.collateralItems.map((item) => item.id), ["collateral-ppma-postcard"]);
+});
+
+test("bucket archive and unarchive keep records connected while controlling dropdown/search visibility", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const bucket = snapshot.buckets.find((candidate) => candidate.id === "bucket-ppma-annual-conference")!;
+  const archived = archiveWorkBucket(bucket, "2026-05-26T12:00:00.000Z");
+  const withArchived = updateWorkBucketInAmcLocalState(snapshot, bucket.id, {
+    status: archived.status,
+    isArchived: archived.isArchived,
+    archivedAt: archived.archivedAt
+  });
+  const archivedWorkspace = getBucketWorkspace(withArchived, {
+    clientId: bucket.clientAssociationId,
+    bucketId: bucket.id
+  });
+  const restored = unarchiveWorkBucket(archived, "planning", "2026-05-27T12:00:00.000Z");
+  const withRestored = updateWorkBucketInAmcLocalState(withArchived, bucket.id, {
+    status: restored.status,
+    isArchived: restored.isArchived,
+    archivedAt: restored.archivedAt
+  });
+
+  assert.equal(getBucketDropdownOptions({ buckets: withArchived.buckets }).some((candidate) => candidate.id === bucket.id), false);
+  assert.equal(getSearchableBuckets({ buckets: withArchived.buckets, query: "Best Pest" }).some((candidate) => candidate.id === bucket.id), true);
+  assert.deepEqual(archivedWorkspace.actionItems.map((item) => item.id), ["action-ppma-speaker-confirmations"]);
+  assert.equal(withRestored.buckets.find((candidate) => candidate.id === bucket.id)?.isArchived, false);
+  assert.equal(getBucketDropdownOptions({ buckets: withRestored.buckets }).some((candidate) => candidate.id === bucket.id), true);
 });
 
 test("bucket lifecycle selectors detect current, past, complete, canceled, and archived buckets", () => {

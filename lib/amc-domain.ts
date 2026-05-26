@@ -192,6 +192,16 @@ export interface ProgramSeriesCreateInput {
   now?: string;
 }
 
+export interface ProgramSeriesUpdateInput {
+  name?: string;
+  defaultKind?: WorkBucketKind;
+  recurrence?: RecurrencePattern;
+  defaultDeliveryFormat?: DeliveryFormat;
+  active?: boolean;
+  notes?: string;
+  now?: string;
+}
+
 export interface WorkBucket {
   id: string;
   organizationId: string;
@@ -239,6 +249,25 @@ export interface WorkBucketCreateInput {
   cycleLabel?: string;
   status?: WorkBucketStatus;
   recurrence?: RecurrencePattern;
+  planningStartsAt?: string;
+  startsAt?: string;
+  endsAt?: string;
+  closeoutDueAt?: string;
+  deliveryFormat?: DeliveryFormat;
+  locationName?: string;
+  locationType?: LocationType;
+  ownerId?: string | null;
+  previousBucketId?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string;
+  notes?: string;
+  now?: string;
+}
+
+export interface WorkBucketUpdateInput {
+  status?: WorkBucketStatus;
+  generatedLabel?: string;
+  cycleLabel?: string;
   planningStartsAt?: string;
   startsAt?: string;
   endsAt?: string;
@@ -568,6 +597,15 @@ export interface BucketWorkspace {
   sponsorFulfillmentRecords: SponsorFulfillmentRecord[];
 }
 
+export interface ClientWorkStructure {
+  client: ClientAssociation | null;
+  programSeries: Array<{
+    series: ProgramSeries;
+    buckets: WorkBucket[];
+  }>;
+  unassignedBuckets: WorkBucket[];
+}
+
 export const DEMO_FOUNDATION_DATA: FoundationData = {
   organization: {
     id: "org-demo-amc",
@@ -615,10 +653,36 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
   },
   programSeries: [
     {
-      id: "series-ppma-annual-conference",
+      id: "series-ppma-pest-ed",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
-      name: "Annual Conference",
+      name: "Pest Ed",
+      defaultKind: "educationProgram",
+      recurrence: "annual",
+      defaultDeliveryFormat: "hybrid",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-termite-academy",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Termite Academy",
+      defaultKind: "educationProgram",
+      recurrence: "annual",
+      defaultDeliveryFormat: "hybrid",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-legislative-day",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Legislative Day",
       defaultKind: "event",
       recurrence: "annual",
       defaultDeliveryFormat: "inPerson",
@@ -628,13 +692,78 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       updatedAt: "2026-05-01T12:00:00.000Z"
     },
     {
-      id: "series-ppma-spring-ceu-program",
+      id: "series-ppma-best-pest-expo",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
-      name: "Spring CEU Program",
-      defaultKind: "educationProgram",
+      name: "Best Pest Expo",
+      defaultKind: "event",
       recurrence: "annual",
+      defaultDeliveryFormat: "inPerson",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-development-summit",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Development Summit",
+      defaultKind: "event",
+      recurrence: "annual",
+      defaultDeliveryFormat: "inPerson",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-monday-mingle",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "Monday Mingle",
+      defaultKind: "educationProgram",
+      recurrence: "monthly",
       defaultDeliveryFormat: "hybrid",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-first-friday",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "First Friday",
+      defaultKind: "educationProgram",
+      recurrence: "monthly",
+      defaultDeliveryFormat: "virtual",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-news-brief",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "News Brief",
+      defaultKind: "publicationIssue",
+      recurrence: "monthly",
+      defaultDeliveryFormat: "notApplicable",
+      active: true,
+      notes: "",
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    },
+    {
+      id: "series-ppma-the-voice",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-pacific-pest",
+      name: "The Voice",
+      defaultKind: "publicationIssue",
+      recurrence: "quarterly",
+      defaultDeliveryFormat: "notApplicable",
       active: true,
       notes: "",
       createdAt: "2026-05-01T12:00:00.000Z",
@@ -711,10 +840,10 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       id: "bucket-ppma-annual-conference",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
-      programSeriesId: "series-ppma-annual-conference",
+      programSeriesId: "series-ppma-best-pest-expo",
       kind: "event",
-      name: "Annual Conference 2026",
-      generatedLabel: "Annual Conference 2026",
+      name: "Best Pest Expo",
+      generatedLabel: "Best Pest Expo 2026",
       cycleLabel: "2026",
       status: "live",
       recurrence: "annual",
@@ -737,10 +866,10 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       id: "bucket-ppma-ceu-program",
       organizationId: "org-demo-amc",
       clientAssociationId: "client-pacific-pest",
-      programSeriesId: "series-ppma-spring-ceu-program",
+      programSeriesId: "series-ppma-pest-ed",
       kind: "educationProgram",
-      name: "Spring CEU Program",
-      generatedLabel: "Spring CEU Program 2026",
+      name: "Pest Ed",
+      generatedLabel: "Pest Ed 2026",
       cycleLabel: "2026",
       status: "planning",
       recurrence: "annual",
@@ -1076,6 +1205,25 @@ export function getBucketWorkspace(
     educationApplications,
     speakerEngagements,
     sponsorFulfillmentRecords
+  };
+}
+
+export function getClientWorkStructure(
+  data: Pick<FoundationData, "clients" | "programSeries" | "buckets">,
+  input: { clientId: string }
+): ClientWorkStructure {
+  const client = data.clients.find((candidate) => candidate.id === input.clientId) ?? null;
+  const clientBuckets = data.buckets.filter((bucket) => bucket.clientAssociationId === input.clientId);
+  const clientSeries = data.programSeries.filter((series) => series.clientAssociationId === input.clientId);
+  const seriesIds = new Set(clientSeries.map((series) => series.id));
+
+  return {
+    client,
+    programSeries: clientSeries.map((series) => ({
+      series,
+      buckets: clientBuckets.filter((bucket) => bucket.programSeriesId === series.id)
+    })),
+    unassignedBuckets: clientBuckets.filter((bucket) => !bucket.programSeriesId || !seriesIds.has(bucket.programSeriesId))
   };
 }
 
@@ -1476,6 +1624,33 @@ export function createProgramSeries(
   };
 }
 
+export function updateProgramSeries(item: ProgramSeries, input: ProgramSeriesUpdateInput): ProgramSeries {
+  const nextName = input.name === undefined ? item.name : input.name.trim();
+
+  if (!nextName) {
+    throw new Error("Program/series name is required.");
+  }
+
+  if (input.recurrence && !RECURRENCE_PATTERNS.includes(input.recurrence)) {
+    throw new Error("Program/series recurrence is invalid.");
+  }
+
+  if (input.defaultDeliveryFormat && !DELIVERY_FORMATS.includes(input.defaultDeliveryFormat)) {
+    throw new Error("Program/series delivery format is invalid.");
+  }
+
+  return {
+    ...item,
+    name: nextName,
+    defaultKind: input.defaultKind ?? item.defaultKind,
+    recurrence: input.recurrence ?? item.recurrence,
+    defaultDeliveryFormat: input.defaultDeliveryFormat ?? item.defaultDeliveryFormat,
+    active: input.active ?? item.active,
+    notes: input.notes === undefined ? item.notes : input.notes.trim(),
+    updatedAt: input.now ?? new Date().toISOString()
+  };
+}
+
 function normalizeWorkBucketStatus(status: unknown): WorkBucketStatus {
   if (status === "active") {
     return "live";
@@ -1591,6 +1766,61 @@ export function createWorkBucket(
     createdAt: now,
     updatedAt: now
   };
+}
+
+export function updateWorkBucket(item: WorkBucket, input: WorkBucketUpdateInput): WorkBucket {
+  if (input.status && !WORK_BUCKET_STATUSES.includes(input.status)) {
+    throw new Error("Bucket status is invalid.");
+  }
+
+  if (input.deliveryFormat && !DELIVERY_FORMATS.includes(input.deliveryFormat)) {
+    throw new Error("Bucket delivery format is invalid.");
+  }
+
+  if (input.locationType && !LOCATION_TYPES.includes(input.locationType)) {
+    throw new Error("Bucket location type is invalid.");
+  }
+
+  const isArchived = input.isArchived ?? item.isArchived ?? input.status === "archived";
+  const status = input.status ?? (isArchived ? "archived" : item.status);
+
+  return {
+    ...item,
+    status,
+    generatedLabel: input.generatedLabel === undefined ? item.generatedLabel : input.generatedLabel.trim(),
+    cycleLabel: input.cycleLabel === undefined ? item.cycleLabel : input.cycleLabel.trim(),
+    planningStartsAt: input.planningStartsAt === undefined ? item.planningStartsAt : input.planningStartsAt.trim(),
+    startsAt: input.startsAt === undefined ? item.startsAt : input.startsAt.trim(),
+    endsAt: input.endsAt === undefined ? item.endsAt : input.endsAt.trim(),
+    closeoutDueAt: input.closeoutDueAt === undefined ? item.closeoutDueAt : input.closeoutDueAt.trim(),
+    deliveryFormat: input.deliveryFormat ?? item.deliveryFormat,
+    locationName: input.locationName === undefined ? item.locationName : input.locationName.trim(),
+    locationType: input.locationType ?? item.locationType,
+    ownerId: input.ownerId === undefined ? item.ownerId : input.ownerId?.trim() || null,
+    previousBucketId: input.previousBucketId === undefined ? item.previousBucketId : input.previousBucketId?.trim() || null,
+    isArchived,
+    archivedAt: input.archivedAt === undefined ? item.archivedAt : input.archivedAt.trim(),
+    notes: input.notes === undefined ? item.notes : input.notes.trim(),
+    updatedAt: input.now ?? new Date().toISOString()
+  };
+}
+
+export function archiveWorkBucket(item: WorkBucket, now = new Date().toISOString()) {
+  return updateWorkBucket(item, {
+    status: "archived",
+    isArchived: true,
+    archivedAt: now,
+    now
+  });
+}
+
+export function unarchiveWorkBucket(item: WorkBucket, status: WorkBucketStatus = "planning", now = new Date().toISOString()) {
+  return updateWorkBucket(item, {
+    status: status === "archived" ? "planning" : status,
+    isArchived: false,
+    archivedAt: "",
+    now
+  });
 }
 
 export function createProgramSeriesForBucket(bucket: WorkBucket): ProgramSeries {

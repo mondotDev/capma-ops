@@ -4,6 +4,8 @@ import {
   ensureProgramSeriesForBuckets,
   ensureDefaultBucketsForClients,
   normalizeWorkBucketsForProgramSeries,
+  updateProgramSeries,
+  updateWorkBucket,
   updateCollateralItem,
   updateSponsorFulfillmentRecord,
   type ActionItem,
@@ -15,11 +17,13 @@ import {
   type EducationApplication,
   type FoundationData,
   type ProgramSeries,
+  type ProgramSeriesUpdateInput,
   type SpeakerEngagement,
   type SponsorFulfillmentRecord,
   type SponsorFulfillmentUpdateInput,
   type StaffProfile,
-  type WorkBucket
+  type WorkBucket,
+  type WorkBucketUpdateInput
 } from "@/lib/amc-domain";
 
 export const AMC_LOCAL_STATE_STORAGE_KEY = "amc-ops-hub-v2-state";
@@ -233,6 +237,19 @@ export function addProgramSeriesToAmcLocalState(
   };
 }
 
+export function updateProgramSeriesInAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  programSeriesId: string,
+  updates: ProgramSeriesUpdateInput
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    programSeries: snapshot.programSeries.map((series) =>
+      series.id === programSeriesId ? updateProgramSeries(series, updates) : series
+    )
+  };
+}
+
 export function addWorkBucketToAmcLocalState(
   snapshot: AmcLocalStateSnapshot,
   bucket: WorkBucket
@@ -243,6 +260,17 @@ export function addWorkBucketToAmcLocalState(
     ...snapshot,
     programSeries,
     buckets: normalizeWorkBucketsForProgramSeries([...snapshot.buckets, bucket], programSeries)
+  };
+}
+
+export function updateWorkBucketInAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  bucketId: string,
+  updates: WorkBucketUpdateInput
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    buckets: snapshot.buckets.map((bucket) => (bucket.id === bucketId ? updateWorkBucket(bucket, updates) : bucket))
   };
 }
 

@@ -12,6 +12,8 @@ import {
   DELIVERY_FORMATS,
   generateBucketLabel,
   getBucketDisplayLabel,
+  getClientWorkStructure,
+  isBucketArchived,
   LOCATION_TYPE_LABELS,
   LOCATION_TYPES,
   RECURRENCE_PATTERN_LABELS,
@@ -20,13 +22,19 @@ import {
   validateProgramSeriesCreateInput,
   validateWorkBucketCreateInput,
   WORK_BUCKET_KIND_LABELS,
+  WORK_BUCKET_STATUSES,
   WORK_BUCKET_STATUS_LABELS,
   type ClientAssociationCreateInput,
   type DeliveryFormat,
   type LocationType,
+  type ProgramSeries,
   type ProgramSeriesCreateInput,
+  type ProgramSeriesUpdateInput,
   type RecurrencePattern,
+  type StaffProfile,
+  type WorkBucket,
   type WorkBucketCreateInput,
+  type WorkBucketUpdateInput,
   type WorkBucketKind
 } from "@/lib/amc-domain";
 
@@ -63,7 +71,7 @@ const QUARTER_OPTIONS = [
 ];
 
 export function AmcClientManagement() {
-  const { state, addClientAssociation, addProgramSeries, addWorkBucket } = useAmcLocalState();
+  const { state, addClientAssociation, addProgramSeries, addWorkBucket, updateProgramSeries, updateWorkBucket } = useAmcLocalState();
   const firstClientId = state.clients[0]?.id ?? "";
   const firstSeries = state.programSeries.find((series) => series.clientAssociationId === firstClientId);
   const [clientForm, setClientForm] = useState<ClientAssociationCreateInput>({
@@ -96,6 +104,8 @@ export function AmcClientManagement() {
   });
   const [clientFeedback, setClientFeedback] = useState("");
   const [bucketFeedback, setBucketFeedback] = useState("");
+  const [managedClientId, setManagedClientId] = useState<string | null>(null);
+  const [structureFeedback, setStructureFeedback] = useState("");
   const bucketsByClient = useMemo(
     () =>
       state.clients.map((client) => ({
@@ -117,6 +127,7 @@ export function AmcClientManagement() {
     startsAt: bucketForm.startsAt || structuredCycle.startsAt,
     cycleLabel: bucketForm.cycleLabel || structuredCycle.cycleLabel
   });
+  const managedStructure = managedClientId ? getClientWorkStructure(state, { clientId: managedClientId }) : null;
 
   function handleClientSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -596,10 +607,57 @@ export function AmcClientManagement() {
                   ))
                 )}
               </div>
+              <div className="amc-record-actions">
+                <button
+                  className="button-link button-link--inline-secondary"
+                  onClick={() => {
+                    setManagedClientId((current) => (current === client.id ? null : client.id));
+                    setStructureFeedback("");
+                  }}
+                  type="button"
+                >
+                  {managedClientId === client.id ? "Hide work structure" : "Manage work structure"}
+                </button>
+              </div>
             </article>
           ))}
         </div>
       </section>
+
+      {managedStructure?.client ? (
+        <ClientWorkStructureManager
+          bucketFeedback={structureFeedback}
+          buckets={state.buckets}
+          clientName={managedStructure.client.name}
+          onArchiveBucket={(bucket) => {
+            updateWorkBucket(bucket.id, {
+              status: "archived",
+              isArchived: true,
+              archivedAt: new Date().toISOString()
+            });
+            setStructureFeedback(`${getBucketDisplayLabel(bucket)} archived.`);
+          }}
+          onRestoreBucket={(bucket) => {
+            updateWorkBucket(bucket.id, {
+              status: "planning",
+              isArchived: false,
+              archivedAt: ""
+            });
+            setStructureFeedback(`${getBucketDisplayLabel(bucket)} restored.`);
+          }}
+          onUpdateBucket={(bucketId, updates) => {
+            updateWorkBucket(bucketId, updates);
+            setStructureFeedback("Bucket updated.");
+          }}
+          onUpdateProgramSeries={(seriesId, updates) => {
+            updateProgramSeries(seriesId, updates);
+            setStructureFeedback("Program/series updated.");
+          }}
+          programSeries={managedStructure.programSeries}
+          staff={state.staff}
+          unassignedBuckets={managedStructure.unassignedBuckets}
+        />
+      ) : null}
     </div>
   );
 }
@@ -689,6 +747,341 @@ function CycleInputs({
         value={cycleInputs.adHocLabel}
       />
     </label>
+  );
+}
+
+function ClientWorkStructureManager({
+  bucketFeedback,
+  buckets,
+  clientName,
+  onArchiveBucket,
+  onRestoreBucket,
+  onUpdateBucket,
+  onUpdateProgramSeries,
+  programSeries,
+  staff,
+  unassignedBuckets
+}: {
+  bucketFeedback: string;
+  buckets: WorkBucket[];
+  clientName: string;
+  onArchiveBucket: (bucket: WorkBucket) => void;
+  onRestoreBucket: (bucket: WorkBucket) => void;
+  onUpdateBucket: (bucketId: string, updates: WorkBucketUpdateInput) => void;
+  onUpdateProgramSeries: (seriesId: string, updates: ProgramSeriesUpdateInput) => void;
+  programSeries: Array<{ series: ProgramSeries; buckets: WorkBucket[] }>;
+  staff: StaffProfile[];
+  unassignedBuckets: WorkBucket[];
+}) {
+  return (
+    <section className="amc-panel">
+      <div className="amc-panel__header">
+        <div>
+          <h2>Manage work structure</h2>
+          <span>{clientName}</span>
+        </div>
+        <span>{programSeries.length} program/series</span>
+      </div>
+      {bucketFeedback ? <div className="amc-form-feedback">{bucketFeedback}</div> : null}
+      <div className="amc-list">
+        {programSeries.map(({ series, buckets: seriesBuckets }) => (
+          <article className="amc-client-structure-row" key={series.id}>
+            <ProgramSeriesEditForm onUpdate={(updates) => onUpdateProgramSeries(series.id, updates)} series={series} />
+            <div className="amc-bucket-link-list">
+              {seriesBuckets.length === 0 ? (
+                <div className="empty-state">No bucket instances yet.</div>
+              ) : (
+                seriesBuckets.map((bucket) => (
+                  <BucketLifecycleEditForm
+                    bucket={bucket}
+                    buckets={buckets}
+                    key={bucket.id}
+                    onArchive={() => onArchiveBucket(bucket)}
+                    onRestore={() => onRestoreBucket(bucket)}
+                    onUpdate={(updates) => onUpdateBucket(bucket.id, updates)}
+                    programSeries={series}
+                    staff={staff}
+                  />
+                ))
+              )}
+            </div>
+          </article>
+        ))}
+        {unassignedBuckets.length > 0 ? (
+          <article className="amc-client-structure-row">
+            <div className="amc-client-structure-row__header">
+              <div>
+                <strong>Unassigned buckets</strong>
+                <span>Missing or unknown ProgramSeries</span>
+              </div>
+              <span>{unassignedBuckets.length} buckets</span>
+            </div>
+          </article>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ProgramSeriesEditForm({
+  onUpdate,
+  series
+}: {
+  onUpdate: (updates: ProgramSeriesUpdateInput) => void;
+  series: ProgramSeries;
+}) {
+  const [draft, setDraft] = useState<ProgramSeriesUpdateInput>({
+    name: series.name,
+    defaultKind: series.defaultKind,
+    recurrence: series.recurrence,
+    defaultDeliveryFormat: series.defaultDeliveryFormat,
+    active: series.active,
+    notes: series.notes
+  });
+
+  return (
+    <div className="amc-client-structure-row__header">
+      <div className="amc-form-stack">
+        <label>
+          <span>Program / Series Name</span>
+          <input onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} type="text" value={draft.name ?? ""} />
+        </label>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>Default Kind</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, defaultKind: event.target.value as WorkBucketKind }))}
+              value={draft.defaultKind}
+            >
+              {BUCKET_KIND_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Recurrence</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, recurrence: event.target.value as RecurrencePattern }))}
+              value={draft.recurrence}
+            >
+              {RECURRENCE_PATTERNS.map((recurrence) => (
+                <option key={recurrence} value={recurrence}>
+                  {RECURRENCE_PATTERN_LABELS[recurrence]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>Default Delivery</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, defaultDeliveryFormat: event.target.value as DeliveryFormat }))}
+              value={draft.defaultDeliveryFormat}
+            >
+              {DELIVERY_FORMATS.map((format) => (
+                <option key={format} value={format}>
+                  {DELIVERY_FORMAT_LABELS[format]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Active</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, active: event.target.value === "true" }))}
+              value={String(draft.active)}
+            >
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          <span>Notes</span>
+          <textarea onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} value={draft.notes ?? ""} />
+        </label>
+        <button className="button-link button-link--inline-secondary" onClick={() => onUpdate(draft)} type="button">
+          Save Program / Series
+        </button>
+      </div>
+      <span>
+        {WORK_BUCKET_KIND_LABELS[series.defaultKind]} / {RECURRENCE_PATTERN_LABELS[series.recurrence]}
+      </span>
+    </div>
+  );
+}
+
+function BucketLifecycleEditForm({
+  bucket,
+  buckets,
+  onArchive,
+  onRestore,
+  onUpdate,
+  programSeries,
+  staff
+}: {
+  bucket: WorkBucket;
+  buckets: WorkBucket[];
+  onArchive: () => void;
+  onRestore: () => void;
+  onUpdate: (updates: WorkBucketUpdateInput) => void;
+  programSeries: ProgramSeries;
+  staff: StaffProfile[];
+}) {
+  const [draft, setDraft] = useState<WorkBucketUpdateInput>({
+    status: bucket.status,
+    cycleLabel: bucket.cycleLabel ?? "",
+    generatedLabel: bucket.generatedLabel ?? "",
+    planningStartsAt: bucket.planningStartsAt ?? "",
+    startsAt: bucket.startsAt ?? "",
+    endsAt: bucket.endsAt ?? "",
+    closeoutDueAt: bucket.closeoutDueAt ?? "",
+    deliveryFormat: bucket.deliveryFormat ?? programSeries.defaultDeliveryFormat,
+    locationName: bucket.locationName ?? "",
+    locationType: bucket.locationType ?? "notApplicable",
+    ownerId: bucket.ownerId ?? "",
+    previousBucketId: bucket.previousBucketId ?? "",
+    notes: bucket.notes ?? ""
+  });
+  const displayLabel = getBucketDisplayLabel({ ...bucket, ...draft }, programSeries);
+
+  return (
+    <div className="amc-bucket-link-row">
+      <div className="amc-form-stack">
+        <div>
+          <strong>{displayLabel}</strong>
+          <span>
+            {WORK_BUCKET_STATUS_LABELS[bucket.status]} / {bucket.cycleLabel || "No cycle"} /{" "}
+            {isBucketArchived(bucket) ? "Archived" : "Active views"}
+          </span>
+        </div>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>Status</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as WorkBucketUpdateInput["status"] }))}
+              value={draft.status}
+            >
+              {WORK_BUCKET_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {WORK_BUCKET_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Cycle Label</span>
+            <input onChange={(event) => setDraft((current) => ({ ...current, cycleLabel: event.target.value }))} type="text" value={draft.cycleLabel ?? ""} />
+          </label>
+        </div>
+        <label>
+          <span>Label Override</span>
+          <input onChange={(event) => setDraft((current) => ({ ...current, generatedLabel: event.target.value }))} type="text" value={draft.generatedLabel ?? ""} />
+        </label>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>Planning Starts</span>
+            <input onChange={(event) => setDraft((current) => ({ ...current, planningStartsAt: event.target.value }))} type="date" value={draft.planningStartsAt ?? ""} />
+          </label>
+          <label>
+            <span>Start</span>
+            <input onChange={(event) => setDraft((current) => ({ ...current, startsAt: event.target.value }))} type="date" value={draft.startsAt ?? ""} />
+          </label>
+        </div>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>End</span>
+            <input onChange={(event) => setDraft((current) => ({ ...current, endsAt: event.target.value }))} type="date" value={draft.endsAt ?? ""} />
+          </label>
+          <label>
+            <span>Closeout Due</span>
+            <input onChange={(event) => setDraft((current) => ({ ...current, closeoutDueAt: event.target.value }))} type="date" value={draft.closeoutDueAt ?? ""} />
+          </label>
+        </div>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>Delivery Format</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, deliveryFormat: event.target.value as DeliveryFormat }))}
+              value={draft.deliveryFormat}
+            >
+              {DELIVERY_FORMATS.map((format) => (
+                <option key={format} value={format}>
+                  {DELIVERY_FORMAT_LABELS[format]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Location Type</span>
+            <select
+              onChange={(event) => setDraft((current) => ({ ...current, locationType: event.target.value as LocationType }))}
+              value={draft.locationType}
+            >
+              {LOCATION_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {LOCATION_TYPE_LABELS[type]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label>
+          <span>Location / Platform</span>
+          <input onChange={(event) => setDraft((current) => ({ ...current, locationName: event.target.value }))} type="text" value={draft.locationName ?? ""} />
+        </label>
+        <div className="amc-inline-form-grid">
+          <label>
+            <span>Owner</span>
+            <select onChange={(event) => setDraft((current) => ({ ...current, ownerId: event.target.value }))} value={draft.ownerId ?? ""}>
+              <option value="">Unassigned</option>
+              {staff.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Previous Bucket</span>
+            <select onChange={(event) => setDraft((current) => ({ ...current, previousBucketId: event.target.value }))} value={draft.previousBucketId ?? ""}>
+              <option value="">None</option>
+              {buckets
+                .filter((candidate) => candidate.id !== bucket.id && candidate.programSeriesId === bucket.programSeriesId)
+                .map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {getBucketDisplayLabel(candidate, programSeries)}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        <label>
+          <span>Notes</span>
+          <textarea onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} value={draft.notes ?? ""} />
+        </label>
+        <div className="amc-record-actions">
+          <button className="button-link button-link--inline-secondary" onClick={() => onUpdate(draft)} type="button">
+            Save Bucket
+          </button>
+          {isBucketArchived(bucket) ? (
+            <button className="topbar__button" onClick={onRestore} type="button">
+              Unarchive
+            </button>
+          ) : (
+            <button className="button-link button-link--inline-secondary" onClick={onArchive} type="button">
+              Archive
+            </button>
+          )}
+        </div>
+      </div>
+      <Link className="button-link button-link--inline-secondary" href={`/clients/${bucket.clientAssociationId}/buckets/${bucket.id}`}>
+        Open workspace
+      </Link>
+    </div>
   );
 }
 

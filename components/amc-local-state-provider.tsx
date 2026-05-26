@@ -16,7 +16,9 @@ import {
   loadAmcLocalState,
   saveAmcLocalState,
   updateCollateralItemInAmcLocalState,
+  updateProgramSeriesInAmcLocalState,
   updateSponsorFulfillmentRecordInAmcLocalState,
+  updateWorkBucketInAmcLocalState,
   type AmcLocalStateSnapshot
 } from "@/lib/amc-local-state";
 import type {
@@ -25,9 +27,11 @@ import type {
   CollateralItem,
   CollateralItemUpdateInput,
   ProgramSeries,
+  ProgramSeriesUpdateInput,
   SponsorFulfillmentRecord,
   SponsorFulfillmentUpdateInput,
-  WorkBucket
+  WorkBucket,
+  WorkBucketUpdateInput
 } from "@/lib/amc-domain";
 
 interface AmcLocalStateContextValue {
@@ -43,7 +47,9 @@ interface AmcLocalStateContextValue {
   addSponsorFulfillmentCollateralItem: (input: { sponsorFulfillmentId: string; collateralItem: CollateralItem }) => void;
   addClientAssociation: (client: ClientAssociation) => void;
   addProgramSeries: (programSeries: ProgramSeries) => void;
+  updateProgramSeries: (programSeriesId: string, updates: ProgramSeriesUpdateInput) => void;
   addWorkBucket: (bucket: WorkBucket) => void;
+  updateWorkBucket: (bucketId: string, updates: WorkBucketUpdateInput) => void;
   resetLocalState: () => void;
 }
 
@@ -144,9 +150,23 @@ export function AmcLocalStateProvider({ children }: { children: ReactNode }) {
           return nextState;
         });
       },
+      updateProgramSeries(programSeriesId, updates) {
+        setState((current) => {
+          const nextState = updateProgramSeriesInAmcLocalState(current, programSeriesId, updates);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
       addWorkBucket(bucket) {
         setState((current) => {
           const nextState = addWorkBucketToAmcLocalState(current, bucket);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      updateWorkBucket(bucketId, updates) {
+        setState((current) => {
+          const nextState = updateWorkBucketInAmcLocalState(current, bucketId, updates);
           saveAmcLocalState(nextState);
           return nextState;
         });
