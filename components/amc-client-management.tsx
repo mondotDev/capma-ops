@@ -13,7 +13,9 @@ import {
   generateBucketLabel,
   getBucketDisplayLabel,
   getClientWorkStructure,
+  getCurrentBuckets,
   isBucketArchived,
+  isBucketPast,
   LOCATION_TYPE_LABELS,
   LOCATION_TYPES,
   RECURRENCE_PATTERN_LABELS,
@@ -127,7 +129,6 @@ export function AmcClientManagement() {
     startsAt: bucketForm.startsAt || structuredCycle.startsAt,
     cycleLabel: bucketForm.cycleLabel || structuredCycle.cycleLabel
   });
-  const managedStructure = managedClientId ? getClientWorkStructure(state, { clientId: managedClientId }) : null;
 
   function handleClientSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -578,86 +579,149 @@ export function AmcClientManagement() {
           <h2>Client Work Structure</h2>
           <span>{state.clients.length} clients</span>
         </div>
-        <div className="amc-list">
-          {bucketsByClient.map(({ client, buckets }) => (
-            <article className="amc-client-structure-row" key={client.id}>
-              <div className="amc-client-structure-row__header">
-                <div>
-                  <strong>{client.name}</strong>
-                  <span>{client.shortName} / {client.status}</span>
+        <div className="amc-client-card-grid">
+          {bucketsByClient.map(({ client, buckets }) => {
+            const clientProgramSeries = state.programSeries.filter((series) => series.clientAssociationId === client.id);
+            const activeProgramSeries = clientProgramSeries.filter((series) => series.active);
+            const currentBuckets = getCurrentBuckets(buckets);
+            const pastOrArchivedBuckets = buckets.filter((bucket) => isBucketPast(bucket) || isBucketArchived(bucket));
+            const visibleBuckets = currentBuckets.slice(0, 5);
+            const visibleProgramSeries = activeProgramSeries.slice(0, 6);
+            const managedStructure = managedClientId === client.id ? getClientWorkStructure(state, { clientId: client.id }) : null;
+
+            return (
+              <article className="amc-client-card" key={client.id}>
+                <div className="amc-client-card__header">
+                  <div>
+                    <p className="amc-kicker">Client association</p>
+                    <h3>{client.name}</h3>
+                    <span>{client.shortName} / {client.status}</span>
+                  </div>
+                  <button
+                    className="topbar__button"
+                    onClick={() => {
+                      setManagedClientId((current) => (current === client.id ? null : client.id));
+                      setStructureFeedback("");
+                    }}
+                    type="button"
+                  >
+                    {managedClientId === client.id ? "Hide work structure" : "Manage work structure"}
+                  </button>
                 </div>
-                <span>{buckets.length} buckets</span>
-              </div>
-              <div className="amc-bucket-link-list">
-                {buckets.length === 0 ? (
-                  <div className="empty-state">No buckets yet.</div>
-                ) : (
-                  buckets.map((bucket) => (
-                    <div className="amc-bucket-link-row" key={bucket.id}>
-                      <div>
-                        <strong>{getBucketDisplayLabel(bucket, state.programSeries.find((series) => series.id === bucket.programSeriesId))}</strong>
-                        <span>
-                          {WORK_BUCKET_KIND_LABELS[bucket.kind]} / {WORK_BUCKET_STATUS_LABELS[bucket.status]}
+
+                <div className="amc-client-card__summary" aria-label={`${client.shortName} work structure summary`}>
+                  <div>
+                    <strong>{activeProgramSeries.length}</strong>
+                    <span>Active programs</span>
+                  </div>
+                  <div>
+                    <strong>{currentBuckets.length}</strong>
+                    <span>Current buckets</span>
+                  </div>
+                  <div>
+                    <strong>{pastOrArchivedBuckets.length}</strong>
+                    <span>Past or archived</span>
+                  </div>
+                  <div>
+                    <strong>{buckets.length}</strong>
+                    <span>Total buckets</span>
+                  </div>
+                </div>
+
+                <div className="amc-client-card__section">
+                  <div className="amc-client-card__section-header">
+                    <strong>Program / Series</strong>
+                    <span>{activeProgramSeries.length} active</span>
+                  </div>
+                  {visibleProgramSeries.length === 0 ? (
+                    <div className="empty-state empty-state--compact">No active ProgramSeries yet.</div>
+                  ) : (
+                    <div className="amc-chip-list">
+                      {visibleProgramSeries.map((series) => (
+                        <span className="amc-chip" key={series.id}>
+                          {series.name}
                         </span>
-                      </div>
-                      <Link className="button-link button-link--inline-secondary" href={`/clients/${client.id}/buckets/${bucket.id}`}>
-                        Open workspace
-                      </Link>
+                      ))}
+                      {activeProgramSeries.length > visibleProgramSeries.length ? (
+                        <span className="amc-chip">+{activeProgramSeries.length - visibleProgramSeries.length} more</span>
+                      ) : null}
                     </div>
-                  ))
-                )}
-              </div>
-              <div className="amc-record-actions">
-                <button
-                  className="button-link button-link--inline-secondary"
-                  onClick={() => {
-                    setManagedClientId((current) => (current === client.id ? null : client.id));
-                    setStructureFeedback("");
-                  }}
-                  type="button"
-                >
-                  {managedClientId === client.id ? "Hide work structure" : "Manage work structure"}
-                </button>
-              </div>
-            </article>
-          ))}
+                  )}
+                </div>
+
+                <div className="amc-client-card__section">
+                  <div className="amc-client-card__section-header">
+                    <strong>Current bucket workspaces</strong>
+                    <span>{currentBuckets.length} visible</span>
+                  </div>
+                  {visibleBuckets.length === 0 ? (
+                    <div className="empty-state empty-state--compact">No current buckets. Use Add Bucket to create the next cycle.</div>
+                  ) : (
+                    <div className="amc-client-card__bucket-links">
+                      {visibleBuckets.map((bucket) => {
+                        const programSeries = state.programSeries.find((series) => series.id === bucket.programSeriesId);
+
+                        return (
+                          <Link className="button-link button-link--inline-secondary" href={`/clients/${client.id}/buckets/${bucket.id}`} key={bucket.id}>
+                            {getBucketDisplayLabel(bucket, programSeries)}
+                          </Link>
+                        );
+                      })}
+                      {currentBuckets.length > visibleBuckets.length ? (
+                        <button
+                          className="button-link button-link--inline-secondary"
+                          onClick={() => {
+                            setManagedClientId(client.id);
+                            setStructureFeedback("");
+                          }}
+                          type="button"
+                        >
+                          View {currentBuckets.length - visibleBuckets.length} more
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+
+                {managedStructure?.client ? (
+                  <ClientWorkStructureManager
+                    bucketFeedback={structureFeedback}
+                    buckets={state.buckets}
+                    clientName={managedStructure.client.name}
+                    onArchiveBucket={(bucket) => {
+                      updateWorkBucket(bucket.id, {
+                        status: "archived",
+                        isArchived: true,
+                        archivedAt: new Date().toISOString()
+                      });
+                      setStructureFeedback(`${getBucketDisplayLabel(bucket)} archived.`);
+                    }}
+                    onRestoreBucket={(bucket) => {
+                      updateWorkBucket(bucket.id, {
+                        status: "planning",
+                        isArchived: false,
+                        archivedAt: ""
+                      });
+                      setStructureFeedback(`${getBucketDisplayLabel(bucket)} restored.`);
+                    }}
+                    onUpdateBucket={(bucketId, updates) => {
+                      updateWorkBucket(bucketId, updates);
+                      setStructureFeedback("Bucket updated.");
+                    }}
+                    onUpdateProgramSeries={(seriesId, updates) => {
+                      updateProgramSeries(seriesId, updates);
+                      setStructureFeedback("Program/series updated.");
+                    }}
+                    programSeries={managedStructure.programSeries}
+                    staff={state.staff}
+                    unassignedBuckets={managedStructure.unassignedBuckets}
+                  />
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       </section>
-
-      {managedStructure?.client ? (
-        <ClientWorkStructureManager
-          bucketFeedback={structureFeedback}
-          buckets={state.buckets}
-          clientName={managedStructure.client.name}
-          onArchiveBucket={(bucket) => {
-            updateWorkBucket(bucket.id, {
-              status: "archived",
-              isArchived: true,
-              archivedAt: new Date().toISOString()
-            });
-            setStructureFeedback(`${getBucketDisplayLabel(bucket)} archived.`);
-          }}
-          onRestoreBucket={(bucket) => {
-            updateWorkBucket(bucket.id, {
-              status: "planning",
-              isArchived: false,
-              archivedAt: ""
-            });
-            setStructureFeedback(`${getBucketDisplayLabel(bucket)} restored.`);
-          }}
-          onUpdateBucket={(bucketId, updates) => {
-            updateWorkBucket(bucketId, updates);
-            setStructureFeedback("Bucket updated.");
-          }}
-          onUpdateProgramSeries={(seriesId, updates) => {
-            updateProgramSeries(seriesId, updates);
-            setStructureFeedback("Program/series updated.");
-          }}
-          programSeries={managedStructure.programSeries}
-          staff={state.staff}
-          unassignedBuckets={managedStructure.unassignedBuckets}
-        />
-      ) : null}
     </div>
   );
 }

@@ -5836,6 +5836,111 @@ textarea,
   text-align: right;
 }
 
+.amc-client-card-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.amc-client-card {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #dbe3eb;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.amc-client-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.amc-client-card__header div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.amc-client-card__header h3 {
+  margin: 0;
+  font-family: var(--font-heading), Arial, sans-serif;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.amc-client-card__header span,
+.amc-client-card__section-header span {
+  color: #607181;
+  font-size: 13px;
+}
+
+.amc-client-card__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.amc-client-card__summary div {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid #e3e9ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.amc-client-card__summary strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.amc-client-card__summary span {
+  color: #607181;
+  font-size: 12px;
+}
+
+.amc-client-card__section {
+  display: grid;
+  gap: 10px;
+}
+
+.amc-client-card__section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.amc-chip-list,
+.amc-client-card__bucket-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.amc-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid #dbe3eb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #526272;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.empty-state--compact {
+  padding: 12px;
+  border: 1px dashed #dbe3eb;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 13px;
+}
+
 .amc-client-structure-row {
   display: grid;
   gap: 12px;
@@ -6120,6 +6225,15 @@ textarea,
   .amc-related-action-form,
   .amc-related-collateral-form {
     grid-template-columns: 1fr;
+  }
+
+  .amc-client-card__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .amc-client-card__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .amc-client-structure-row__header,
