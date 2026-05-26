@@ -9,6 +9,9 @@ import {
   createDefaultBucketsForClient,
   createCollateralItem,
   createCollateralActionItem,
+  createSponsorFulfillmentActionItem,
+  createSponsorFulfillmentCollateralItem,
+  createSponsorFulfillmentRecord,
   createWorkBucket,
   DEFAULT_CLIENT_BUCKET_KINDS,
   ensureDefaultBucketsForClients,
@@ -18,11 +21,17 @@ import {
   getFoundationWorkItems,
   getVisibleWorkItems,
   linkCollateralActionItem,
+  linkSponsorFulfillmentActionItem,
+  linkSponsorFulfillmentCollateralItem,
   SESSION_CATEGORIES,
+  SPONSOR_FULFILLMENT_STATUS_LABELS,
+  SPONSOR_FULFILLMENT_TYPE_LABELS,
   updateCollateralItem,
+  updateSponsorFulfillmentRecord,
   validateActionItemCreateInput,
   validateCollateralItemCreateInput,
   validateClientAssociationCreateInput,
+  validateSponsorFulfillmentCreateInput,
   validateWorkBucketCreateInput,
   COLLATERAL_TYPE_LABELS,
   WORK_BUCKET_KIND_LABELS,
@@ -40,11 +49,15 @@ import {
   addCollateralActionItemToAmcLocalState,
   addCollateralItemToAmcLocalState,
   addClientAssociationToAmcLocalState,
+  addSponsorFulfillmentActionItemToAmcLocalState,
+  addSponsorFulfillmentCollateralItemToAmcLocalState,
+  addSponsorFulfillmentRecordToAmcLocalState,
   addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
   loadAmcLocalState,
   saveAmcLocalState,
-  updateCollateralItemInAmcLocalState
+  updateCollateralItemInAmcLocalState,
+  updateSponsorFulfillmentRecordInAmcLocalState
 } from "../lib/amc-local-state";
 
 test("employee visibility is limited to assigned work in their organization", () => {
@@ -67,7 +80,12 @@ test("admin visibility includes all organization work by default", () => {
     viewer: DEMO_FOUNDATION_DATA.currentUser
   });
 
-  assert.equal(visibleItems.length, DEMO_FOUNDATION_DATA.actionItems.length + DEMO_FOUNDATION_DATA.collateralItems.length);
+  assert.equal(
+    visibleItems.length,
+    DEMO_FOUNDATION_DATA.actionItems.length +
+      DEMO_FOUNDATION_DATA.collateralItems.length +
+      DEMO_FOUNDATION_DATA.sponsorFulfillmentRecords.length
+  );
 });
 
 test("admin visibility can filter by assignee", () => {
@@ -85,7 +103,7 @@ test("client association filter applies across the shared work queue", () => {
     clientAssociationId: "client-western-parks"
   });
 
-  assert.deepEqual(visibleItems.map((item) => item.id), ["action-wpc-sponsor-logo"]);
+  assert.deepEqual(visibleItems.map((item) => item.id), ["action-wpc-sponsor-logo", "sponsor-demo-logo"]);
 });
 
 test("work filtering supports bucket, assignee, tracker, status, and unassigned-only filters", () => {
@@ -117,14 +135,21 @@ test("work filtering supports bucket, assignee, tracker, status, and unassigned-
       viewer: DEMO_FOUNDATION_DATA.currentUser,
       status: "waiting"
     }).map((item) => item.id),
-    ["action-wpc-sponsor-logo"]
+    ["action-wpc-sponsor-logo", "sponsor-demo-logo"]
   );
   assert.deepEqual(
     getVisibleWorkItems(workItems, {
       viewer: DEMO_FOUNDATION_DATA.currentUser,
       unassignedOnly: true
     }).map((item) => item.id),
-    ["action-wpc-sponsor-logo"]
+    ["action-wpc-sponsor-logo", "sponsor-demo-logo"]
+  );
+  assert.deepEqual(
+    getVisibleWorkItems(workItems, {
+      viewer: DEMO_FOUNDATION_DATA.currentUser,
+      tracker: "sponsorFulfillment"
+    }).map((item) => item.id),
+    ["action-wpc-sponsor-logo", "sponsor-demo-logo"]
   );
 });
 
@@ -593,6 +618,195 @@ test("local state can update collateral without changing scope or related action
   assert.equal(updated.updatedAt, "2026-05-26T10:00:00.000Z");
 });
 
+test("sponsor fulfillment model requires client association and bucket", () => {
+  const validation = validateSponsorFulfillmentCreateInput(
+    {
+      sponsorName: "Acme Sponsor",
+      fulfillmentTitle: "Logo in email",
+      clientAssociationId: "",
+      bucketId: "",
+      fulfillmentType: "logoRecognition"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(validation.isValid, false);
+  assert.deepEqual(validation.errors, ["Client association is required.", "Bucket is required."]);
+});
+
+test("sponsor fulfillment creation preserves assignee and bucket scope", () => {
+  const sponsorFulfillment = createSponsorFulfillmentRecord(
+    {
+      sponsorName: "Acme Sponsor",
+      fulfillmentTitle: "Logo in event reminder email",
+      clientAssociationId: "client-western-parks",
+      bucketId: "bucket-wpc-sponsor-fulfillment",
+      fulfillmentType: "logoRecognition",
+      status: "inProgress",
+      assigneeId: "staff-melissa",
+      dueDate: "2026-06-21",
+      notes: "Needs approval copy.",
+      now: "2026-05-25T12:00:00.000Z"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+
+  assert.equal(sponsorFulfillment.clientAssociationId, "client-western-parks");
+  assert.equal(sponsorFulfillment.bucketId, "bucket-wpc-sponsor-fulfillment");
+  assert.equal(sponsorFulfillment.assigneeId, "staff-melissa");
+  assert.equal(sponsorFulfillment.status, "inProgress");
+  assert.deepEqual(sponsorFulfillment.relatedCollateralIds, []);
+  assert.deepEqual(sponsorFulfillment.relatedActionItemIds, []);
+  assert.equal(sponsorFulfillment.createdAt, "2026-05-25T12:00:00.000Z");
+});
+
+test("sponsor fulfillment records list by bucket through bucket workspace selector", () => {
+  const sponsorFulfillment = createSponsorFulfillmentRecord(
+    {
+      sponsorName: "Acme Sponsor",
+      fulfillmentTitle: "Program ad",
+      clientAssociationId: "client-pacific-pest",
+      bucketId: "bucket-ppma-annual-conference",
+      fulfillmentType: "programAd"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const workspace = getBucketWorkspace(
+    {
+      ...DEMO_FOUNDATION_DATA,
+      sponsorFulfillmentRecords: [...DEMO_FOUNDATION_DATA.sponsorFulfillmentRecords, sponsorFulfillment]
+    },
+    {
+      clientId: sponsorFulfillment.clientAssociationId,
+      bucketId: sponsorFulfillment.bucketId
+    }
+  );
+
+  assert.equal(workspace.sponsorFulfillmentRecords.some((item) => item.id === sponsorFulfillment.id), true);
+});
+
+test("sponsor fulfillment updates status and assignee while preserving scope", () => {
+  const sponsorFulfillment = DEMO_FOUNDATION_DATA.sponsorFulfillmentRecords[0]!;
+  const updated = updateSponsorFulfillmentRecord(sponsorFulfillment, {
+    status: "readyForReview",
+    assigneeId: "staff-operations",
+    now: "2026-05-26T12:00:00.000Z"
+  });
+
+  assert.equal(updated.status, "readyForReview");
+  assert.equal(updated.assigneeId, "staff-operations");
+  assert.equal(updated.clientAssociationId, sponsorFulfillment.clientAssociationId);
+  assert.equal(updated.bucketId, sponsorFulfillment.bucketId);
+  assert.deepEqual(updated.relatedActionItemIds, sponsorFulfillment.relatedActionItemIds);
+  assert.deepEqual(updated.relatedCollateralIds, sponsorFulfillment.relatedCollateralIds);
+  assert.equal(updated.updatedAt, "2026-05-26T12:00:00.000Z");
+});
+
+test("sponsor fulfillment can create related action items and collateral", () => {
+  const sponsorFulfillment = createSponsorFulfillmentRecord(
+    {
+      sponsorName: "Acme Sponsor",
+      fulfillmentTitle: "Logo recognition in event reminder email",
+      clientAssociationId: "client-western-parks",
+      bucketId: "bucket-wpc-sponsor-fulfillment",
+      fulfillmentType: "logoRecognition",
+      assigneeId: "staff-melissa"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const actionItem = createSponsorFulfillmentActionItem({
+    sponsorFulfillment,
+    title: "Collect sponsor logo and approval copy",
+    data: DEMO_FOUNDATION_DATA
+  });
+  const collateralItem = createSponsorFulfillmentCollateralItem({
+    sponsorFulfillment,
+    title: "Annual conference reminder email",
+    collateralType: "email",
+    data: DEMO_FOUNDATION_DATA
+  });
+  const linkedActionSponsor = linkSponsorFulfillmentActionItem(sponsorFulfillment, actionItem);
+  const linkedSponsor = linkSponsorFulfillmentCollateralItem(linkedActionSponsor, collateralItem);
+  const workspace = getBucketWorkspace(
+    {
+      ...DEMO_FOUNDATION_DATA,
+      actionItems: [...DEMO_FOUNDATION_DATA.actionItems, actionItem],
+      collateralItems: [...DEMO_FOUNDATION_DATA.collateralItems, collateralItem],
+      sponsorFulfillmentRecords: [...DEMO_FOUNDATION_DATA.sponsorFulfillmentRecords, linkedSponsor]
+    },
+    {
+      clientId: sponsorFulfillment.clientAssociationId,
+      bucketId: sponsorFulfillment.bucketId
+    }
+  );
+
+  assert.equal(actionItem.clientAssociationId, sponsorFulfillment.clientAssociationId);
+  assert.equal(actionItem.bucketId, sponsorFulfillment.bucketId);
+  assert.equal(actionItem.origin?.tracker, "sponsorFulfillment");
+  assert.equal(actionItem.origin?.entityId, sponsorFulfillment.id);
+  assert.equal(collateralItem.clientAssociationId, sponsorFulfillment.clientAssociationId);
+  assert.equal(collateralItem.bucketId, sponsorFulfillment.bucketId);
+  assert.deepEqual(collateralItem.relatedSponsorFulfillmentIds, [sponsorFulfillment.id]);
+  assert.equal(workspace.actionItems.some((item) => item.id === actionItem.id), true);
+  assert.equal(workspace.collateralItems.some((item) => item.id === collateralItem.id), true);
+  assert.deepEqual(workspace.sponsorFulfillmentRecords.find((item) => item.id === linkedSponsor.id)?.relatedActionItemIds, [actionItem.id]);
+  assert.deepEqual(workspace.sponsorFulfillmentRecords.find((item) => item.id === linkedSponsor.id)?.relatedCollateralIds, [collateralItem.id]);
+});
+
+test("local state can persist sponsor fulfillment with related action items and collateral", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const sponsorFulfillment = createSponsorFulfillmentRecord(
+    {
+      sponsorName: "Local Sponsor",
+      fulfillmentTitle: "Social mention",
+      clientAssociationId: "client-western-parks",
+      bucketId: "bucket-wpc-sponsor-fulfillment",
+      fulfillmentType: "socialMention"
+    },
+    snapshot
+  );
+  const withSponsor = addSponsorFulfillmentRecordToAmcLocalState(snapshot, sponsorFulfillment);
+  const updatedSponsorState = updateSponsorFulfillmentRecordInAmcLocalState(withSponsor, sponsorFulfillment.id, {
+    status: "blocked",
+    assigneeId: "staff-operations"
+  });
+  const actionItem = createSponsorFulfillmentActionItem({
+    sponsorFulfillment,
+    title: "Ask sponsor for copy",
+    data: updatedSponsorState
+  });
+  const withAction = addSponsorFulfillmentActionItemToAmcLocalState({
+    snapshot: updatedSponsorState,
+    sponsorFulfillmentId: sponsorFulfillment.id,
+    actionItem
+  });
+  const collateralItem = createSponsorFulfillmentCollateralItem({
+    sponsorFulfillment,
+    title: "Sponsor social post",
+    collateralType: "socialPost",
+    data: withAction
+  });
+  const withCollateral = addSponsorFulfillmentCollateralItemToAmcLocalState({
+    snapshot: withAction,
+    sponsorFulfillmentId: sponsorFulfillment.id,
+    collateralItem
+  });
+  const persistedSponsor = withCollateral.sponsorFulfillmentRecords.find((item) => item.id === sponsorFulfillment.id)!;
+
+  assert.equal(persistedSponsor.status, "blocked");
+  assert.equal(persistedSponsor.assigneeId, "staff-operations");
+  assert.deepEqual(persistedSponsor.relatedActionItemIds, [actionItem.id]);
+  assert.deepEqual(persistedSponsor.relatedCollateralIds, [collateralItem.id]);
+  assert.equal(withCollateral.actionItems[0]?.id, actionItem.id);
+  assert.equal(withCollateral.collateralItems[0]?.id, collateralItem.id);
+});
+
+test("human-readable sponsor fulfillment labels cover starting values", () => {
+  assert.equal(SPONSOR_FULFILLMENT_TYPE_LABELS.logoRecognition, "Logo recognition");
+  assert.equal(SPONSOR_FULFILLMENT_TYPE_LABELS.emailMention, "Email mention");
+  assert.equal(SPONSOR_FULFILLMENT_STATUS_LABELS.readyForReview, "Ready for review");
+});
+
 test("v2 local state loads defaults when storage is empty or malformed", () => {
   const emptyStorage = createMemoryStorage();
   const malformedStorage = createMemoryStorage({
@@ -779,7 +993,8 @@ test("normalizing local state backfills missing default client buckets", () => {
 function getDemoWorkItems() {
   return getFoundationWorkItems({
     actionItems: DEMO_FOUNDATION_DATA.actionItems,
-    collateralItems: DEMO_FOUNDATION_DATA.collateralItems
+    collateralItems: DEMO_FOUNDATION_DATA.collateralItems,
+    sponsorFulfillmentRecords: DEMO_FOUNDATION_DATA.sponsorFulfillmentRecords
   });
 }
 

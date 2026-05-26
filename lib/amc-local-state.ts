@@ -3,6 +3,7 @@ import {
   createDefaultBucketsForClient,
   ensureDefaultBucketsForClients,
   updateCollateralItem,
+  updateSponsorFulfillmentRecord,
   type ActionItem,
   type AmcOrganization,
   type ClientAssociation,
@@ -12,6 +13,8 @@ import {
   type EducationApplication,
   type FoundationData,
   type SpeakerEngagement,
+  type SponsorFulfillmentRecord,
+  type SponsorFulfillmentUpdateInput,
   type StaffProfile,
   type WorkBucket
 } from "@/lib/amc-domain";
@@ -30,6 +33,7 @@ export interface AmcLocalStateSnapshot {
   collateralItems: CollateralItem[];
   educationApplications: EducationApplication[];
   speakerEngagements: SpeakerEngagement[];
+  sponsorFulfillmentRecords: SponsorFulfillmentRecord[];
 }
 
 export function createDefaultAmcLocalState(): AmcLocalStateSnapshot {
@@ -59,7 +63,8 @@ export function normalizeAmcLocalStateSnapshot(value: unknown): AmcLocalStateSna
     actionItems: normalizeArray(candidate.actionItems, defaults.actionItems),
     collateralItems: normalizeArray(candidate.collateralItems, defaults.collateralItems),
     educationApplications: normalizeArray(candidate.educationApplications, defaults.educationApplications),
-    speakerEngagements: normalizeArray(candidate.speakerEngagements, defaults.speakerEngagements)
+    speakerEngagements: normalizeArray(candidate.speakerEngagements, defaults.speakerEngagements),
+    sponsorFulfillmentRecords: normalizeArray(candidate.sponsorFulfillmentRecords, defaults.sponsorFulfillmentRecords)
   };
 }
 
@@ -128,6 +133,61 @@ export function addCollateralActionItemToAmcLocalState(input: {
     collateralItems: input.snapshot.collateralItems.map((item) =>
       item.id === input.collateralItemId && !item.relatedActionItemIds.includes(input.actionItem.id)
         ? { ...item, relatedActionItemIds: [...item.relatedActionItemIds, input.actionItem.id] }
+        : item
+    )
+  };
+}
+
+export function addSponsorFulfillmentRecordToAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  sponsorFulfillment: SponsorFulfillmentRecord
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    sponsorFulfillmentRecords: [sponsorFulfillment, ...snapshot.sponsorFulfillmentRecords]
+  };
+}
+
+export function updateSponsorFulfillmentRecordInAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  sponsorFulfillmentId: string,
+  updates: SponsorFulfillmentUpdateInput
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    sponsorFulfillmentRecords: snapshot.sponsorFulfillmentRecords.map((item) =>
+      item.id === sponsorFulfillmentId ? updateSponsorFulfillmentRecord(item, updates) : item
+    )
+  };
+}
+
+export function addSponsorFulfillmentActionItemToAmcLocalState(input: {
+  snapshot: AmcLocalStateSnapshot;
+  sponsorFulfillmentId: string;
+  actionItem: ActionItem;
+}): AmcLocalStateSnapshot {
+  return {
+    ...input.snapshot,
+    actionItems: [input.actionItem, ...input.snapshot.actionItems],
+    sponsorFulfillmentRecords: input.snapshot.sponsorFulfillmentRecords.map((item) =>
+      item.id === input.sponsorFulfillmentId && !item.relatedActionItemIds.includes(input.actionItem.id)
+        ? { ...item, relatedActionItemIds: [...item.relatedActionItemIds, input.actionItem.id] }
+        : item
+    )
+  };
+}
+
+export function addSponsorFulfillmentCollateralItemToAmcLocalState(input: {
+  snapshot: AmcLocalStateSnapshot;
+  sponsorFulfillmentId: string;
+  collateralItem: CollateralItem;
+}): AmcLocalStateSnapshot {
+  return {
+    ...input.snapshot,
+    collateralItems: [input.collateralItem, ...input.snapshot.collateralItems],
+    sponsorFulfillmentRecords: input.snapshot.sponsorFulfillmentRecords.map((item) =>
+      item.id === input.sponsorFulfillmentId && !item.relatedCollateralIds.includes(input.collateralItem.id)
+        ? { ...item, relatedCollateralIds: [...item.relatedCollateralIds, input.collateralItem.id] }
         : item
     )
   };

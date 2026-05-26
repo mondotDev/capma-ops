@@ -56,9 +56,10 @@ export function AmcWorkQueue() {
     () =>
       getFoundationWorkItems({
         actionItems: data.actionItems,
-        collateralItems: data.collateralItems
+        collateralItems: data.collateralItems,
+        sponsorFulfillmentRecords: data.sponsorFulfillmentRecords
       }),
-    [data.actionItems, data.collateralItems]
+    [data.actionItems, data.collateralItems, data.sponsorFulfillmentRecords]
   );
   const visibleItems = getVisibleWorkItems(workItems, {
     viewer: data.currentUser,

@@ -11,22 +11,42 @@ import {
   COLLATERAL_TYPE_LABELS,
   createCollateralActionItem,
   createCollateralItem,
+  createSponsorFulfillmentActionItem,
+  createSponsorFulfillmentCollateralItem,
+  createSponsorFulfillmentRecord,
   getAssigneeName,
   getBucketWorkspace,
+  SPONSOR_FULFILLMENT_STATUSES,
+  SPONSOR_FULFILLMENT_STATUS_LABELS,
+  SPONSOR_FULFILLMENT_TYPES,
+  SPONSOR_FULFILLMENT_TYPE_LABELS,
   WORK_BUCKET_KIND_LABELS,
   WORK_BUCKET_STATUS_LABELS,
   WORK_STATUS_LABELS,
   WORK_TRACKER_LABELS,
   validateCollateralItemCreateInput,
+  validateSponsorFulfillmentCreateInput,
   type CollateralActionItemCreateInput,
   type CollateralItem,
   type CollateralItemCreateInput,
-  type CollateralItemUpdateInput
+  type CollateralItemUpdateInput,
+  type SponsorFulfillmentCreateInput,
+  type SponsorFulfillmentRecord,
+  type SponsorFulfillmentUpdateInput
 } from "@/lib/amc-domain";
 import { useState } from "react";
 
 export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; bucketId: string }) {
-  const { state, addCollateralActionItem, addCollateralItem, updateCollateralItem } = useAmcLocalState();
+  const {
+    state,
+    addCollateralActionItem,
+    addCollateralItem,
+    addSponsorFulfillmentActionItem,
+    addSponsorFulfillmentCollateralItem,
+    addSponsorFulfillmentRecord,
+    updateCollateralItem,
+    updateSponsorFulfillmentRecord
+  } = useAmcLocalState();
   const [collateralForm, setCollateralForm] = useState<CollateralItemCreateInput>({
     clientAssociationId: clientId,
     bucketId,
@@ -44,6 +64,25 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
   const [editingCollateralId, setEditingCollateralId] = useState<string | null>(null);
   const [editDrafts, setEditDrafts] = useState<Record<string, CollateralItemUpdateInput>>({});
   const [isAddingCollateral, setIsAddingCollateral] = useState(false);
+  const [sponsorForm, setSponsorForm] = useState<SponsorFulfillmentCreateInput>({
+    clientAssociationId: clientId,
+    bucketId,
+    sponsorName: "",
+    fulfillmentTitle: "",
+    fulfillmentType: "logoRecognition",
+    status: "notStarted",
+    assigneeId: "",
+    dueDate: "",
+    notes: ""
+  });
+  const [sponsorFeedback, setSponsorFeedback] = useState("");
+  const [isAddingSponsorFulfillment, setIsAddingSponsorFulfillment] = useState(false);
+  const [editingSponsorFulfillmentId, setEditingSponsorFulfillmentId] = useState<string | null>(null);
+  const [sponsorEditDrafts, setSponsorEditDrafts] = useState<Record<string, SponsorFulfillmentUpdateInput>>({});
+  const [sponsorActionDrafts, setSponsorActionDrafts] = useState<Record<string, { title: string; assigneeId: string; dueDate: string }>>({});
+  const [sponsorCollateralDrafts, setSponsorCollateralDrafts] = useState<
+    Record<string, { title: string; collateralType: CollateralItemCreateInput["collateralType"]; assigneeId: string; dueDate: string; notes: string }>
+  >({});
   const workspace = getBucketWorkspace(state, { clientId, bucketId });
 
   function handleCollateralSubmit(event: FormEvent<HTMLFormElement>) {
@@ -152,6 +191,154 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
     setCollateralFeedback("Related action item added.");
   }
 
+  function handleSponsorFulfillmentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validation = validateSponsorFulfillmentCreateInput(sponsorForm, state);
+
+    if (!validation.isValid) {
+      setSponsorFeedback(validation.errors[0] ?? "Check the required fields.");
+      return;
+    }
+
+    const sponsorFulfillment = createSponsorFulfillmentRecord(sponsorForm, state);
+    addSponsorFulfillmentRecord(sponsorFulfillment);
+    setSponsorForm((current) => ({
+      ...current,
+      sponsorName: "",
+      fulfillmentTitle: "",
+      fulfillmentType: "logoRecognition",
+      status: "notStarted",
+      assigneeId: "",
+      dueDate: "",
+      notes: ""
+    }));
+    setIsAddingSponsorFulfillment(false);
+    setSponsorFeedback("Sponsor fulfillment added.");
+  }
+
+  function startEditingSponsorFulfillment(item: SponsorFulfillmentRecord) {
+    setEditingSponsorFulfillmentId(item.id);
+    setSponsorEditDrafts((current) => ({
+      ...current,
+      [item.id]: {
+        sponsorName: item.sponsorName,
+        fulfillmentTitle: item.fulfillmentTitle,
+        fulfillmentType: item.fulfillmentType,
+        status: item.status,
+        assigneeId: item.assigneeId,
+        dueDate: item.dueDate,
+        notes: item.notes
+      }
+    }));
+    setSponsorFeedback("");
+  }
+
+  function updateSponsorEditDraft(sponsorFulfillmentId: string, updates: SponsorFulfillmentUpdateInput) {
+    setSponsorEditDrafts((current) => ({
+      ...current,
+      [sponsorFulfillmentId]: {
+        ...current[sponsorFulfillmentId],
+        ...updates
+      }
+    }));
+  }
+
+  function handleSponsorFulfillmentUpdate(sponsorFulfillmentId: string) {
+    const draft = sponsorEditDrafts[sponsorFulfillmentId];
+
+    if (!draft?.sponsorName?.trim() || !draft?.fulfillmentTitle?.trim()) {
+      setSponsorFeedback("Sponsor name and fulfillment title are required.");
+      return;
+    }
+
+    try {
+      updateSponsorFulfillmentRecord(sponsorFulfillmentId, draft);
+      setEditingSponsorFulfillmentId(null);
+      setSponsorFeedback("Sponsor fulfillment updated.");
+    } catch (error) {
+      setSponsorFeedback(error instanceof Error ? error.message : "Could not update sponsor fulfillment.");
+    }
+  }
+
+  function updateSponsorActionDraft(sponsorFulfillmentId: string, updates: Partial<{ title: string; assigneeId: string; dueDate: string }>) {
+    setSponsorActionDrafts((current) => ({
+      ...current,
+      [sponsorFulfillmentId]: {
+        title: current[sponsorFulfillmentId]?.title ?? "",
+        assigneeId: current[sponsorFulfillmentId]?.assigneeId ?? "",
+        dueDate: current[sponsorFulfillmentId]?.dueDate ?? "",
+        ...updates
+      }
+    }));
+  }
+
+  function handleCreateSponsorAction(sponsorFulfillmentId: string) {
+    const sponsorFulfillment = state.sponsorFulfillmentRecords.find((item) => item.id === sponsorFulfillmentId);
+    const draft = sponsorActionDrafts[sponsorFulfillmentId];
+
+    if (!sponsorFulfillment || !draft?.title.trim()) {
+      setSponsorFeedback("Action title is required.");
+      return;
+    }
+
+    const actionItem = createSponsorFulfillmentActionItem({
+      sponsorFulfillment,
+      title: draft.title,
+      assigneeId: draft.assigneeId || sponsorFulfillment.assigneeId,
+      dueDate: draft.dueDate,
+      data: state
+    });
+    addSponsorFulfillmentActionItem({ sponsorFulfillmentId, actionItem });
+    setSponsorActionDrafts((current) => ({
+      ...current,
+      [sponsorFulfillmentId]: { title: "", assigneeId: "", dueDate: "" }
+    }));
+    setSponsorFeedback("Related action item added.");
+  }
+
+  function updateSponsorCollateralDraft(
+    sponsorFulfillmentId: string,
+    updates: Partial<{ title: string; collateralType: CollateralItemCreateInput["collateralType"]; assigneeId: string; dueDate: string; notes: string }>
+  ) {
+    setSponsorCollateralDrafts((current) => ({
+      ...current,
+      [sponsorFulfillmentId]: {
+        title: current[sponsorFulfillmentId]?.title ?? "",
+        collateralType: current[sponsorFulfillmentId]?.collateralType ?? "email",
+        assigneeId: current[sponsorFulfillmentId]?.assigneeId ?? "",
+        dueDate: current[sponsorFulfillmentId]?.dueDate ?? "",
+        notes: current[sponsorFulfillmentId]?.notes ?? "",
+        ...updates
+      }
+    }));
+  }
+
+  function handleCreateSponsorCollateral(sponsorFulfillmentId: string) {
+    const sponsorFulfillment = state.sponsorFulfillmentRecords.find((item) => item.id === sponsorFulfillmentId);
+    const draft = sponsorCollateralDrafts[sponsorFulfillmentId];
+
+    if (!sponsorFulfillment || !draft?.title.trim()) {
+      setSponsorFeedback("Collateral title is required.");
+      return;
+    }
+
+    const collateralItem = createSponsorFulfillmentCollateralItem({
+      sponsorFulfillment,
+      title: draft.title,
+      collateralType: draft.collateralType,
+      assigneeId: draft.assigneeId || sponsorFulfillment.assigneeId,
+      dueDate: draft.dueDate,
+      notes: draft.notes,
+      data: state
+    });
+    addSponsorFulfillmentCollateralItem({ sponsorFulfillmentId, collateralItem });
+    setSponsorCollateralDrafts((current) => ({
+      ...current,
+      [sponsorFulfillmentId]: { title: "", collateralType: "email", assigneeId: "", dueDate: "", notes: "" }
+    }));
+    setSponsorFeedback("Related collateral added.");
+  }
+
   if (!workspace.client || !workspace.bucket) {
     return (
       <div className="amc-dashboard">
@@ -196,6 +383,10 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
         <div className="amc-metric">
           <span>Collateral</span>
           <strong>{workspace.collateralItems.length}</strong>
+        </div>
+        <div className="amc-metric">
+          <span>Sponsor Fulfillment</span>
+          <strong>{workspace.sponsorFulfillmentRecords.length}</strong>
         </div>
         <div className="amc-metric">
           <span>Bucket Type</span>
@@ -559,7 +750,341 @@ export function AmcBucketWorkspace({ clientId, bucketId }: { clientId: string; b
           ))}
         </BucketSection>
 
-        <BucketSection title="Sponsor Fulfillment" emptyCopy="Sponsor fulfillment records are not built out yet." />
+        <section className="amc-panel">
+          <div className="amc-panel__header">
+            <h2>Sponsor Fulfillment</h2>
+            <div className="amc-panel__actions">
+              <span>{workspace.sponsorFulfillmentRecords.length} records</span>
+              <button
+                className="button-link button-link--inline-secondary"
+                onClick={() => setIsAddingSponsorFulfillment((current) => !current)}
+                type="button"
+              >
+                {isAddingSponsorFulfillment ? "Hide form" : "Add fulfillment"}
+              </button>
+            </div>
+          </div>
+          {sponsorFeedback ? <div className="amc-form-feedback">{sponsorFeedback}</div> : null}
+          <div className="amc-list">
+            {workspace.sponsorFulfillmentRecords.length === 0 ? (
+              <div className="empty-state">No sponsor fulfillment records in this bucket yet.</div>
+            ) : null}
+            {workspace.sponsorFulfillmentRecords.map((item) => (
+              <article className="amc-collateral-card" key={item.id}>
+                {editingSponsorFulfillmentId === item.id ? (
+                  <div className="amc-collateral-edit-form">
+                    <div className="amc-inline-form-grid">
+                      <label>
+                        <span>Sponsor</span>
+                        <input
+                          onChange={(event) => updateSponsorEditDraft(item.id, { sponsorName: event.target.value })}
+                          type="text"
+                          value={sponsorEditDrafts[item.id]?.sponsorName ?? item.sponsorName}
+                        />
+                      </label>
+                      <label>
+                        <span>Fulfillment</span>
+                        <input
+                          onChange={(event) => updateSponsorEditDraft(item.id, { fulfillmentTitle: event.target.value })}
+                          type="text"
+                          value={sponsorEditDrafts[item.id]?.fulfillmentTitle ?? item.fulfillmentTitle}
+                        />
+                      </label>
+                    </div>
+                    <div className="amc-inline-form-grid">
+                      <label>
+                        <span>Type</span>
+                        <select
+                          onChange={(event) =>
+                            updateSponsorEditDraft(item.id, {
+                              fulfillmentType: event.target.value as SponsorFulfillmentUpdateInput["fulfillmentType"]
+                            })
+                          }
+                          value={sponsorEditDrafts[item.id]?.fulfillmentType ?? item.fulfillmentType}
+                        >
+                          {SPONSOR_FULFILLMENT_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {SPONSOR_FULFILLMENT_TYPE_LABELS[type]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Status</span>
+                        <select
+                          onChange={(event) =>
+                            updateSponsorEditDraft(item.id, {
+                              status: event.target.value as SponsorFulfillmentUpdateInput["status"]
+                            })
+                          }
+                          value={sponsorEditDrafts[item.id]?.status ?? item.status}
+                        >
+                          {SPONSOR_FULFILLMENT_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {SPONSOR_FULFILLMENT_STATUS_LABELS[status]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="amc-inline-form-grid">
+                      <label>
+                        <span>Assignee</span>
+                        <select
+                          onChange={(event) => updateSponsorEditDraft(item.id, { assigneeId: event.target.value })}
+                          value={sponsorEditDrafts[item.id]?.assigneeId ?? item.assigneeId ?? ""}
+                        >
+                          <option value="">Unassigned</option>
+                          {state.staff.map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Due Date</span>
+                        <input
+                          onChange={(event) => updateSponsorEditDraft(item.id, { dueDate: event.target.value })}
+                          type="date"
+                          value={sponsorEditDrafts[item.id]?.dueDate ?? item.dueDate}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      <span>Notes</span>
+                      <textarea
+                        onChange={(event) => updateSponsorEditDraft(item.id, { notes: event.target.value })}
+                        value={sponsorEditDrafts[item.id]?.notes ?? item.notes}
+                      />
+                    </label>
+                    <div className="amc-record-actions">
+                      <button className="topbar__button" onClick={() => handleSponsorFulfillmentUpdate(item.id)} type="button">
+                        Save Fulfillment
+                      </button>
+                      <button className="button-link button-link--inline-secondary" onClick={() => setEditingSponsorFulfillmentId(null)} type="button">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="amc-collateral-card__main">
+                      <div>
+                        <strong>{item.fulfillmentTitle}</strong>
+                        <span>{item.sponsorName} / {SPONSOR_FULFILLMENT_TYPE_LABELS[item.fulfillmentType]}</span>
+                      </div>
+                      <div className="amc-collateral-card__chips">
+                        <span>{SPONSOR_FULFILLMENT_STATUS_LABELS[item.status]}</span>
+                        <span>{getAssigneeName(state.staff, item.assigneeId)}</span>
+                        {item.dueDate ? <span>{item.dueDate}</span> : null}
+                        <span>
+                          {item.relatedActionItemIds.length} action{item.relatedActionItemIds.length === 1 ? "" : "s"}
+                        </span>
+                        <span>
+                          {item.relatedCollateralIds.length} collateral
+                        </span>
+                      </div>
+                      <div className="amc-collateral-card__secondary">
+                        {item.notes ? <span>Notes: {item.notes}</span> : null}
+                        {item.relatedActionItemIds.map((actionItemId) => {
+                          const actionItem = state.actionItems.find((candidate) => candidate.id === actionItemId);
+
+                          return <span key={actionItemId}>Action: {actionItem?.title ?? actionItemId}</span>;
+                        })}
+                        {item.relatedCollateralIds.map((collateralItemId) => {
+                          const collateralItem = state.collateralItems.find((candidate) => candidate.id === collateralItemId);
+
+                          return <span key={collateralItemId}>Collateral: {collateralItem?.title ?? collateralItemId}</span>;
+                        })}
+                      </div>
+                    </div>
+                    <div className="amc-record-actions">
+                      <button className="button-link button-link--inline-secondary" onClick={() => startEditingSponsorFulfillment(item)} type="button">
+                        Edit
+                      </button>
+                    </div>
+                  </>
+                )}
+                <div className="amc-related-action-form">
+                  <input
+                    aria-label={`Action title for ${item.fulfillmentTitle}`}
+                    onChange={(event) => updateSponsorActionDraft(item.id, { title: event.target.value })}
+                    placeholder="Next action"
+                    type="text"
+                    value={sponsorActionDrafts[item.id]?.title ?? ""}
+                  />
+                  <select
+                    aria-label={`Action assignee for ${item.fulfillmentTitle}`}
+                    onChange={(event) => updateSponsorActionDraft(item.id, { assigneeId: event.target.value })}
+                    value={sponsorActionDrafts[item.id]?.assigneeId ?? ""}
+                  >
+                    <option value="">Use fulfillment assignee</option>
+                    {state.staff.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.displayName}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label={`Action due date for ${item.fulfillmentTitle}`}
+                    onChange={(event) => updateSponsorActionDraft(item.id, { dueDate: event.target.value })}
+                    type="date"
+                    value={sponsorActionDrafts[item.id]?.dueDate ?? ""}
+                  />
+                  <button className="button-link button-link--inline-secondary" onClick={() => handleCreateSponsorAction(item.id)} type="button">
+                    Add Action
+                  </button>
+                </div>
+                <div className="amc-related-collateral-form">
+                  <input
+                    aria-label={`Collateral title for ${item.fulfillmentTitle}`}
+                    onChange={(event) => updateSponsorCollateralDraft(item.id, { title: event.target.value })}
+                    placeholder="Related collateral"
+                    type="text"
+                    value={sponsorCollateralDrafts[item.id]?.title ?? ""}
+                  />
+                  <select
+                    aria-label={`Collateral type for ${item.fulfillmentTitle}`}
+                    onChange={(event) =>
+                      updateSponsorCollateralDraft(item.id, {
+                        collateralType: event.target.value as CollateralItemCreateInput["collateralType"]
+                      })
+                    }
+                    value={sponsorCollateralDrafts[item.id]?.collateralType ?? "email"}
+                  >
+                    {COLLATERAL_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {COLLATERAL_TYPE_LABELS[type]}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label={`Collateral assignee for ${item.fulfillmentTitle}`}
+                    onChange={(event) => updateSponsorCollateralDraft(item.id, { assigneeId: event.target.value })}
+                    value={sponsorCollateralDrafts[item.id]?.assigneeId ?? ""}
+                  >
+                    <option value="">Use fulfillment assignee</option>
+                    {state.staff.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.displayName}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label={`Collateral due date for ${item.fulfillmentTitle}`}
+                    onChange={(event) => updateSponsorCollateralDraft(item.id, { dueDate: event.target.value })}
+                    type="date"
+                    value={sponsorCollateralDrafts[item.id]?.dueDate ?? ""}
+                  />
+                  <button className="button-link button-link--inline-secondary" onClick={() => handleCreateSponsorCollateral(item.id)} type="button">
+                    Add Collateral
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {isAddingSponsorFulfillment ? (
+            <form className="amc-form-stack amc-collateral-add-form" onSubmit={handleSponsorFulfillmentSubmit}>
+              <div className="amc-panel__header">
+                <h3>Add sponsor fulfillment</h3>
+                <span>Client and bucket are inherited</span>
+              </div>
+              <div className="amc-inline-form-grid">
+                <label>
+                  <span>Sponsor</span>
+                  <input
+                    onChange={(event) => setSponsorForm((current) => ({ ...current, sponsorName: event.target.value }))}
+                    placeholder="Sponsor name"
+                    type="text"
+                    value={sponsorForm.sponsorName}
+                  />
+                </label>
+                <label>
+                  <span>Fulfillment</span>
+                  <input
+                    onChange={(event) => setSponsorForm((current) => ({ ...current, fulfillmentTitle: event.target.value }))}
+                    placeholder="Promised benefit"
+                    type="text"
+                    value={sponsorForm.fulfillmentTitle}
+                  />
+                </label>
+              </div>
+              <div className="amc-inline-form-grid">
+                <label>
+                  <span>Type</span>
+                  <select
+                    onChange={(event) =>
+                      setSponsorForm((current) => ({
+                        ...current,
+                        fulfillmentType: event.target.value as SponsorFulfillmentCreateInput["fulfillmentType"]
+                      }))
+                    }
+                    value={sponsorForm.fulfillmentType}
+                  >
+                    {SPONSOR_FULFILLMENT_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {SPONSOR_FULFILLMENT_TYPE_LABELS[type]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select
+                    onChange={(event) =>
+                      setSponsorForm((current) => ({
+                        ...current,
+                        status: event.target.value as SponsorFulfillmentCreateInput["status"]
+                      }))
+                    }
+                    value={sponsorForm.status}
+                  >
+                    {SPONSOR_FULFILLMENT_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {SPONSOR_FULFILLMENT_STATUS_LABELS[status]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="amc-inline-form-grid">
+                <label>
+                  <span>Assignee</span>
+                  <select
+                    onChange={(event) => setSponsorForm((current) => ({ ...current, assigneeId: event.target.value }))}
+                    value={sponsorForm.assigneeId ?? ""}
+                  >
+                    <option value="">Unassigned</option>
+                    {state.staff.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Due Date</span>
+                  <input
+                    onChange={(event) => setSponsorForm((current) => ({ ...current, dueDate: event.target.value }))}
+                    type="date"
+                    value={sponsorForm.dueDate}
+                  />
+                </label>
+              </div>
+              <label>
+                <span>Notes</span>
+                <textarea
+                  onChange={(event) => setSponsorForm((current) => ({ ...current, notes: event.target.value }))}
+                  value={sponsorForm.notes}
+                />
+              </label>
+              <button className="topbar__button" type="submit">
+                Add Fulfillment
+              </button>
+            </form>
+          ) : null}
+        </section>
       </section>
     </div>
   );

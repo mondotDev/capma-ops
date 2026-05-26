@@ -7,14 +7,26 @@ import {
   addCollateralActionItemToAmcLocalState,
   addCollateralItemToAmcLocalState,
   addClientAssociationToAmcLocalState,
+  addSponsorFulfillmentActionItemToAmcLocalState,
+  addSponsorFulfillmentCollateralItemToAmcLocalState,
+  addSponsorFulfillmentRecordToAmcLocalState,
   addWorkBucketToAmcLocalState,
   createDefaultAmcLocalState,
   loadAmcLocalState,
   saveAmcLocalState,
   updateCollateralItemInAmcLocalState,
+  updateSponsorFulfillmentRecordInAmcLocalState,
   type AmcLocalStateSnapshot
 } from "@/lib/amc-local-state";
-import type { ActionItem, ClientAssociation, CollateralItem, CollateralItemUpdateInput, WorkBucket } from "@/lib/amc-domain";
+import type {
+  ActionItem,
+  ClientAssociation,
+  CollateralItem,
+  CollateralItemUpdateInput,
+  SponsorFulfillmentRecord,
+  SponsorFulfillmentUpdateInput,
+  WorkBucket
+} from "@/lib/amc-domain";
 
 interface AmcLocalStateContextValue {
   state: AmcLocalStateSnapshot;
@@ -23,6 +35,10 @@ interface AmcLocalStateContextValue {
   addCollateralItem: (collateralItem: CollateralItem) => void;
   updateCollateralItem: (collateralItemId: string, updates: CollateralItemUpdateInput) => void;
   addCollateralActionItem: (input: { collateralItemId: string; actionItem: ActionItem }) => void;
+  addSponsorFulfillmentRecord: (sponsorFulfillment: SponsorFulfillmentRecord) => void;
+  updateSponsorFulfillmentRecord: (sponsorFulfillmentId: string, updates: SponsorFulfillmentUpdateInput) => void;
+  addSponsorFulfillmentActionItem: (input: { sponsorFulfillmentId: string; actionItem: ActionItem }) => void;
+  addSponsorFulfillmentCollateralItem: (input: { sponsorFulfillmentId: string; collateralItem: CollateralItem }) => void;
   addClientAssociation: (client: ClientAssociation) => void;
   addWorkBucket: (bucket: WorkBucket) => void;
   resetLocalState: () => void;
@@ -70,6 +86,42 @@ export function AmcLocalStateProvider({ children }: { children: ReactNode }) {
             snapshot: current,
             collateralItemId: input.collateralItemId,
             actionItem: input.actionItem
+          });
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addSponsorFulfillmentRecord(sponsorFulfillment) {
+        setState((current) => {
+          const nextState = addSponsorFulfillmentRecordToAmcLocalState(current, sponsorFulfillment);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      updateSponsorFulfillmentRecord(sponsorFulfillmentId, updates) {
+        setState((current) => {
+          const nextState = updateSponsorFulfillmentRecordInAmcLocalState(current, sponsorFulfillmentId, updates);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addSponsorFulfillmentActionItem(input) {
+        setState((current) => {
+          const nextState = addSponsorFulfillmentActionItemToAmcLocalState({
+            snapshot: current,
+            sponsorFulfillmentId: input.sponsorFulfillmentId,
+            actionItem: input.actionItem
+          });
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addSponsorFulfillmentCollateralItem(input) {
+        setState((current) => {
+          const nextState = addSponsorFulfillmentCollateralItemToAmcLocalState({
+            snapshot: current,
+            sponsorFulfillmentId: input.sponsorFulfillmentId,
+            collateralItem: input.collateralItem
           });
           saveAmcLocalState(nextState);
           return nextState;

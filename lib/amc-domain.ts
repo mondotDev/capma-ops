@@ -53,11 +53,40 @@ export type CollateralType = (typeof COLLATERAL_TYPES)[number];
 
 export type CollateralStatus = (typeof COLLATERAL_STATUSES)[number];
 
+export const SPONSOR_FULFILLMENT_TYPES = [
+  "logoRecognition",
+  "emailMention",
+  "socialMention",
+  "signage",
+  "boothOrTable",
+  "speakingOpportunity",
+  "attendeeList",
+  "programAd",
+  "sponsoredSession",
+  "receptionRecognition",
+  "other"
+] as const;
+
+export const SPONSOR_FULFILLMENT_STATUSES = [
+  "notStarted",
+  "waiting",
+  "inProgress",
+  "readyForReview",
+  "fulfilled",
+  "blocked",
+  "canceled"
+] as const;
+
+export type SponsorFulfillmentType = (typeof SPONSOR_FULFILLMENT_TYPES)[number];
+
+export type SponsorFulfillmentStatus = (typeof SPONSOR_FULFILLMENT_STATUSES)[number];
+
 export type RelationshipEntityType =
   | "actionItem"
   | "collateralItem"
   | "educationApplication"
   | "speakerEngagement"
+  | "sponsorFulfillment"
   | "sponsorDeliverable";
 
 export interface RelatedEntityRef {
@@ -182,6 +211,30 @@ export const COLLATERAL_STATUS_LABELS: Record<CollateralStatus, string> = {
   complete: "Complete"
 };
 
+export const SPONSOR_FULFILLMENT_TYPE_LABELS: Record<SponsorFulfillmentType, string> = {
+  logoRecognition: "Logo recognition",
+  emailMention: "Email mention",
+  socialMention: "Social mention",
+  signage: "Signage",
+  boothOrTable: "Booth or table",
+  speakingOpportunity: "Speaking opportunity",
+  attendeeList: "Attendee list",
+  programAd: "Program ad",
+  sponsoredSession: "Sponsored session",
+  receptionRecognition: "Reception recognition",
+  other: "Other"
+};
+
+export const SPONSOR_FULFILLMENT_STATUS_LABELS: Record<SponsorFulfillmentStatus, string> = {
+  notStarted: "Not started",
+  waiting: "Waiting",
+  inProgress: "In progress",
+  readyForReview: "Ready for review",
+  fulfilled: "Fulfilled",
+  blocked: "Blocked",
+  canceled: "Canceled"
+};
+
 export interface WorkItem {
   id: string;
   organizationId: string;
@@ -234,6 +287,7 @@ export interface CollateralItem {
   dueDate: string;
   audience: string;
   notes: string;
+  relatedSponsorFulfillmentIds?: string[];
   relatedActionItemIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -270,6 +324,66 @@ export interface CollateralActionItemCreateInput {
   title: string;
   assigneeId?: string | null;
   dueDate?: string;
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">;
+}
+
+export interface SponsorFulfillmentRecord {
+  id: string;
+  organizationId: string;
+  clientAssociationId: string;
+  bucketId: string;
+  sponsorName: string;
+  fulfillmentTitle: string;
+  fulfillmentType: SponsorFulfillmentType;
+  status: SponsorFulfillmentStatus;
+  assigneeId: string | null;
+  dueDate: string;
+  notes: string;
+  relatedCollateralIds: string[];
+  relatedActionItemIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SponsorFulfillmentCreateInput {
+  clientAssociationId: string;
+  bucketId: string;
+  sponsorName: string;
+  fulfillmentTitle: string;
+  fulfillmentType: SponsorFulfillmentType;
+  status?: SponsorFulfillmentStatus;
+  assigneeId?: string | null;
+  dueDate?: string;
+  notes?: string;
+  now?: string;
+}
+
+export interface SponsorFulfillmentUpdateInput {
+  sponsorName?: string;
+  fulfillmentTitle?: string;
+  fulfillmentType?: SponsorFulfillmentType;
+  status?: SponsorFulfillmentStatus;
+  assigneeId?: string | null;
+  dueDate?: string;
+  notes?: string;
+  now?: string;
+}
+
+export interface SponsorFulfillmentActionItemCreateInput {
+  sponsorFulfillment: SponsorFulfillmentRecord;
+  title: string;
+  assigneeId?: string | null;
+  dueDate?: string;
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">;
+}
+
+export interface SponsorFulfillmentCollateralCreateInput {
+  sponsorFulfillment: SponsorFulfillmentRecord;
+  title: string;
+  collateralType: CollateralType;
+  assigneeId?: string | null;
+  dueDate?: string;
+  notes?: string;
   data: Pick<FoundationData, "buckets" | "clients" | "organization">;
 }
 
@@ -311,6 +425,7 @@ export interface FoundationData {
   collateralItems: CollateralItem[];
   educationApplications: EducationApplication[];
   speakerEngagements: SpeakerEngagement[];
+  sponsorFulfillmentRecords: SponsorFulfillmentRecord[];
 }
 
 export interface WorkVisibilityFilter {
@@ -331,7 +446,7 @@ export interface BucketWorkspace {
   collateralItems: CollateralItem[];
   educationApplications: EducationApplication[];
   speakerEngagements: SpeakerEngagement[];
-  sponsorFulfillmentRecords: [];
+  sponsorFulfillmentRecords: SponsorFulfillmentRecord[];
 }
 
 export const DEMO_FOUNDATION_DATA: FoundationData = {
@@ -503,6 +618,7 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       assigneeId: "staff-melissa",
       dueDate: "2026-06-10",
       audience: "Members and prospects",
+      relatedSponsorFulfillmentIds: [],
       relatedActionItemIds: [],
       notes: "",
       createdAt: "2026-05-01T12:00:00.000Z",
@@ -538,16 +654,37 @@ export const DEMO_FOUNDATION_DATA: FoundationData = {
       relatedActionItemIds: ["action-ppma-speaker-confirmations"],
       notes: ""
     }
+  ],
+  sponsorFulfillmentRecords: [
+    {
+      id: "sponsor-demo-logo",
+      organizationId: "org-demo-amc",
+      clientAssociationId: "client-western-parks",
+      bucketId: "bucket-wpc-sponsor-fulfillment",
+      sponsorName: "Trailhead Partners",
+      fulfillmentTitle: "Logo recognition in partner reminder email",
+      fulfillmentType: "logoRecognition",
+      status: "waiting",
+      assigneeId: null,
+      dueDate: "2026-06-20",
+      notes: "Need current logo and approval copy.",
+      relatedCollateralIds: [],
+      relatedActionItemIds: ["action-wpc-sponsor-logo"],
+      createdAt: "2026-05-01T12:00:00.000Z",
+      updatedAt: "2026-05-01T12:00:00.000Z"
+    }
   ]
 };
 
 export function getFoundationWorkItems(input: {
   actionItems: ActionItem[];
   collateralItems: CollateralItem[];
+  sponsorFulfillmentRecords?: SponsorFulfillmentRecord[];
 }) {
   return [
     ...input.actionItems.map(projectActionItemToWorkItem),
-    ...input.collateralItems.map(projectCollateralItemToWorkItem)
+    ...input.collateralItems.map(projectCollateralItemToWorkItem),
+    ...(input.sponsorFulfillmentRecords ?? []).map(projectSponsorFulfillmentToWorkItem)
   ];
 }
 
@@ -560,6 +697,7 @@ export function getBucketWorkspace(
     | "collateralItems"
     | "educationApplications"
     | "speakerEngagements"
+    | "sponsorFulfillmentRecords"
   >,
   input: {
     clientId: string;
@@ -589,16 +727,17 @@ export function getBucketWorkspace(
   const collateralItems = data.collateralItems.filter((item) => item.bucketId === bucket.id);
   const educationApplications = data.educationApplications.filter((item) => item.bucketId === bucket.id);
   const speakerEngagements = data.speakerEngagements.filter((item) => item.bucketId === bucket.id);
+  const sponsorFulfillmentRecords = data.sponsorFulfillmentRecords.filter((item) => item.bucketId === bucket.id);
 
   return {
     client,
     bucket,
-    workItems: getFoundationWorkItems({ actionItems, collateralItems }),
+    workItems: getFoundationWorkItems({ actionItems, collateralItems, sponsorFulfillmentRecords }),
     actionItems,
     collateralItems,
     educationApplications,
     speakerEngagements,
-    sponsorFulfillmentRecords: []
+    sponsorFulfillmentRecords
   };
 }
 
@@ -642,6 +781,35 @@ export function projectCollateralItemToWorkItem(item: CollateralItem): WorkItem 
       entityType: "actionItem",
       entityId: actionItemId
     }))
+  };
+}
+
+export function projectSponsorFulfillmentToWorkItem(item: SponsorFulfillmentRecord): WorkItem {
+  return {
+    id: item.id,
+    organizationId: item.organizationId,
+    clientAssociationId: item.clientAssociationId,
+    bucketId: item.bucketId,
+    tracker: "sponsorFulfillment",
+    title: `${item.sponsorName}: ${item.fulfillmentTitle}`,
+    status: mapSponsorFulfillmentStatusToWorkStatus(item.status),
+    assigneeId: item.assigneeId,
+    dueDate: item.dueDate,
+    origin: {
+      tracker: "sponsorFulfillment",
+      entityType: "sponsorFulfillment",
+      entityId: item.id
+    },
+    relatedEntities: [
+      ...item.relatedActionItemIds.map((actionItemId) => ({
+        entityType: "actionItem" as const,
+        entityId: actionItemId
+      })),
+      ...item.relatedCollateralIds.map((collateralItemId) => ({
+        entityType: "collateralItem" as const,
+        entityId: collateralItemId
+      }))
+    ]
   };
 }
 
@@ -706,6 +874,7 @@ export function createCollateralItem(
     dueDate: input.dueDate?.trim() ?? "",
     audience: input.audience?.trim() ?? "",
     notes: input.notes?.trim() ?? "",
+    relatedSponsorFulfillmentIds: [],
     relatedActionItemIds: [],
     createdAt: now,
     updatedAt: now
@@ -736,6 +905,113 @@ export function updateCollateralItem(item: CollateralItem, input: CollateralItem
     assigneeId: input.assigneeId === undefined ? item.assigneeId : input.assigneeId?.trim() || null,
     dueDate: input.dueDate === undefined ? item.dueDate : input.dueDate.trim(),
     audience: input.audience === undefined ? item.audience : input.audience.trim(),
+    notes: input.notes === undefined ? item.notes : input.notes.trim(),
+    updatedAt: input.now ?? new Date().toISOString()
+  };
+}
+
+export function validateSponsorFulfillmentCreateInput(
+  input: SponsorFulfillmentCreateInput,
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">
+) {
+  const errors: string[] = [];
+  const client = data.clients.find((candidate) => candidate.id === input.clientAssociationId);
+  const bucket = data.buckets.find((candidate) => candidate.id === input.bucketId);
+
+  if (!input.sponsorName.trim()) {
+    errors.push("Sponsor name is required.");
+  }
+
+  if (!input.fulfillmentTitle.trim()) {
+    errors.push("Fulfillment title is required.");
+  }
+
+  if (!client || client.organizationId !== data.organization.id) {
+    errors.push("Client association is required.");
+  }
+
+  if (!bucket || bucket.organizationId !== data.organization.id) {
+    errors.push("Bucket is required.");
+  } else if (bucket.clientAssociationId !== input.clientAssociationId) {
+    errors.push("Bucket must belong to the selected client association.");
+  }
+
+  if (!SPONSOR_FULFILLMENT_TYPES.includes(input.fulfillmentType)) {
+    errors.push("Sponsor fulfillment type is invalid.");
+  }
+
+  if (input.status && !SPONSOR_FULFILLMENT_STATUSES.includes(input.status)) {
+    errors.push("Sponsor fulfillment status is invalid.");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function createSponsorFulfillmentRecord(
+  input: SponsorFulfillmentCreateInput,
+  data: Pick<FoundationData, "buckets" | "clients" | "organization">
+): SponsorFulfillmentRecord {
+  const validation = validateSponsorFulfillmentCreateInput(input, data);
+
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  const now = input.now ?? new Date().toISOString();
+
+  return {
+    id: `sponsor-${crypto.randomUUID()}`,
+    organizationId: data.organization.id,
+    clientAssociationId: input.clientAssociationId,
+    bucketId: input.bucketId,
+    sponsorName: input.sponsorName.trim(),
+    fulfillmentTitle: input.fulfillmentTitle.trim(),
+    fulfillmentType: input.fulfillmentType,
+    status: input.status ?? "notStarted",
+    assigneeId: input.assigneeId?.trim() || null,
+    dueDate: input.dueDate?.trim() ?? "",
+    notes: input.notes?.trim() ?? "",
+    relatedCollateralIds: [],
+    relatedActionItemIds: [],
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function updateSponsorFulfillmentRecord(
+  item: SponsorFulfillmentRecord,
+  input: SponsorFulfillmentUpdateInput
+): SponsorFulfillmentRecord {
+  const nextSponsorName = input.sponsorName === undefined ? item.sponsorName : input.sponsorName.trim();
+  const nextFulfillmentTitle = input.fulfillmentTitle === undefined ? item.fulfillmentTitle : input.fulfillmentTitle.trim();
+
+  if (!nextSponsorName) {
+    throw new Error("Sponsor name is required.");
+  }
+
+  if (!nextFulfillmentTitle) {
+    throw new Error("Fulfillment title is required.");
+  }
+
+  if (input.fulfillmentType && !SPONSOR_FULFILLMENT_TYPES.includes(input.fulfillmentType)) {
+    throw new Error("Sponsor fulfillment type is invalid.");
+  }
+
+  if (input.status && !SPONSOR_FULFILLMENT_STATUSES.includes(input.status)) {
+    throw new Error("Sponsor fulfillment status is invalid.");
+  }
+
+  return {
+    ...item,
+    sponsorName: nextSponsorName,
+    fulfillmentTitle: nextFulfillmentTitle,
+    fulfillmentType: input.fulfillmentType ?? item.fulfillmentType,
+    status: input.status ?? item.status,
+    assigneeId: input.assigneeId === undefined ? item.assigneeId : input.assigneeId?.trim() || null,
+    dueDate: input.dueDate === undefined ? item.dueDate : input.dueDate.trim(),
     notes: input.notes === undefined ? item.notes : input.notes.trim(),
     updatedAt: input.now ?? new Date().toISOString()
   };
@@ -946,6 +1222,53 @@ export function createCollateralActionItem(input: CollateralActionItemCreateInpu
   );
 }
 
+export function createSponsorFulfillmentActionItem(input: SponsorFulfillmentActionItemCreateInput) {
+  return createActionItem(
+    {
+      title: input.title,
+      clientAssociationId: input.sponsorFulfillment.clientAssociationId,
+      bucketId: input.sponsorFulfillment.bucketId,
+      assigneeId: input.assigneeId ?? input.sponsorFulfillment.assigneeId,
+      dueDate: input.dueDate ?? input.sponsorFulfillment.dueDate,
+      origin: {
+        tracker: "sponsorFulfillment",
+        entityType: "sponsorFulfillment",
+        entityId: input.sponsorFulfillment.id
+      },
+      relatedEntities: [
+        {
+          entityType: "sponsorFulfillment",
+          entityId: input.sponsorFulfillment.id
+        }
+      ]
+    },
+    input.data
+  );
+}
+
+export function createSponsorFulfillmentCollateralItem(input: SponsorFulfillmentCollateralCreateInput) {
+  const collateral = createCollateralItem(
+    {
+      title: input.title,
+      clientAssociationId: input.sponsorFulfillment.clientAssociationId,
+      bucketId: input.sponsorFulfillment.bucketId,
+      collateralType: input.collateralType,
+      status: "notStarted",
+      assigneeId: input.assigneeId ?? input.sponsorFulfillment.assigneeId,
+      dueDate: input.dueDate ?? input.sponsorFulfillment.dueDate,
+      notes: input.notes,
+      channelOrUse: SPONSOR_FULFILLMENT_TYPE_LABELS[input.sponsorFulfillment.fulfillmentType],
+      audience: input.sponsorFulfillment.sponsorName
+    },
+    input.data
+  );
+
+  return {
+    ...collateral,
+    relatedSponsorFulfillmentIds: [input.sponsorFulfillment.id]
+  };
+}
+
 export function linkCollateralActionItem(collateralItem: CollateralItem, actionItem: ActionItem): CollateralItem {
   if (collateralItem.relatedActionItemIds.includes(actionItem.id)) {
     return collateralItem;
@@ -954,6 +1277,34 @@ export function linkCollateralActionItem(collateralItem: CollateralItem, actionI
   return {
     ...collateralItem,
     relatedActionItemIds: [...collateralItem.relatedActionItemIds, actionItem.id]
+  };
+}
+
+export function linkSponsorFulfillmentActionItem(
+  sponsorFulfillment: SponsorFulfillmentRecord,
+  actionItem: ActionItem
+): SponsorFulfillmentRecord {
+  if (sponsorFulfillment.relatedActionItemIds.includes(actionItem.id)) {
+    return sponsorFulfillment;
+  }
+
+  return {
+    ...sponsorFulfillment,
+    relatedActionItemIds: [...sponsorFulfillment.relatedActionItemIds, actionItem.id]
+  };
+}
+
+export function linkSponsorFulfillmentCollateralItem(
+  sponsorFulfillment: SponsorFulfillmentRecord,
+  collateralItem: CollateralItem
+): SponsorFulfillmentRecord {
+  if (sponsorFulfillment.relatedCollateralIds.includes(collateralItem.id)) {
+    return sponsorFulfillment;
+  }
+
+  return {
+    ...sponsorFulfillment,
+    relatedCollateralIds: [...sponsorFulfillment.relatedCollateralIds, collateralItem.id]
   };
 }
 
@@ -968,6 +1319,26 @@ function mapCollateralStatusToWorkStatus(status: CollateralItem["status"]): Work
 
   if (status === "waiting") {
     return "waiting";
+  }
+
+  return "inProgress";
+}
+
+function mapSponsorFulfillmentStatusToWorkStatus(status: SponsorFulfillmentStatus): WorkStatus {
+  if (status === "fulfilled" || status === "canceled") {
+    return "complete";
+  }
+
+  if (status === "notStarted") {
+    return "notStarted";
+  }
+
+  if (status === "waiting") {
+    return "waiting";
+  }
+
+  if (status === "blocked") {
+    return "blocked";
   }
 
   return "inProgress";
