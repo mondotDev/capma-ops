@@ -178,6 +178,20 @@ export interface ProgramSeries {
   defaultCloseoutLeadDays?: number;
 }
 
+export interface ProgramSeriesCreateInput {
+  clientAssociationId: string;
+  name: string;
+  defaultKind: WorkBucketKind;
+  recurrence: RecurrencePattern;
+  defaultDeliveryFormat: DeliveryFormat;
+  active?: boolean;
+  notes?: string;
+  defaultOwnerId?: string | null;
+  defaultPlanningLeadDays?: number;
+  defaultCloseoutLeadDays?: number;
+  now?: string;
+}
+
 export interface WorkBucket {
   id: string;
   organizationId: string;
@@ -1403,6 +1417,65 @@ export function createClientAssociation(
   };
 }
 
+export function validateProgramSeriesCreateInput(
+  input: ProgramSeriesCreateInput,
+  data: Pick<FoundationData, "clients" | "organization">
+) {
+  const errors: string[] = [];
+  const client = data.clients.find((candidate) => candidate.id === input.clientAssociationId);
+
+  if (!client || client.organizationId !== data.organization.id) {
+    errors.push("Client association is required.");
+  }
+
+  if (!input.name.trim()) {
+    errors.push("Program/series name is required.");
+  }
+
+  if (!RECURRENCE_PATTERNS.includes(input.recurrence)) {
+    errors.push("Program/series recurrence is invalid.");
+  }
+
+  if (!DELIVERY_FORMATS.includes(input.defaultDeliveryFormat)) {
+    errors.push("Program/series delivery format is invalid.");
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+export function createProgramSeries(
+  input: ProgramSeriesCreateInput,
+  data: Pick<FoundationData, "clients" | "organization">
+): ProgramSeries {
+  const validation = validateProgramSeriesCreateInput(input, data);
+
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join(" "));
+  }
+
+  const now = input.now ?? new Date().toISOString();
+
+  return {
+    id: `series-${crypto.randomUUID()}`,
+    organizationId: data.organization.id,
+    clientAssociationId: input.clientAssociationId,
+    name: input.name.trim(),
+    defaultKind: input.defaultKind,
+    recurrence: input.recurrence,
+    defaultDeliveryFormat: input.defaultDeliveryFormat,
+    active: input.active ?? true,
+    notes: input.notes?.trim() ?? "",
+    createdAt: now,
+    updatedAt: now,
+    defaultOwnerId: input.defaultOwnerId?.trim() || null,
+    defaultPlanningLeadDays: input.defaultPlanningLeadDays,
+    defaultCloseoutLeadDays: input.defaultCloseoutLeadDays
+  };
+}
+
 function normalizeWorkBucketStatus(status: unknown): WorkBucketStatus {
   if (status === "active") {
     return "live";
@@ -1433,16 +1506,23 @@ function normalizeLocationType(locationType: unknown): LocationType {
 
 export function validateWorkBucketCreateInput(
   input: WorkBucketCreateInput,
-  data: Pick<FoundationData, "clients" | "organization">
+  data: Pick<FoundationData, "clients" | "organization"> & Partial<Pick<FoundationData, "programSeries">>
 ) {
   const errors: string[] = [];
   const client = data.clients.find((candidate) => candidate.id === input.clientAssociationId);
+  const series = data.programSeries?.find((candidate) => candidate.id === input.programSeriesId);
 
   if (!client || client.organizationId !== data.organization.id) {
     errors.push("Client association is required.");
   }
 
-  if (!input.name.trim()) {
+  if (input.programSeriesId && !series) {
+    errors.push("Program/series is required.");
+  } else if (series && series.clientAssociationId !== input.clientAssociationId) {
+    errors.push("Program/series must belong to the selected client association.");
+  }
+
+  if (!input.name.trim() && !series) {
     errors.push("Bucket name is required.");
   }
 
@@ -1470,7 +1550,7 @@ export function validateWorkBucketCreateInput(
 
 export function createWorkBucket(
   input: WorkBucketCreateInput,
-  data: Pick<FoundationData, "clients" | "organization">
+  data: Pick<FoundationData, "clients" | "organization"> & Partial<Pick<FoundationData, "programSeries">>
 ): WorkBucket {
   const validation = validateWorkBucketCreateInput(input, data);
 
@@ -1478,18 +1558,20 @@ export function createWorkBucket(
     throw new Error(validation.errors.join(" "));
   }
 
+  const series = data.programSeries?.find((candidate) => candidate.id === input.programSeriesId);
   const now = input.now ?? new Date().toISOString();
-  const recurrence = input.recurrence ?? "adHoc";
+  const recurrence = input.recurrence ?? series?.recurrence ?? "adHoc";
   const cycleLabel = input.cycleLabel?.trim() ?? getCycleLabel({ recurrence, startsAt: input.startsAt });
-  const generatedLabel = input.generatedLabel?.trim() || generateBucketLabel({ programSeriesName: input.name, recurrence, cycleLabel, startsAt: input.startsAt });
+  const name = input.name.trim() || series?.name.trim() || "";
+  const generatedLabel = input.generatedLabel?.trim() || generateBucketLabel({ programSeriesName: series?.name ?? name, recurrence, cycleLabel, startsAt: input.startsAt });
 
   return {
     id: `bucket-${crypto.randomUUID()}`,
     organizationId: data.organization.id,
     clientAssociationId: input.clientAssociationId,
     programSeriesId: input.programSeriesId?.trim() || null,
-    kind: input.kind,
-    name: input.name.trim(),
+    kind: series?.defaultKind ?? input.kind,
+    name,
     generatedLabel,
     cycleLabel,
     status: input.status ?? "planning",
@@ -1498,7 +1580,7 @@ export function createWorkBucket(
     startsAt: input.startsAt?.trim() ?? "",
     endsAt: input.endsAt?.trim() ?? "",
     closeoutDueAt: input.closeoutDueAt?.trim() ?? "",
-    deliveryFormat: input.deliveryFormat ?? "notApplicable",
+    deliveryFormat: input.deliveryFormat ?? series?.defaultDeliveryFormat ?? "notApplicable",
     locationName: input.locationName?.trim() ?? "",
     locationType: input.locationType ?? "notApplicable",
     ownerId: input.ownerId?.trim() || null,

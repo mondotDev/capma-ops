@@ -1,18 +1,31 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { Dispatch, FormEvent, SetStateAction } from "react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAmcLocalState } from "@/components/amc-local-state-provider";
 import {
   createClientAssociation,
+  createProgramSeries,
   createWorkBucket,
+  DELIVERY_FORMAT_LABELS,
+  DELIVERY_FORMATS,
+  generateBucketLabel,
   getBucketDisplayLabel,
+  LOCATION_TYPE_LABELS,
+  LOCATION_TYPES,
+  RECURRENCE_PATTERN_LABELS,
+  RECURRENCE_PATTERNS,
   validateClientAssociationCreateInput,
+  validateProgramSeriesCreateInput,
   validateWorkBucketCreateInput,
   WORK_BUCKET_KIND_LABELS,
   WORK_BUCKET_STATUS_LABELS,
   type ClientAssociationCreateInput,
+  type DeliveryFormat,
+  type LocationType,
+  type ProgramSeriesCreateInput,
+  type RecurrencePattern,
   type WorkBucketCreateInput,
   type WorkBucketKind
 } from "@/lib/amc-domain";
@@ -27,18 +40,58 @@ const BUCKET_KIND_OPTIONS: Array<{ value: WorkBucketKind; label: string }> = [
   { value: "internalOps", label: WORK_BUCKET_KIND_LABELS.internalOps }
 ];
 
+const MONTH_OPTIONS = [
+  { value: "01", label: "January" },
+  { value: "02", label: "February" },
+  { value: "03", label: "March" },
+  { value: "04", label: "April" },
+  { value: "05", label: "May" },
+  { value: "06", label: "June" },
+  { value: "07", label: "July" },
+  { value: "08", label: "August" },
+  { value: "09", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" }
+];
+
+const QUARTER_OPTIONS = [
+  { value: "1", label: "Q1", startMonth: "01" },
+  { value: "2", label: "Q2", startMonth: "04" },
+  { value: "3", label: "Q3", startMonth: "07" },
+  { value: "4", label: "Q4", startMonth: "10" }
+];
+
 export function AmcClientManagement() {
-  const { state, addClientAssociation, addWorkBucket } = useAmcLocalState();
+  const { state, addClientAssociation, addProgramSeries, addWorkBucket } = useAmcLocalState();
   const firstClientId = state.clients[0]?.id ?? "";
+  const firstSeries = state.programSeries.find((series) => series.clientAssociationId === firstClientId);
   const [clientForm, setClientForm] = useState<ClientAssociationCreateInput>({
     name: "",
     shortName: "",
     status: "active"
   });
+  const [programSeriesMode, setProgramSeriesMode] = useState<"existing" | "new">("existing");
+  const [programSeriesForm, setProgramSeriesForm] = useState<ProgramSeriesCreateInput>({
+    clientAssociationId: firstClientId,
+    name: "",
+    defaultKind: "event",
+    recurrence: "annual",
+    defaultDeliveryFormat: "inPerson",
+    active: true,
+    notes: ""
+  });
+  const [cycleInputs, setCycleInputs] = useState({
+    year: "2026",
+    month: "06",
+    quarter: "3",
+    adHocLabel: ""
+  });
   const [bucketForm, setBucketForm] = useState<WorkBucketCreateInput>({
     clientAssociationId: firstClientId,
-    kind: "event",
-    name: "",
+    programSeriesId: firstSeries?.id ?? "",
+    kind: firstSeries?.defaultKind ?? "event",
+    name: firstSeries?.name ?? "",
     status: "planning"
   });
   const [clientFeedback, setClientFeedback] = useState("");
@@ -51,6 +104,19 @@ export function AmcClientManagement() {
       })),
     [state.buckets, state.clients]
   );
+  const selectedClientSeries = state.programSeries.filter((series) => series.clientAssociationId === bucketForm.clientAssociationId && series.active);
+  const selectedProgramSeries =
+    programSeriesMode === "existing"
+      ? selectedClientSeries.find((series) => series.id === bucketForm.programSeriesId)
+      : null;
+  const selectedRecurrence = selectedProgramSeries?.recurrence ?? programSeriesForm.recurrence;
+  const structuredCycle = getStructuredCycle(selectedRecurrence, cycleInputs);
+  const generatedBucketLabel = generateBucketLabel({
+    programSeriesName: selectedProgramSeries?.name ?? programSeriesForm.name,
+    recurrence: selectedRecurrence,
+    startsAt: bucketForm.startsAt || structuredCycle.startsAt,
+    cycleLabel: bucketForm.cycleLabel || structuredCycle.cycleLabel
+  });
 
   function handleClientSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,22 +134,70 @@ export function AmcClientManagement() {
       ...current,
       clientAssociationId: current.clientAssociationId || client.id
     }));
+    setProgramSeriesForm((current) => ({
+      ...current,
+      clientAssociationId: current.clientAssociationId || client.id
+    }));
     setClientFeedback("Client added with Membership and General Operations buckets.");
   }
 
   function handleBucketSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const validation = validateWorkBucketCreateInput(bucketForm, state);
+    let nextProgramSeries = selectedProgramSeries;
+
+    if (programSeriesMode === "new") {
+      const seriesValidation = validateProgramSeriesCreateInput(programSeriesForm, state);
+
+      if (!seriesValidation.isValid) {
+        setBucketFeedback(seriesValidation.errors[0] ?? "Check the program/series fields.");
+        return;
+      }
+
+      nextProgramSeries = createProgramSeries(programSeriesForm, state);
+      addProgramSeries(nextProgramSeries);
+    }
+
+    if (!nextProgramSeries) {
+      setBucketFeedback("Program/series is required.");
+      return;
+    }
+
+    const structuredBucket: WorkBucketCreateInput = {
+      ...bucketForm,
+      clientAssociationId: nextProgramSeries.clientAssociationId,
+      programSeriesId: nextProgramSeries.id,
+      kind: nextProgramSeries.defaultKind,
+      name: nextProgramSeries.name,
+      recurrence: nextProgramSeries.recurrence,
+      deliveryFormat: bucketForm.deliveryFormat ?? nextProgramSeries.defaultDeliveryFormat,
+      startsAt: bucketForm.startsAt || structuredCycle.startsAt,
+      cycleLabel: bucketForm.cycleLabel?.trim() || structuredCycle.cycleLabel,
+      generatedLabel: bucketForm.generatedLabel?.trim() || generatedBucketLabel
+    };
+    const validation = validateWorkBucketCreateInput(structuredBucket, {
+      ...state,
+      programSeries: programSeriesMode === "new" ? [...state.programSeries, nextProgramSeries] : state.programSeries
+    });
 
     if (!validation.isValid) {
       setBucketFeedback(validation.errors[0] ?? "Check the required fields.");
       return;
     }
 
-    const bucket = createWorkBucket(bucketForm, state);
+    const bucket = createWorkBucket(structuredBucket, {
+      ...state,
+      programSeries: programSeriesMode === "new" ? [...state.programSeries, nextProgramSeries] : state.programSeries
+    });
     addWorkBucket(bucket);
-    setBucketForm((current) => ({ ...current, name: "", status: "planning" }));
-    setBucketFeedback(bucket.kind === "event" ? "Event bucket added." : "Bucket added.");
+    setBucketForm((current) => ({
+      ...current,
+      generatedLabel: "",
+      notes: "",
+      status: "planning"
+    }));
+    setProgramSeriesForm((current) => ({ ...current, name: "", notes: "" }));
+    setProgramSeriesMode("existing");
+    setBucketFeedback(`${getBucketDisplayLabel(bucket, nextProgramSeries)} added.`);
   }
 
   return (
@@ -156,7 +270,22 @@ export function AmcClientManagement() {
             <label>
               <span>Client</span>
               <select
-                onChange={(event) => setBucketForm((current) => ({ ...current, clientAssociationId: event.target.value }))}
+                onChange={(event) => {
+                  const clientAssociationId = event.target.value;
+                  const nextSeries = state.programSeries.find((series) => series.clientAssociationId === clientAssociationId && series.active);
+
+                  setBucketForm((current) => ({
+                    ...current,
+                    clientAssociationId,
+                    programSeriesId: nextSeries?.id ?? "",
+                    kind: nextSeries?.defaultKind ?? current.kind,
+                    name: nextSeries?.name ?? current.name
+                  }));
+                  setProgramSeriesForm((current) => ({
+                    ...current,
+                    clientAssociationId
+                  }));
+                }}
                 value={bucketForm.clientAssociationId}
               >
                 {state.clients.map((client) => (
@@ -167,27 +296,137 @@ export function AmcClientManagement() {
               </select>
             </label>
             <label>
-              <span>Kind</span>
+              <span>Program / Series</span>
               <select
-                onChange={(event) =>
-                  setBucketForm((current) => ({ ...current, kind: event.target.value as WorkBucketKind }))
-                }
-                value={bucketForm.kind}
+                onChange={(event) => {
+                  const value = event.target.value;
+
+                  if (value === "__new__") {
+                    setProgramSeriesMode("new");
+                    setBucketForm((current) => ({ ...current, programSeriesId: "", name: "" }));
+                    return;
+                  }
+
+                  const series = state.programSeries.find((candidate) => candidate.id === value);
+
+                  setProgramSeriesMode("existing");
+                  setBucketForm((current) => ({
+                    ...current,
+                    programSeriesId: value,
+                    kind: series?.defaultKind ?? current.kind,
+                    name: series?.name ?? current.name,
+                    recurrence: series?.recurrence ?? current.recurrence,
+                    deliveryFormat: series?.defaultDeliveryFormat ?? current.deliveryFormat
+                  }));
+                }}
+                value={programSeriesMode === "new" ? "__new__" : bucketForm.programSeriesId ?? ""}
               >
-                {BUCKET_KIND_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                {selectedClientSeries.map((series) => (
+                  <option key={series.id} value={series.id}>
+                    {series.name} ({RECURRENCE_PATTERN_LABELS[series.recurrence]})
                   </option>
                 ))}
+                <option value="__new__">Create new program/series</option>
               </select>
             </label>
+
+            {programSeriesMode === "new" ? (
+              <>
+                <label>
+                  <span>Program / Series Name</span>
+                  <input
+                    onChange={(event) => setProgramSeriesForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Best Pest Expo, News Brief, General Operations"
+                    type="text"
+                    value={programSeriesForm.name}
+                  />
+                </label>
+                <div className="amc-inline-form-grid">
+                  <label>
+                    <span>Default Kind</span>
+                    <select
+                      onChange={(event) =>
+                        setProgramSeriesForm((current) => ({
+                          ...current,
+                          defaultKind: event.target.value as WorkBucketKind
+                        }))
+                      }
+                      value={programSeriesForm.defaultKind}
+                    >
+                      {BUCKET_KIND_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Recurrence</span>
+                    <select
+                      onChange={(event) =>
+                        setProgramSeriesForm((current) => ({
+                          ...current,
+                          recurrence: event.target.value as RecurrencePattern
+                        }))
+                      }
+                      value={programSeriesForm.recurrence}
+                    >
+                      {RECURRENCE_PATTERNS.map((recurrence) => (
+                        <option key={recurrence} value={recurrence}>
+                          {RECURRENCE_PATTERN_LABELS[recurrence]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  <span>Default Delivery Format</span>
+                  <select
+                    onChange={(event) =>
+                      setProgramSeriesForm((current) => ({
+                        ...current,
+                        defaultDeliveryFormat: event.target.value as DeliveryFormat
+                      }))
+                    }
+                    value={programSeriesForm.defaultDeliveryFormat}
+                  >
+                    {DELIVERY_FORMATS.map((format) => (
+                      <option key={format} value={format}>
+                        {DELIVERY_FORMAT_LABELS[format]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Program / Series Notes</span>
+                  <textarea
+                    onChange={(event) => setProgramSeriesForm((current) => ({ ...current, notes: event.target.value }))}
+                    value={programSeriesForm.notes}
+                  />
+                </label>
+              </>
+            ) : null}
+
+            <div className="amc-inline-form-grid">
+              <CycleInputs
+                cycleInputs={cycleInputs}
+                recurrence={selectedRecurrence}
+                setBucketForm={setBucketForm}
+                setCycleInputs={setCycleInputs}
+              />
+            </div>
+
             <label>
-              <span>{bucketForm.kind === "event" ? "Event Name" : "Bucket Name"}</span>
+              <span>Generated Label</span>
+              <input readOnly type="text" value={generatedBucketLabel} />
+            </label>
+            <label>
+              <span>Label Override</span>
               <input
-                onChange={(event) => setBucketForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder={bucketForm.kind === "event" ? "Annual Conference 2027" : "Work bucket name"}
+                onChange={(event) => setBucketForm((current) => ({ ...current, generatedLabel: event.target.value }))}
+                placeholder="Optional for unusual cases"
                 type="text"
-                value={bucketForm.name}
+                value={bucketForm.generatedLabel ?? ""}
               />
             </label>
             <label>
@@ -210,6 +449,110 @@ export function AmcClientManagement() {
                 <option value="canceled">Canceled</option>
                 <option value="archived">Archived</option>
               </select>
+            </label>
+            <div className="amc-inline-form-grid">
+              <label>
+                <span>Planning Starts</span>
+                <input
+                  onChange={(event) => setBucketForm((current) => ({ ...current, planningStartsAt: event.target.value }))}
+                  type="date"
+                  value={bucketForm.planningStartsAt ?? ""}
+                />
+              </label>
+              <label>
+                <span>Start Date</span>
+                <input
+                  onChange={(event) => setBucketForm((current) => ({ ...current, startsAt: event.target.value }))}
+                  type="date"
+                  value={bucketForm.startsAt || structuredCycle.startsAt}
+                />
+              </label>
+            </div>
+            <div className="amc-inline-form-grid">
+              <label>
+                <span>End Date</span>
+                <input
+                  onChange={(event) => setBucketForm((current) => ({ ...current, endsAt: event.target.value }))}
+                  type="date"
+                  value={bucketForm.endsAt ?? ""}
+                />
+              </label>
+              <label>
+                <span>Closeout Due</span>
+                <input
+                  onChange={(event) => setBucketForm((current) => ({ ...current, closeoutDueAt: event.target.value }))}
+                  type="date"
+                  value={bucketForm.closeoutDueAt ?? ""}
+                />
+              </label>
+            </div>
+            <div className="amc-inline-form-grid">
+              <label>
+                <span>Delivery Format</span>
+                <select
+                  onChange={(event) =>
+                    setBucketForm((current) => ({
+                      ...current,
+                      deliveryFormat: event.target.value as DeliveryFormat
+                    }))
+                  }
+                  value={bucketForm.deliveryFormat ?? selectedProgramSeries?.defaultDeliveryFormat ?? programSeriesForm.defaultDeliveryFormat}
+                >
+                  {DELIVERY_FORMATS.map((format) => (
+                    <option key={format} value={format}>
+                      {DELIVERY_FORMAT_LABELS[format]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Location Type</span>
+                <select
+                  onChange={(event) =>
+                    setBucketForm((current) => ({
+                      ...current,
+                      locationType: event.target.value as LocationType
+                    }))
+                  }
+                  value={bucketForm.locationType ?? "notApplicable"}
+                >
+                  {LOCATION_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {LOCATION_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>Location / Platform</span>
+              <input
+                onChange={(event) => setBucketForm((current) => ({ ...current, locationName: event.target.value }))}
+                placeholder="Venue, city, Zoom, LMS, or N/A"
+                type="text"
+                value={bucketForm.locationName ?? ""}
+              />
+            </label>
+            <label>
+              <span>Owner</span>
+              <select
+                onChange={(event) => setBucketForm((current) => ({ ...current, ownerId: event.target.value }))}
+                value={bucketForm.ownerId ?? ""}
+              >
+                <option value="">Unassigned</option>
+                {state.staff.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Notes</span>
+              <textarea
+                onChange={(event) => setBucketForm((current) => ({ ...current, notes: event.target.value }))}
+                value={bucketForm.notes ?? ""}
+              />
             </label>
             <button className="topbar__button" disabled={state.clients.length === 0} type="submit">
               Add Bucket
@@ -259,4 +602,154 @@ export function AmcClientManagement() {
       </section>
     </div>
   );
+}
+
+function CycleInputs({
+  cycleInputs,
+  recurrence,
+  setBucketForm,
+  setCycleInputs
+}: {
+  cycleInputs: { year: string; month: string; quarter: string; adHocLabel: string };
+  recurrence: RecurrencePattern;
+  setBucketForm: Dispatch<SetStateAction<WorkBucketCreateInput>>;
+  setCycleInputs: Dispatch<SetStateAction<{ year: string; month: string; quarter: string; adHocLabel: string }>>;
+}) {
+  if (recurrence === "ongoing") {
+    return (
+      <label>
+        <span>Cycle</span>
+        <input readOnly type="text" value="Ongoing" />
+      </label>
+    );
+  }
+
+  if (recurrence === "monthly") {
+    return (
+      <>
+        <label>
+          <span>Cycle Month</span>
+          <select
+            onChange={(event) => {
+              setCycleInputs((current) => ({ ...current, month: event.target.value }));
+              setBucketForm((current) => ({ ...current, startsAt: "" }));
+            }}
+            value={cycleInputs.month}
+          >
+            {MONTH_OPTIONS.map((month) => (
+              <option key={month.value} value={month.value}>
+                {month.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <YearInput cycleInputs={cycleInputs} setBucketForm={setBucketForm} setCycleInputs={setCycleInputs} />
+      </>
+    );
+  }
+
+  if (recurrence === "quarterly") {
+    return (
+      <>
+        <label>
+          <span>Cycle Quarter</span>
+          <select
+            onChange={(event) => {
+              setCycleInputs((current) => ({ ...current, quarter: event.target.value }));
+              setBucketForm((current) => ({ ...current, startsAt: "" }));
+            }}
+            value={cycleInputs.quarter}
+          >
+            {QUARTER_OPTIONS.map((quarter) => (
+              <option key={quarter.value} value={quarter.value}>
+                {quarter.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <YearInput cycleInputs={cycleInputs} setBucketForm={setBucketForm} setCycleInputs={setCycleInputs} />
+      </>
+    );
+  }
+
+  if (recurrence === "annual") {
+    return <YearInput cycleInputs={cycleInputs} setBucketForm={setBucketForm} setCycleInputs={setCycleInputs} />;
+  }
+
+  return (
+    <label>
+      <span>Cycle Label</span>
+      <input
+        onChange={(event) => {
+          setCycleInputs((current) => ({ ...current, adHocLabel: event.target.value }));
+          setBucketForm((current) => ({ ...current, cycleLabel: event.target.value }));
+        }}
+        placeholder="Spring 2026, Launch cycle, Week of 6/1"
+        type="text"
+        value={cycleInputs.adHocLabel}
+      />
+    </label>
+  );
+}
+
+function YearInput({
+  cycleInputs,
+  setBucketForm,
+  setCycleInputs
+}: {
+  cycleInputs: { year: string; month: string; quarter: string; adHocLabel: string };
+  setBucketForm: Dispatch<SetStateAction<WorkBucketCreateInput>>;
+  setCycleInputs: Dispatch<SetStateAction<{ year: string; month: string; quarter: string; adHocLabel: string }>>;
+}) {
+  return (
+    <label>
+      <span>Cycle Year</span>
+      <input
+        onChange={(event) => {
+          setCycleInputs((current) => ({ ...current, year: event.target.value }));
+          setBucketForm((current) => ({ ...current, startsAt: "" }));
+        }}
+        type="number"
+        value={cycleInputs.year}
+      />
+    </label>
+  );
+}
+
+function getStructuredCycle(
+  recurrence: RecurrencePattern,
+  cycleInputs: { year: string; month: string; quarter: string; adHocLabel: string }
+) {
+  const year = cycleInputs.year.trim();
+
+  if (!year || recurrence === "ongoing") {
+    return { cycleLabel: "", startsAt: "" };
+  }
+
+  if (recurrence === "annual") {
+    return { cycleLabel: year, startsAt: `${year}-01-01` };
+  }
+
+  if (recurrence === "monthly") {
+    const month = MONTH_OPTIONS.find((option) => option.value === cycleInputs.month);
+
+    return {
+      cycleLabel: `${month?.label ?? "January"} ${year}`,
+      startsAt: `${year}-${cycleInputs.month}-01`
+    };
+  }
+
+  if (recurrence === "quarterly") {
+    const quarter = QUARTER_OPTIONS.find((option) => option.value === cycleInputs.quarter) ?? QUARTER_OPTIONS[0]!;
+
+    return {
+      cycleLabel: `${quarter.label} ${year}`,
+      startsAt: `${year}-${quarter.startMonth}-01`
+    };
+  }
+
+  return {
+    cycleLabel: cycleInputs.adHocLabel.trim(),
+    startsAt: ""
+  };
 }

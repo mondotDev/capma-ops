@@ -223,6 +223,16 @@ export function addClientAssociationToAmcLocalState(
   };
 }
 
+export function addProgramSeriesToAmcLocalState(
+  snapshot: AmcLocalStateSnapshot,
+  programSeries: ProgramSeries
+): AmcLocalStateSnapshot {
+  return {
+    ...snapshot,
+    programSeries: [...snapshot.programSeries, programSeries]
+  };
+}
+
 export function addWorkBucketToAmcLocalState(
   snapshot: AmcLocalStateSnapshot,
   bucket: WorkBucket

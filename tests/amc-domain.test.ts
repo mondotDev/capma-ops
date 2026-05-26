@@ -9,6 +9,7 @@ import {
   createDefaultBucketsForClient,
   createCollateralItem,
   createCollateralActionItem,
+  createProgramSeries,
   createSponsorFulfillmentActionItem,
   createSponsorFulfillmentCollateralItem,
   createSponsorFulfillmentRecord,
@@ -61,6 +62,7 @@ import {
   addCollateralActionItemToAmcLocalState,
   addCollateralItemToAmcLocalState,
   addClientAssociationToAmcLocalState,
+  addProgramSeriesToAmcLocalState,
   addSponsorFulfillmentActionItemToAmcLocalState,
   addSponsorFulfillmentCollateralItemToAmcLocalState,
   addSponsorFulfillmentRecordToAmcLocalState,
@@ -1025,6 +1027,152 @@ test("event creation is represented as a client-scoped event bucket", () => {
   assert.equal(bucket.clientAssociationId, "client-pacific-pest");
   assert.equal(bucket.kind, "event");
   assert.equal(bucket.status, "planning");
+});
+
+test("bucket creation can use an existing ProgramSeries and structured annual cycle", () => {
+  const series = createProgramSeries(
+    {
+      clientAssociationId: "client-pacific-pest",
+      name: "Best Pest Expo",
+      defaultKind: "event",
+      recurrence: "annual",
+      defaultDeliveryFormat: "inPerson",
+      now: "2026-05-01T12:00:00.000Z"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const data = {
+    ...DEMO_FOUNDATION_DATA,
+    programSeries: [...DEMO_FOUNDATION_DATA.programSeries, series]
+  };
+  const bucket = createWorkBucket(
+    {
+      clientAssociationId: "client-pacific-pest",
+      programSeriesId: series.id,
+      kind: "event",
+      name: "",
+      cycleLabel: "2027",
+      startsAt: "2027-04-01",
+      status: "planning"
+    },
+    data
+  );
+
+  assert.equal(bucket.clientAssociationId, "client-pacific-pest");
+  assert.equal(bucket.programSeriesId, series.id);
+  assert.equal(bucket.kind, "event");
+  assert.equal(bucket.recurrence, "annual");
+  assert.equal(bucket.deliveryFormat, "inPerson");
+  assert.equal(getBucketDisplayLabel(bucket, series), "Best Pest Expo 2027");
+  assert.equal(getBucketDropdownOptions({ buckets: [bucket], referenceDate: new Date("2026-05-26T12:00:00.000Z") })[0]?.id, bucket.id);
+});
+
+test("structured bucket creation generates monthly, quarterly, and ongoing labels", () => {
+  const monthlySeries = createProgramSeries(
+    {
+      clientAssociationId: "client-pacific-pest",
+      name: "News Brief",
+      defaultKind: "publicationIssue",
+      recurrence: "monthly",
+      defaultDeliveryFormat: "notApplicable"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const quarterlySeries = createProgramSeries(
+    {
+      clientAssociationId: "client-pacific-pest",
+      name: "The Voice",
+      defaultKind: "publicationIssue",
+      recurrence: "quarterly",
+      defaultDeliveryFormat: "notApplicable"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const ongoingSeries = createProgramSeries(
+    {
+      clientAssociationId: "client-pacific-pest",
+      name: "General Operations",
+      defaultKind: "generalOperations",
+      recurrence: "ongoing",
+      defaultDeliveryFormat: "notApplicable"
+    },
+    DEMO_FOUNDATION_DATA
+  );
+  const data = {
+    ...DEMO_FOUNDATION_DATA,
+    programSeries: [...DEMO_FOUNDATION_DATA.programSeries, monthlySeries, quarterlySeries, ongoingSeries]
+  };
+  const monthlyBucket = createWorkBucket(
+    {
+      clientAssociationId: "client-pacific-pest",
+      programSeriesId: monthlySeries.id,
+      kind: "publicationIssue",
+      name: "",
+      cycleLabel: "June 2026",
+      startsAt: "2026-06-01"
+    },
+    data
+  );
+  const quarterlyBucket = createWorkBucket(
+    {
+      clientAssociationId: "client-pacific-pest",
+      programSeriesId: quarterlySeries.id,
+      kind: "publicationIssue",
+      name: "",
+      cycleLabel: "Q3 2026",
+      startsAt: "2026-07-01"
+    },
+    data
+  );
+  const ongoingBucket = createWorkBucket(
+    {
+      clientAssociationId: "client-pacific-pest",
+      programSeriesId: ongoingSeries.id,
+      kind: "generalOperations",
+      name: ""
+    },
+    data
+  );
+
+  assert.equal(getBucketDisplayLabel(monthlyBucket, monthlySeries), "News Brief - June 2026");
+  assert.equal(getBucketDisplayLabel(quarterlyBucket, quarterlySeries), "The Voice - Q3 2026");
+  assert.equal(getBucketDisplayLabel(ongoingBucket, ongoingSeries), "General Operations");
+});
+
+test("local state stores new ProgramSeries and bucket while preserving existing bucket workspaces", () => {
+  const snapshot = createDefaultAmcLocalState();
+  const series = createProgramSeries(
+    {
+      clientAssociationId: "client-pacific-pest",
+      name: "First Friday",
+      defaultKind: "event",
+      recurrence: "monthly",
+      defaultDeliveryFormat: "inPerson"
+    },
+    snapshot
+  );
+  const withSeries = addProgramSeriesToAmcLocalState(snapshot, series);
+  const bucket = createWorkBucket(
+    {
+      clientAssociationId: "client-pacific-pest",
+      programSeriesId: series.id,
+      kind: "event",
+      name: "",
+      cycleLabel: "June 2026",
+      startsAt: "2026-06-01"
+    },
+    withSeries
+  );
+  const withBucket = addWorkBucketToAmcLocalState(withSeries, bucket);
+  const existingWorkspace = getBucketWorkspace(withBucket, {
+    clientId: "client-pacific-pest",
+    bucketId: "bucket-ppma-annual-conference"
+  });
+
+  assert.equal(withBucket.programSeries.some((candidate) => candidate.id === series.id), true);
+  assert.equal(withBucket.buckets.some((candidate) => candidate.id === bucket.id && candidate.programSeriesId === series.id), true);
+  assert.deepEqual(existingWorkspace.actionItems.map((item) => item.id), ["action-ppma-speaker-confirmations"]);
+  assert.deepEqual(existingWorkspace.collateralItems.map((item) => item.id), ["collateral-ppma-postcard"]);
 });
 
 test("v2 local state persists added clients and buckets", () => {

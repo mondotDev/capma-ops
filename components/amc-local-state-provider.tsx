@@ -7,6 +7,7 @@ import {
   addCollateralActionItemToAmcLocalState,
   addCollateralItemToAmcLocalState,
   addClientAssociationToAmcLocalState,
+  addProgramSeriesToAmcLocalState,
   addSponsorFulfillmentActionItemToAmcLocalState,
   addSponsorFulfillmentCollateralItemToAmcLocalState,
   addSponsorFulfillmentRecordToAmcLocalState,
@@ -23,6 +24,7 @@ import type {
   ClientAssociation,
   CollateralItem,
   CollateralItemUpdateInput,
+  ProgramSeries,
   SponsorFulfillmentRecord,
   SponsorFulfillmentUpdateInput,
   WorkBucket
@@ -40,6 +42,7 @@ interface AmcLocalStateContextValue {
   addSponsorFulfillmentActionItem: (input: { sponsorFulfillmentId: string; actionItem: ActionItem }) => void;
   addSponsorFulfillmentCollateralItem: (input: { sponsorFulfillmentId: string; collateralItem: CollateralItem }) => void;
   addClientAssociation: (client: ClientAssociation) => void;
+  addProgramSeries: (programSeries: ProgramSeries) => void;
   addWorkBucket: (bucket: WorkBucket) => void;
   resetLocalState: () => void;
 }
@@ -130,6 +133,13 @@ export function AmcLocalStateProvider({ children }: { children: ReactNode }) {
       addClientAssociation(client) {
         setState((current) => {
           const nextState = addClientAssociationToAmcLocalState(current, client);
+          saveAmcLocalState(nextState);
+          return nextState;
+        });
+      },
+      addProgramSeries(programSeries) {
+        setState((current) => {
+          const nextState = addProgramSeriesToAmcLocalState(current, programSeries);
           saveAmcLocalState(nextState);
           return nextState;
         });
